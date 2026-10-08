@@ -718,11 +718,25 @@ def retry_stage(
             .filter(Document.ingest_batch_id == doc.ingest_batch_id)
             .all()
         )
+        reset_any = False
+        claimed_since_read: list[int] = []
         for sibling in siblings:
             if (stages_dict(sibling).get("batch_analysis") or {}).get(
                 "status"
             ) == "failed":
-                reset_stage(sibling.id, PipelineStage.BATCH_ANALYSIS, db)
+                if reset_stage(sibling.id, PipelineStage.BATCH_ANALYSIS, db):
+                    reset_any = True
+                else:
+                    claimed_since_read.append(sibling.id)
+        if claimed_since_read and not reset_any:
+            # Every failed sibling was re-claimed by another dispatcher after the
+            # read above: that retry is already running, don't start a second.
+            raise ApiError(
+                409,
+                "in_flight",
+                "Batch analysis is already being retried "
+                f"(documents {', '.join(map(str, claimed_since_read))}).",
+            )
     elif not reset_stage(doc.id, stage, db):
         # A dispatcher claimed the stage after the status check above.
         raise ApiError(409, "in_flight", f"Stage '{stage.value}' is already running.")

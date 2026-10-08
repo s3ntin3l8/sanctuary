@@ -315,3 +315,62 @@ def test_concurrent_entity_saves_do_not_duplicate(db_session_factory):
         assert check.query(Entity).filter(Entity.case_id == "ENT-RACE").count() == 1
     finally:
         check.close()
+
+
+@pytest.mark.integration
+def test_batch_analysis_retry_409s_when_every_failed_sibling_was_reclaimed(
+    auth_enabled, db_session
+):
+    """The requested doc's reset is race-safe; so must the sibling loop be."""
+    user = auth_service.create_user(
+        db_session, email="b@example.com", password=_PASSWORD
+    )
+    case = Case(
+        id="SIB-1",
+        title="t",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=user.id,
+    )
+    batch = IngestBatch(
+        owner_id=user.id,
+        source_type=IngestBatchSourceType.EMAIL,
+        status=IngestBatchStatus.PROCESSING,
+    )
+    db_session.add_all([case, batch])
+    db_session.flush()
+    doc_a = Document(
+        title="A", case_id=case.id, owner_id=user.id, ingest_batch_id=batch.id
+    )
+    doc_b = Document(
+        title="B", case_id=case.id, owner_id=user.id, ingest_batch_id=batch.id
+    )
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+    for d in (doc_a, doc_b):
+        initialize(d, batched=True, db=db_session)
+    db_session.commit()
+    for d in (doc_a, doc_b):
+        _set(db_session, d.id, "extract", "completed")
+        _set(db_session, d.id, "metadata", "completed")
+        _set(db_session, d.id, "batch_analysis", "failed")
+
+    client = TestClient(app, follow_redirects=False)
+    client.post(
+        "/api/v1/auth/login", json={"email": "b@example.com", "password": _PASSWORD}
+    )
+    url = f"/api/v1/documents/{doc_a.id}/pipeline/batch_analysis/retry"
+
+    with (
+        patch("app.api.v1.documents.reset_stage", return_value=False),
+        patch("app.api.v1.documents.dispatch_pipeline_retry") as dispatch,
+    ):
+        lost_race = client.post(url)
+    assert lost_race.status_code == 409
+    assert lost_race.json()["code"] == "in_flight"
+    dispatch.assert_not_called()
+
+    with patch("app.api.v1.documents.dispatch_pipeline_retry") as dispatch:
+        ok = client.post(url)
+    assert ok.status_code == 200
+    dispatch.assert_called_once()
