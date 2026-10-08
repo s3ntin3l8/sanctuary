@@ -161,7 +161,12 @@ def _eml_to_text(file_path: str) -> str:
 
     parts = [
         f"{label}: {parsed[key]}"
-        for label, key in (("Subject", "subject"), ("From", "sender"), ("Date", "date"))
+        for label, key in (
+            ("Subject", "subject"),
+            ("From", "sender"),
+            ("Date", "date"),
+            ("To", "to"),
+        )
         if parsed[key]
     ]
     if parsed["body"]:

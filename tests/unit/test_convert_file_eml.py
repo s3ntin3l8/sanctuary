@@ -21,5 +21,6 @@ def test_eml_renders_headers_and_body(tmp_path):
 
     assert "Subject: Hello" in result["content"]
     assert "From: a@example.com" in result["content"]
+    assert "To: b@example.com" in result["content"]
     assert "Body text here." in result["content"]
     assert result["metadata"] == {"pages": 1}

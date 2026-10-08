@@ -205,6 +205,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
 
     return {
         "sender": msg.get("From", ""),
+        "to": msg.get("To", ""),
         "subject": msg.get("Subject", ""),
         "message_id": msg.get("Message-ID", ""),
         "date": msg.get("Date", ""),
