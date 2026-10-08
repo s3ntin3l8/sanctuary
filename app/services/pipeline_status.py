@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 # addition to, not instead of, the softer heuristic gates.
 _ORPHAN_PROVABLE_GRACE_SECONDS = 300
 _RETRY_LOST_GRACE_SECONDS = 300
+# A stage the sweeper has provably reset this many times (it keeps blowing the
+# Celery time limit) is failed instead of reset again: a deterministic poison
+# document would otherwise cycle reset -> redispatch -> hard kill forever and
+# keep its case brief blocked (#150).
+_ORPHAN_RESET_CAP = 3
 
 # SQL injection hardening: whitelist of allowed extra_sets keys in _update_stage()
 _ALLOWED_EXTRA_KEYS = frozenset(
@@ -45,6 +50,7 @@ _ALLOWED_EXTRA_KEYS = frozenset(
         "attempt",
         "max_attempts",
         "next_at",
+        "orphan_resets",
     }
 )
 
@@ -384,7 +390,7 @@ def mark_completed(
         stage,
         db,
         status=StageStatus.COMPLETED,
-        extra_sets={"completed_at": now_utc(), "error": None},
+        extra_sets={"completed_at": now_utc(), "error": None, "orphan_resets": 0},
         commit=commit,
     )
 
@@ -529,6 +535,24 @@ def mark_skipped(
     )
 
 
+# METADATA's terminal-failure cascade must exclude BATCH_ANALYSIS, unlike
+# STAGE_REGISTRY's generic downstream list (which reset_stage correctly uses
+# in full — a retry legitimately wants BATCH_ANALYSIS redone too).
+# BATCH_ANALYSIS is a batch-shared stage: one analyze_batch_task call covers
+# every doc in the batch, not one call per doc. Marking this one doc's
+# batch_analysis row FAILED would make claim_batch_for_analysis's readiness
+# check (every doc's batch_analysis still unresolved) permanently false for
+# the whole batch, and would trip metadata_task's "batch_already_done"
+# fallback for healthy siblings — promoting their batch_analysis to
+# COMPLETED without analyze() ever running, silently losing cover-letter
+# detection and action-item extraction for the entire batch.
+METADATA_FAILURE_CASCADE = (
+    PipelineStage.ENRICH,
+    PipelineStage.RELATIONSHIPS,
+    PipelineStage.CLAIMS,
+    PipelineStage.ENTITIES,
+)
+
 _IN_FLIGHT = (StageStatus.RUNNING.value, StageStatus.RETRYING.value)
 
 _RESET_SETS: dict = {
@@ -539,6 +563,7 @@ _RESET_SETS: dict = {
     "attempt": None,
     "max_attempts": None,
     "next_at": None,
+    "orphan_resets": 0,  # a user/pipeline retry starts the poison-doc count over
 }
 
 
@@ -864,6 +889,97 @@ def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
     return {"total": len(stages_per_doc), **counts}
 
 
+def _stage_status(db: Session, doc_id: int, stage: PipelineStage) -> str | None:
+    return db.execute(
+        text(
+            "SELECT status FROM document_pipeline_stages "
+            "WHERE document_id = :d AND stage = :s"
+        ),
+        {"d": doc_id, "s": stage.value},
+    ).scalar()
+
+
+def terminal_failure_cascade(stage: PipelineStage) -> tuple[PipelineStage, ...]:
+    """Downstream stages to fail when ``stage`` fails terminally for one document.
+
+    The registry's downstream list minus BATCH_ANALYSIS: that stage is shared by
+    the whole batch, so failing it for one document would poison every sibling's
+    readiness check (see ``METADATA_FAILURE_CASCADE``). Use this for any
+    per-document give-up; reset_stage keeps the full list because a retry does
+    want BATCH_ANALYSIS redone.
+
+    The registry lists are transitive (EXTRACT's includes METADATA's own
+    downstream), so a stage can be named twice when cascading; failing an
+    already-failed row again is a harmless no-op.
+    """
+    return tuple(
+        s for s in _DOWNSTREAM.get(stage, []) if s != PipelineStage.BATCH_ANALYSIS
+    )
+
+
+def _orphan_resets_so_far(db: Session, doc_id: int, stage: PipelineStage) -> int:
+    return (
+        db.execute(
+            text(
+                "SELECT orphan_resets FROM document_pipeline_stages "
+                "WHERE document_id = :d AND stage = :s"
+            ),
+            {"d": doc_id, "s": stage.value},
+        ).scalar()
+        or 0
+    )
+
+
+def _fail_poison_stage(db: Session, doc, stage: PipelineStage) -> None:
+    """Give up on a stage that keeps blowing the time limit: fail it for good.
+
+    Cascades downstream the way any other terminal failure of that stage does,
+    so the case brief isn't blocked on the document forever. BATCH_ANALYSIS is
+    batch-shared, so every doc in the batch is failed and the batch claim is
+    released (the same shape as analyze_batch's own timeout path); ENRICH then
+    proceeds once its gate sees a terminal BATCH_ANALYSIS.
+    """
+    from app.models.database import IngestBatch
+
+    error = (
+        f"{stage.value} repeatedly exceeded the task time limit "
+        f"({_ORPHAN_RESET_CAP} resets) — giving up"
+    )
+    logger.warning("Doc %d: %s", doc.id, error)
+    if stage == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
+        batch = db.get(IngestBatch, doc.ingest_batch_id)
+        if batch is not None:
+            batch.analysis_queued_at = None
+        sibling_ids = [
+            row[0]
+            for row in db.execute(
+                text("SELECT id FROM documents WHERE ingest_batch_id = :b"),
+                {"b": doc.ingest_batch_id},
+            )
+        ]
+        for sibling_id in sibling_ids:
+            # Leave siblings that already settled this stage alone — including
+            # one that FAILED earlier, so its original cause is not overwritten.
+            _update_stage(
+                sibling_id,
+                stage,
+                db,
+                status=StageStatus.FAILED,
+                extra_sets={"completed_at": now_utc(), "error": error},
+                commit=False,
+                unless_status_in=(
+                    StageStatus.COMPLETED.value,
+                    StageStatus.SKIPPED.value,
+                    StageStatus.FAILED.value,
+                ),
+            )
+        db.commit()
+        return
+    mark_failed_with_cascade(
+        doc.id, stage, db, error=error, cascade=terminal_failure_cascade(stage)
+    )
+
+
 def recover_orphaned_running_stages(
     db: Session,
     *,
@@ -898,7 +1014,13 @@ def recover_orphaned_running_stages(
        the cycle repeats — the failure mode that produced 33-orphan-stages
        cycles and stranded 38 docs in mixed running/partial state.
 
-    Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
+    A stage that was *provably* orphaned (past the Celery time limit) more than
+    ``_ORPHAN_RESET_CAP`` times is failed with a cascade instead of reset again,
+    so a document that deterministically hangs the worker stops cycling.
+
+    Returns {"docs_reset": N, "stages_reset": N, "stages_failed": N,
+    "batches_reset": N} where ``batches_reset`` counts every batch that had a
+    document touched (not only those whose BATCH_ANALYSIS was reset).
     """
     from app.config import CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
     from app.models.database import Document, IngestBatch
@@ -970,13 +1092,13 @@ def recover_orphaned_running_stages(
 
     docs_reset = 0
     stages_reset = 0
+    stages_failed = 0
     affected_batch_ids: set[int] = set()
     batch_analysis_reset_ids: set[int] = set()
 
-    _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in docs:
         stages: dict = stages_dict(doc)
-        stuck = []
+        stuck: list[tuple[str, bool]] = []  # (stage key, provably orphaned)
         for key, val in stages.items():
             if not isinstance(val, dict):
                 continue
@@ -1004,7 +1126,7 @@ def recover_orphaned_running_stages(
                             ensure_utc(datetime.fromisoformat(started_at))
                             < stage_cutoff
                         ):
-                            stuck.append(key)
+                            stuck.append((key, True))
                             continue
                     except (ValueError, TypeError):
                         pass
@@ -1016,7 +1138,7 @@ def recover_orphaned_running_stages(
                             ensure_utc(datetime.fromisoformat(next_at))
                             < _LOST_RETRY_CUTOFF
                         ):
-                            stuck.append(key)
+                            stuck.append((key, True))
                             continue
                     except (ValueError, TypeError):
                         pass
@@ -1037,21 +1159,38 @@ def recover_orphaned_running_stages(
             # actively making progress elsewhere.
             if workers_recently_active:
                 continue
-            stuck.append(key)
+            stuck.append((key, False))
         if not stuck:
             continue
 
-        for stage_key in stuck:
+        doc_stages_reset = 0
+        for stage_key, provable in stuck:
             try:
                 stage_enum = PipelineStage(stage_key)
             except ValueError:
+                continue
+
+            # The snapshot above may be stale by now: an earlier iteration for
+            # this same document can have failed-and-cascaded this very stage,
+            # or the task can have finished. Never overwrite a settled row.
+            if _stage_status(db, doc.id, stage_enum) not in _IN_FLIGHT:
+                continue
+
+            # Only a *provable* orphan counts toward the cap: the heuristic
+            # path also fires on every worker restart (min_age_seconds=0),
+            # which says nothing about the document itself.
+            if provable and _orphan_resets_so_far(db, doc.id, stage_enum) >= (
+                _ORPHAN_RESET_CAP
+            ):
+                _fail_poison_stage(db, doc, stage_enum)
+                stages_failed += 1
                 continue
 
             # Reset only the stuck stage itself — do NOT cascade to already-completed
             # downstream stages. reset_stage() is for user-initiated retries where
             # re-running downstream is intentional; here we're just clearing an
             # in-flight lock left by a crash.
-            _update_stage(
+            if not _update_stage(
                 doc.id,
                 stage_enum,
                 db,
@@ -1065,17 +1204,32 @@ def recover_orphaned_running_stages(
                     "next_at": None,
                 },
                 commit=False,
-            )
+                only_if_status_in=_IN_FLIGHT,
+            ):
+                continue  # settled between the check above and this write
+            if provable:
+                db.execute(
+                    text(
+                        "UPDATE document_pipeline_stages "
+                        "SET orphan_resets = orphan_resets + 1 "
+                        "WHERE document_id = :d AND stage = :s"
+                    ),
+                    {"d": doc.id, "s": stage_enum.value},
+                )
             stages_reset += 1
+            doc_stages_reset += 1
             if stage_enum == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
                 batch_analysis_reset_ids.add(doc.ingest_batch_id)
 
-        db.refresh(doc)
-        doc.pipeline_state = compute_overall_state(stages_dict(doc))
-
-        docs_reset += 1
-        if doc.ingest_batch_id:
-            affected_batch_ids.add(doc.ingest_batch_id)
+        # Only a document where at least one reset actually landed counts as
+        # "reset" (cap-failed stages are counted in stages_failed, and a stage
+        # that settled since the snapshot changed nothing).
+        if doc_stages_reset:
+            db.refresh(doc)
+            doc.pipeline_state = compute_overall_state(stages_dict(doc))
+            docs_reset += 1
+            if doc.ingest_batch_id:
+                affected_batch_ids.add(doc.ingest_batch_id)
 
     for batch_id in affected_batch_ids:
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
@@ -1095,6 +1249,7 @@ def recover_orphaned_running_stages(
     return {
         "docs_reset": docs_reset,
         "stages_reset": stages_reset,
+        "stages_failed": stages_failed,
         "batches_reset": len(affected_batch_ids),
     }
 
@@ -1593,6 +1748,180 @@ def recover_stuck_pending_dispatches(
     return {"docs_redispatched": len(redispatched), "doc_ids": redispatched}
 
 
+def recover_stuck_slicing_prep(
+    db: Session, *, max_age_seconds: int | None = None
+) -> dict:
+    """Recover scan batches whose slicing preparation task was lost (#166).
+
+    A multi-page scan sits in AWAITING_SLICING with ``meta.slicing.status ==
+    "preparing"`` until ``prepare_slicing_task`` finishes. If the dispatch or the
+    task is lost (worker crash, dropped message) nothing ever moves it on, and
+    delete_bundle refuses AWAITING_SLICING batches, so it was stuck for good.
+
+    ``meta.slicing.dispatched_at`` (stamped at every dispatch) separates "still
+    running" from "lost": past one full task time limit plus grace the task
+    cannot legitimately still be alive. A lost batch is re-dispatched once
+    (``recovered``); if it is still ``preparing`` a threshold later it is marked
+    failed, which the UI already offers Retry on and which makes the bundle
+    deletable. A queue backlog can make "lost" a false positive, but the cost
+    is one redundant preparation, and it is bounded to one.
+
+    Returns {"redispatched": [...], "failed": [...]}.
+    """
+    from app.config import CELERY_TASK_TIME_LIMIT
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchStatus
+    from app.tasks.dispatch import dispatch_task
+
+    threshold = (
+        max_age_seconds
+        if max_age_seconds is not None
+        else CELERY_TASK_TIME_LIMIT + _ORPHAN_PROVABLE_GRACE_SECONDS
+    )
+    now = now_utc()
+    cutoff = now - timedelta(seconds=threshold)
+
+    redispatched: list[int] = []
+    failed: list[int] = []
+    batches = (
+        db.query(IngestBatch)
+        .filter(IngestBatch.status == IngestBatchStatus.AWAITING_SLICING)
+        .with_for_update(skip_locked=True)
+        .all()
+    )
+    for batch in batches:
+        slicing = dict((batch.meta or {}).get("slicing") or {})
+        if slicing.get("status") != "preparing":
+            continue
+        stamped = slicing.get("dispatched_at")
+        try:
+            dispatched_at = (
+                ensure_utc(datetime.fromisoformat(stamped)) if stamped else None
+            )
+        except (ValueError, TypeError):
+            dispatched_at = None
+        if dispatched_at is None:
+            # Pre-dates the timestamp: the batch's own age is the best bound we
+            # have, so an old one is treated as lost and recovered (instead of
+            # being stamped "now", which would hide it from every later sweep).
+            dispatched_at = ensure_utc(batch.ingest_date) or now
+        if dispatched_at > cutoff:
+            continue
+        if not slicing.get("recovered"):
+            slicing["recovered"] = True
+            slicing["dispatched_at"] = now.isoformat()
+            batch.meta = {**(batch.meta or {}), "slicing": slicing}
+            db.commit()
+            dispatch_task("app.tasks.prepare_slicing.prepare_slicing_task", batch.id)
+            redispatched.append(batch.id)
+        else:
+            slicing["status"] = "failed"
+            slicing["error"] = (
+                "Slicing preparation never finished (the task was lost twice). "
+                "Retry it, or delete the bundle."
+            )
+            batch.meta = {**(batch.meta or {}), "slicing": slicing}
+            failed.append(batch.id)
+    db.commit()
+    if redispatched or failed:
+        logger.warning(
+            "recover_stuck_slicing_prep: re-dispatched %s, gave up on %s",
+            redispatched,
+            failed,
+        )
+    return {"redispatched": redispatched, "failed": failed}
+
+
+def recover_embeddings_behind_failed_stage(
+    db: Session, *, max_age_seconds: int = 300
+) -> dict:
+    """Settle EMBEDDINGS rows left PENDING on a document whose pipeline FAILED.
+
+    A terminal failure of EXTRACT or METADATA cascades to ENRICH/RELATIONSHIPS/
+    CLAIMS/ENTITIES but deliberately not to EMBEDDINGS (embeddings only need
+    the extracted text), so the EMBEDDINGS row stays PENDING. Both stuck-
+    dispatch sweeps skip FAILED documents, so nothing ever picks it up (#147).
+
+    Scoped to EMBEDDINGS rather than "any PENDING stage on a FAILED doc": a
+    generic sweep would loop, because generate_embedding_task leaves its stage
+    PENDING on a gate block by design. Here the gate is checked up front — the
+    task is only dispatched once METADATA is terminal (a failed METADATA is
+    terminal), so it cannot defer — and every outcome leaves the row non-PENDING:
+
+    * EXTRACT completed and METADATA terminal → claim the stage and dispatch
+      generate_embedding_task (the document is still searchable).
+    * EXTRACT did not complete → there is no text to embed: SKIPPED
+      (``upstream_failed``).
+    * Anything else (METADATA still in flight) → left alone; not stranded.
+
+    Returns {"dispatched": N, "skipped": N, "doc_ids": [...]}.
+    """
+    cutoff = now_utc() - timedelta(seconds=max_age_seconds)
+    doc_ids = [
+        row[0]
+        for row in db.execute(
+            text(
+                """
+                SELECT d.id
+                FROM documents d
+                JOIN document_pipeline_stages emb
+                  ON emb.document_id = d.id
+                 AND emb.stage = :embeddings AND emb.status = :pending
+                JOIN document_pipeline_stages f
+                  ON f.document_id = d.id AND f.status = :failed
+                 AND f.stage IN (:extract, :metadata)
+                WHERE d.pipeline_state = :failed
+                GROUP BY d.id
+                HAVING MAX(f.completed_at) IS NULL OR MAX(f.completed_at) < :cutoff
+                """
+            ),
+            {
+                "embeddings": PipelineStage.EMBEDDINGS.value,
+                "extract": PipelineStage.EXTRACT.value,
+                "metadata": PipelineStage.METADATA.value,
+                "pending": StageStatus.PENDING.value,
+                "failed": StageStatus.FAILED.value,
+                "cutoff": cutoff,
+            },
+        )
+    ]
+    if not doc_ids:
+        return {"dispatched": 0, "skipped": 0, "doc_ids": []}
+
+    from app.models.database import Document
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.generate_embedding import generate_embedding_task
+
+    terminal = {
+        StageStatus.COMPLETED.value,
+        StageStatus.FAILED.value,
+        StageStatus.SKIPPED.value,
+    }
+    dispatched = skipped = 0
+    handled: list[int] = []
+    for doc in db.query(Document).filter(Document.id.in_(doc_ids)).all():
+        stages = stages_dict(doc)
+        extract = (stages.get(PipelineStage.EXTRACT.value) or {}).get("status")
+        metadata = (stages.get(PipelineStage.METADATA.value) or {}).get("status")
+        if extract != StageStatus.COMPLETED.value:
+            mark_skipped(doc.id, PipelineStage.EMBEDDINGS, db, reason="upstream_failed")
+            skipped += 1
+            handled.append(doc.id)
+        elif metadata in terminal:
+            if claim_stage_for_dispatch(doc.id, PipelineStage.EMBEDDINGS, db):
+                dispatch_task(generate_embedding_task, doc.id)
+                dispatched += 1
+                handled.append(doc.id)
+    if handled:
+        logger.info(
+            "recover_embeddings_behind_failed_stage: dispatched %d, skipped %d: %s",
+            dispatched,
+            skipped,
+            handled,
+        )
+    return {"dispatched": dispatched, "skipped": skipped, "doc_ids": handled}
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -1685,9 +2014,11 @@ def _update_stage(
         db.execute(
             text(
                 "INSERT INTO document_pipeline_stages "
-                "(document_id, stage, status, started_at, completed_at, error, reason, attempt, max_attempts, next_at) "
+                "(document_id, stage, status, started_at, completed_at, error, reason, "
+                "attempt, max_attempts, next_at, orphan_resets) "
                 "VALUES (:_doc_id, :_stage, :_status, :_k_started_at, :_k_completed_at, "
-                ":_k_error, :_k_reason, :_k_attempt, :_k_max_attempts, :_k_next_at)"
+                ":_k_error, :_k_reason, :_k_attempt, :_k_max_attempts, :_k_next_at, "
+                "COALESCE(:_k_orphan_resets, 0))"
             ),
             ins,
         )

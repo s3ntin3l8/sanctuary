@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
 from app.core.paths import to_storage_path
+from app.core.timezone import now_utc
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.repositories.ingest_batch import (
@@ -573,7 +574,14 @@ def ingest_scanned_file(
         dispatch_task("app.tasks.document_processing.process_document_task", doc.id)
     else:
         # Multi-page: queue slicing; no Documents yet
-        batch.meta = {"slicing": {"status": "preparing", "page_count": page_count}}
+        batch.meta = {
+            "slicing": {
+                "status": "preparing",
+                "page_count": page_count,
+                # Lets recover_stuck_slicing_prep tell "still running" from "lost".
+                "dispatched_at": now_utc().isoformat(),
+            }
+        }
         batch.status = IngestBatchStatus.AWAITING_SLICING
         db.commit()
         logger.info("Scan batch #%d: %d pages → queuing slicing", batch.id, page_count)
