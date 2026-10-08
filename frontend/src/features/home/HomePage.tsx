@@ -99,63 +99,63 @@ export function HomePage() {
             <Kpi label="Exposure" value={formatEurCompact(exposure)} icon="payments" />
           </div>
 
-          {data.caught_up ? (
-            <div className="rounded-xl border border-line bg-card px-6 py-10 text-center">
-              <Icon name="check_circle" size={28} className="text-accent" />
-              <p className="mt-2 font-display text-[15px] font-bold">You're caught up.</p>
-              <p className="text-[12px] text-muted">
-                No deadlines, triage or signals need you right now.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-[1.6fr_1fr] gap-4">
-              <div className="space-y-4">
-                <DeadlinesPanel items={data.today_items} />
-                <TriagePanel bundles={data.triage_bundles} />
-              </div>
-              <div className="space-y-4">
-                <DeltaPanel home={data} />
-                <SignalsPanel signals={data.signals} />
-              </div>
-            </div>
-          )}
-
-          {data.draft_cases.length > 0 && (
-            <Panel
-              title="Pending confirmation"
-              icon="pending"
-              meta={pluralize(data.draft_cases.length, 'draft')}
-            >
-              <div className="grid grid-cols-3 gap-3">
-                {data.draft_cases.map((c) => (
-                  <CaseCardTile key={c.id} card={c} navRow />
-                ))}
-              </div>
-            </Panel>
-          )}
-
-          <div className="grid grid-cols-[1.6fr_1fr] gap-4">
-            <Panel
-              title="Active cases"
-              icon="folder_open"
-              meta={pluralize(data.active_cases.length, 'case')}
-              action={
-                <a href="/cases" className="text-[11px] text-tealink hover:underline">
-                  View all
-                </a>
-              }
-            >
-              {data.active_cases.length === 0 ? (
-                <p className="py-4 text-center text-[12px] text-muted">No active cases yet.</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {data.active_cases.map((c) => (
-                    <CaseCardTile key={c.id} card={c} navRow />
-                  ))}
+          <div className="grid grid-cols-[1.6fr_1fr] items-start gap-4">
+            <div className="space-y-4">
+              {data.caught_up ? (
+                <div className="rounded-xl border border-line bg-card px-6 py-10 text-center">
+                  <Icon name="check_circle" size={28} className="text-accent" />
+                  <p className="mt-2 font-display text-[15px] font-bold">You're caught up.</p>
+                  <p className="text-[12px] text-muted">
+                    No deadlines, triage or signals need you right now.
+                  </p>
                 </div>
+              ) : (
+                <>
+                  <DeadlinesPanel items={data.today_items} />
+                  <TriagePanel bundles={data.triage_bundles} />
+                </>
               )}
-            </Panel>
-            <ActivityPanel events={data.activity} row={ROW} />
+
+              {data.draft_cases.length > 0 && (
+                <Panel
+                  title="Pending confirmation"
+                  icon="pending"
+                  meta={pluralize(data.draft_cases.length, 'draft')}
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    {data.draft_cases.map((c) => (
+                      <CaseCardTile key={c.id} card={c} navRow />
+                    ))}
+                  </div>
+                </Panel>
+              )}
+
+              <Panel
+                title="Active cases"
+                icon="folder_open"
+                meta={pluralize(data.active_cases.length, 'case')}
+                action={
+                  <a href="/cases" className="text-[11px] text-tealink hover:underline">
+                    View all
+                  </a>
+                }
+              >
+                {data.active_cases.length === 0 ? (
+                  <p className="py-4 text-center text-[12px] text-muted">No active cases yet.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {data.active_cases.map((c) => (
+                      <CaseCardTile key={c.id} card={c} navRow />
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </div>
+            <div className="space-y-4">
+              <DeltaPanel home={data} />
+              <SignalsPanel signals={data.signals} />
+              <ActivityPanel events={data.activity} row={ROW} />
+            </div>
           </div>
         </div>
       )}

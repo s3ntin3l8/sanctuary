@@ -141,6 +141,7 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     )
     from app.services.pipeline_status import (
         _STAGE_ORDER,
+        clear_extraction_stamp,
         compute_overall_state,
         stages_dict,
     )
@@ -240,6 +241,9 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
                 {"doc_id": doc.id, "stage": stage.value},
             )
         db.expire(doc, ["stage_rows"])
+
+        if full:
+            clear_extraction_stamp(doc)
 
         doc.role = DocumentRole.STANDALONE
         doc.parent_id = None

@@ -25,7 +25,6 @@ from app.schemas.triage import (
     BatchKeys,
     BatchResult,
     BundlePipeline,
-    BundleRetry,
     ConfirmedCase,
     CoverUpdate,
     GroupOrder,
@@ -387,15 +386,14 @@ def delete_loose(
 @limiter.limit("20/minute")
 def retry_bundle(
     request: Request,
-    body: BundleRetry,
     batch: IngestBatch = Depends(owned_batch),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Re-run the AI stages for every document in the bundle (``full`` re-extracts too)."""
+    """Re-extract and re-run every AI stage for every document in the bundle."""
 
     def _do_reset():
-        result = reset_batch_for_retry(batch, db, full=body.full)
+        result = reset_batch_for_retry(batch, db, full=True)
         if result == -1:
             return -1, None
         items, fallback = result

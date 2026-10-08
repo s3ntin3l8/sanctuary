@@ -153,7 +153,11 @@ def extract_claims_task(self, doc_id: int):
 
     db = get_db_session()
     try:
-        if skipped:
+        if skipped == "recent_extraction":
+            # The debounced run's claims are authoritative; reporting "skipped"
+            # would contradict the grounds already attached to the document.
+            mark_completed(doc_id, PipelineStage.CLAIMS, db)
+        elif skipped:
             mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason=skipped)
         else:
             mark_completed(doc_id, PipelineStage.CLAIMS, db)

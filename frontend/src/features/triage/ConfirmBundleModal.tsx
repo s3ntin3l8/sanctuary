@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react'
 
 import type { Schemas } from '../../api/client'
 import { useBatchAssign, useConfirmBundle, type TriageBundle } from '../../api/triage'
+import { actionableReasons, reviewReasonLabel } from '../documents/reviewReasons'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Field, inputClass } from '../../ui/Field'
@@ -52,6 +53,12 @@ function Dialog({ target, onClose, cases, proceedings }: Props & { target: Confi
         ? 'Confirm bundle'
         : 'Route bundle'
   const docCount = target.mode === 'single' ? target.bundle.doc_count : null
+  const openReviews =
+    target.mode === 'single' && target.action === 'confirm_bundle'
+      ? target.bundle.documents
+          .map((d) => ({ doc: d, reasons: actionableReasons(d.review_reasons) }))
+          .filter((x) => x.reasons.length > 0)
+      : []
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -108,6 +115,28 @@ function Dialog({ target, onClose, cases, proceedings }: Props & { target: Confi
       width={460}
     >
       <form onSubmit={onSubmit} className="space-y-3">
+        {openReviews.length > 0 && (
+          <div
+            role="note"
+            className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-[11px]"
+          >
+            <p className="font-semibold text-warning">
+              {openReviews.length} {openReviews.length === 1 ? 'document needs' : 'documents need'}{' '}
+              metadata review
+            </p>
+            <ul className="mt-1 space-y-0.5 text-ink2">
+              {openReviews.map(({ doc, reasons }) => (
+                <li key={doc.id} className="flex gap-1.5">
+                  <span className="min-w-0 truncate">{doc.title}</span>
+                  <span className="shrink-0 text-muted">
+                    · {reasons.map(reviewReasonLabel).join(', ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-muted">You can still confirm; fix them later from the case.</p>
+          </div>
+        )}
         {suggestion && useSuggested && !newCase ? (
           <div className="rounded-xl border border-accent/30 bg-accent/8 p-3">
             <div className="flex items-center gap-2">

@@ -2532,7 +2532,7 @@ export interface paths {
         put?: never;
         /**
          * V1 Retry Bundle
-         * @description Re-run the AI stages for every document in the bundle (``full`` re-extracts too).
+         * @description Re-extract and re-run every AI stage for every document in the bundle.
          */
         post: operations["v1_retry_bundle_api_v1_triage_bundles__batch_id__retry_post"];
         delete?: never;
@@ -3004,14 +3004,6 @@ export interface components {
             failed_error: string | null;
             /** Total */
             total: number;
-        };
-        /** BundleRetry */
-        BundleRetry: {
-            /**
-             * Full
-             * @default false
-             */
-            full: boolean;
         };
         /**
          * CaseAccessLevel
@@ -10401,11 +10393,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BundleRetry"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

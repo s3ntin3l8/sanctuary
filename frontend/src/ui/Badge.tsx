@@ -36,7 +36,7 @@ export function Badge({
 }: Props) {
   const shape = pill
     ? 'rounded px-[7px] py-0.5 text-[8.5px] font-extrabold tracking-[.06em]'
-    : 'rounded-md border px-1.5 py-0.5 text-[10px] font-bold tracking-wide'
+    : 'rounded-md border px-1.5 py-0.5 text-[10px] leading-none font-bold tracking-wide'
   return (
     <span
       className={`inline-flex items-center gap-1 uppercase ${shape} ${mono ? 'font-mono' : ''} ${pill ? pilled[tone] : outlined[tone]} ${className}`}

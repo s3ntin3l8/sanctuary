@@ -12,6 +12,7 @@ import { useToast } from '../../ui/toast'
 import { ChatDrawer } from '../chat/ChatDrawer'
 import { ORIGINATOR_COLOR, ReviewSections } from './DocumentReview'
 import { PinGutter } from './PinGutter'
+import type { HudOrigin } from './useOpenDocument'
 import { type Find, useFind } from './useFind'
 
 const REACTION_GLYPH: Record<string, string> = {
@@ -40,7 +41,7 @@ const SHORTCUTS = [
   ['1 – 4', 'React: lies, true, needs proof, precedent'],
   ['/', 'Ask the AI about this document'],
   ['⌘F / Ctrl+F', 'Find in document'],
-  ['Esc', 'Leave focus mode, close find or chat, then back to the case'],
+  ['Esc', 'Leave focus mode, close find or chat, then go back'],
 ] as const
 
 /** The full-screen document HUD: rendered body, pins, intelligence rail, chat. */
@@ -71,8 +72,10 @@ function Hud({ reader }: { reader: Reader }) {
   const find = useFind(article, reader.body_html)
 
   const passageIds = useMemo(() => reader.key_passages.map((p) => p.id), [reader.key_passages])
+  const origin = location.state as HudOrigin | null
   const backHref =
-    reader.case_id && reader.case_id !== '_TRIAGE' ? `/cases/${reader.case_id}` : '/triage'
+    origin?.from ??
+    (reader.case_id && reader.case_id !== '_TRIAGE' ? `/cases/${reader.case_id}` : '/triage')
 
   const focusPassage = useCallback(
     (passageId: string, push = true) => {
@@ -165,7 +168,7 @@ function Hud({ reader }: { reader: Reader }) {
   }
 
   function go(target: number | null | undefined) {
-    if (target) navigate(`/document/${target}`)
+    if (target) navigate(`/document/${target}`, { state: location.state })
   }
 
   const rail = useRef<HTMLElement>(null)
@@ -298,11 +301,21 @@ function Hud({ reader }: { reader: Reader }) {
         </div>
 
         <nav aria-label="Document navigation" className="flex items-center gap-1">
-          <IconLink to={reader.nav.prev_doc_id} icon="chevron_left" label="Previous document (←)" />
+          <IconLink
+            to={reader.nav.prev_doc_id}
+            icon="chevron_left"
+            label="Previous document (←)"
+            state={location.state}
+          />
           <span className="font-mono text-[10.5px] text-muted">
             {reader.nav.total ? `${reader.nav.position} / ${reader.nav.total}` : '—'}
           </span>
-          <IconLink to={reader.nav.next_doc_id} icon="chevron_right" label="Next document (→)" />
+          <IconLink
+            to={reader.nav.next_doc_id}
+            icon="chevron_right"
+            label="Next document (→)"
+            state={location.state}
+          />
         </nav>
 
         <div className="flex items-center gap-1">
@@ -410,7 +423,17 @@ function Hud({ reader }: { reader: Reader }) {
   )
 }
 
-function IconLink({ to, icon, label }: { to: number | null; icon: string; label: string }) {
+function IconLink({
+  to,
+  icon,
+  label,
+  state,
+}: {
+  to: number | null
+  icon: string
+  label: string
+  state: unknown
+}) {
   if (!to) {
     return (
       <span aria-disabled className="rounded-md p-1 text-line3">
@@ -421,6 +444,7 @@ function IconLink({ to, icon, label }: { to: number | null; icon: string; label:
   return (
     <Link
       to={`/document/${to}`}
+      state={state}
       aria-label={label}
       title={label}
       className="rounded-md p-1 text-muted hover:bg-accent/7 hover:text-ink"

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
+
+import { useOpenDocument } from '../../documents/useOpenDocument'
 
 import {
   type CaseDetail,
@@ -47,7 +49,7 @@ type Props = {
 
 /** The correspondence swim-lane graph (layout from the server, interaction here). */
 export function GraphTab({ detail, selectedDoc, onOpen }: Props) {
-  const navigate = useNavigate()
+  const openDocument = useOpenDocument()
   const [params, setParams] = useSearchParams()
   const filterParam = params.get('filter')
   const filter: SignificanceFilter =
@@ -138,11 +140,7 @@ export function GraphTab({ detail, selectedDoc, onOpen }: Props) {
             className="absolute inset-y-0 right-0 z-20 w-[460px] overflow-y-auto border-l border-line bg-panel p-4 shadow-[-8px_0_32px_rgba(0,0,0,.35)]"
           >
             <div className="mb-2 flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => navigate(`/document/${panelDoc}`)}
-              >
+              <Button size="sm" variant="secondary" onClick={() => openDocument(panelDoc)}>
                 <Icon name="open_in_full" size={13} /> Open HUD
               </Button>
               <button
@@ -154,7 +152,7 @@ export function GraphTab({ detail, selectedDoc, onOpen }: Props) {
                 <Icon name="close" size={16} />
               </button>
             </div>
-            <DocumentReview docId={panelDoc} onOpenHud={(id) => navigate(`/document/${id}`)} />
+            <DocumentReview docId={panelDoc} onOpenHud={openDocument} />
           </aside>
         )}
       </div>

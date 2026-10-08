@@ -77,14 +77,9 @@ export function useBundleAction() {
 
 export function useRetryBundle() {
   const patch = useBundlePatch()
-  return useMutation<TriageBundle, ApiError, { batchId: number; full: boolean }>({
-    mutationFn: ({ batchId, full }) =>
-      unwrap(
-        api.POST('/api/v1/triage/bundles/{batch_id}/retry', {
-          ...batchPath(batchId),
-          body: { full },
-        }),
-      ),
+  return useMutation<TriageBundle, ApiError, number>({
+    mutationFn: (batchId) =>
+      unwrap(api.POST('/api/v1/triage/bundles/{batch_id}/retry', batchPath(batchId))),
     onSuccess: (bundle) => patch(bundle.key, bundle),
   })
 }
