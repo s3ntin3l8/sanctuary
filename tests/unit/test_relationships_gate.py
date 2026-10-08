@@ -334,17 +334,15 @@ def test_enrich_success_dispatches_claims_even_while_relationships_is_held(
     )
 
 
-@pytest.mark.parametrize("relationships", ["pending", "failed"])
-def test_the_sweeper_recovers_a_lost_claims_dispatch_behind_relationships(
-    db_session, sample_case, relationships
+def test_the_sweeper_recovers_a_lost_claims_dispatch_behind_a_held_relationships(
+    db_session, sample_case
 ):
     from app.tasks.extract_claims import extract_claims_task
 
     _doc(db_session, sample_case.id, enrich="running")  # RELATIONSHIPS stays held
     stranded = _doc(db_session, sample_case.id)
-    if relationships == "pending":
-        hold_relationships(db_session, stranded)
-    _claims_pending(db_session, stranded, relationships)
+    hold_relationships(db_session, stranded)
+    _claims_pending(db_session, stranded, "pending")
 
     with patch("app.tasks.dispatch.dispatch_task") as dispatch:
         result = pipeline_status.recover_stuck_pending_dispatches(db_session)

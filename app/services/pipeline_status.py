@@ -1562,16 +1562,20 @@ def recover_stuck_pending_dispatches(
     and one or more pending stages, but no stage is currently RUNNING (those
     are handled by the running-state recovery first).
 
-    Resume strategy: find the first pending stage in cascade order (the head),
-    look up its retry_task in STAGE_REGISTRY, and dispatch it. The retry_task
-    is idempotent over already-completed upstream stages.
+    Resume strategy: dispatch EVERY pending stage whose whole upstream chain is
+    completed/skipped, looking up each retry_task in STAGE_REGISTRY. Sibling
+    stages (RELATIONSHIPS / CLAIMS / ENTITIES) are judged independently, so a
+    held RELATIONSHIPS never hides a lost CLAIMS dispatch. RELATIONSHIPS is
+    still filtered by ``relationships_gate_open``, EXTRACT by the
+    ingest-worker-alive check. The retry_task is idempotent over already-completed
+    upstream stages.
 
     A doc qualifies when:
       * pipeline_state in (PENDING, PARTIAL)
       * ingest_date < now - max_age_seconds (skip just-uploaded docs that
         haven't had a chance to run yet)
       * No stage is currently RUNNING (running-state recovery owns those)
-      * There IS a pending head stage that can resume the cascade
+      * At least one pending stage is ready (all of its upstream stages are terminal-ok)
 
     Special gate for EXTRACT (the first stage, FIFO ingest queue — concurrency
     is configurable via Settings, default 4, but the same ordering concern

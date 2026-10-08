@@ -52,9 +52,9 @@ VALID_CLAIM_TYPES = {e.value for e in ClaimType}
 VALID_EVIDENCE_ROLES = {e.value for e in ClaimEvidenceRole}
 MAX_EXISTING_CLAIMS = 20
 
-# Debounce window for re-extraction. The cron-recovery dispatch race (see
-# detect_relationships._dispatch_claims_safely docstring) is now closed via
-# claim_stage_for_dispatch, but this is defense in depth: if any other path
+# Debounce window for re-extraction. The cron-recovery dispatch race is
+# closed by the claim_stage_for_dispatch CAS that every dispatcher (ENRICH's
+# fan-out, the recovery sweep, manual retry) goes through, but this is defense in depth: if any other path
 # (manual UI re-trigger, future code) still ends up calling extract() while
 # a recent successful extraction is on the doc, we refuse to clobber it.
 # Five minutes covers the typical cron interval; anything longer is genuine
