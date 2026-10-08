@@ -14,12 +14,13 @@ the entrypoint falls back to a default in that case.
 
 from __future__ import annotations
 
-from app.config import SessionLocal
 from app.services.ocr_slots import set_limit
 from app.services.user_settings_service import get_ocr_concurrency
 
 
 def main() -> None:
+    from app.config import SessionLocal
+
     db = SessionLocal()
     try:
         n = get_ocr_concurrency(db)

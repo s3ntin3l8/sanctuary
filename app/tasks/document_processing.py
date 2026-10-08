@@ -572,21 +572,3 @@ def _run_phase1_summary(doc_id: int) -> None:
         )
     finally:
         db2.close()
-
-
-@celery_app.task
-def reingest_all_documents_task(case_id: str | None = None):
-    """Re-ingest all documents for a case (or all cases if case_id is None)."""
-    db = get_db_session()
-    try:
-        query = db.query(Document)
-        if case_id:
-            query = query.filter(Document.case_id == case_id)
-
-        docs = query.all()
-        for doc in docs:
-            process_document_task.delay(doc.id)
-
-        return {"status": "queued", "count": len(docs), "case_id": case_id}
-    finally:
-        db.close()

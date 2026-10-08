@@ -10,11 +10,12 @@ yet (e.g. pre-migration) — the entrypoint falls back to a default in that case
 
 from __future__ import annotations
 
-from app.config import SessionLocal
 from app.services.user_settings_service import get_worker_concurrency
 
 
 def main() -> None:
+    from app.config import SessionLocal
+
     db = SessionLocal()
     try:
         print(get_worker_concurrency(db))

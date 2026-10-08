@@ -400,28 +400,3 @@ def model_gate(
                 _get_client().delete(sentinel_key)
             except (redis.RedisError, OSError) as exc:
                 _maybe_warn(exc)
-
-
-# ---------------------------------------------------------------------------
-# Diagnostics — surfaced by the settings UI or for ad-hoc inspection.
-# ---------------------------------------------------------------------------
-
-
-def inflight_by_family() -> dict[str, int]:
-    """Return ``{family: count_in_flight}`` across all workers.
-
-    Returns an empty dict (not raises) on Redis errors so callers can
-    render diagnostic UIs without 500s.
-    """
-    out: dict[str, int] = {}
-    try:
-        client = _get_client()
-        for key in client.scan_iter(match=_CALL_KEY_PREFIX + "*", count=100):
-            # Same shared sync/async stub wart as above: get() is typed as
-            # Awaitable[Any] | Any on the stubs but this is the sync client.
-            family = cast("str | None", client.get(key))
-            if family:
-                out[family] = out.get(family, 0) + 1
-    except (redis.RedisError, OSError) as exc:
-        _maybe_warn(exc)
-    return out

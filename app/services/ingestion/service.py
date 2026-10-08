@@ -465,33 +465,23 @@ def _create_document(
     parent_id: int | None,
     ingest_batch_id: int | None,
     original_filename: str | None = None,
-    content: str | None = None,
-    markdown_content: str | None = None,
-    conversion_metadata: dict | None = None,
     owner_id: int | None = None,
 ) -> Document:
-    """Shared Document creation logic - reduces duplication between skip_processing paths."""
+    """Create the Document row for an upload; extraction happens in the pipeline."""
     from app.services.pipeline_status import initialize as _pipeline_init
 
-    if markdown_content:
-        extracted_title = extract_clean_title(safe_filename, markdown_content)
-    else:
-        extracted_title = extract_clean_title(safe_filename, "")
+    extracted_title = extract_clean_title(safe_filename, "")
 
     new_doc = Document(
         title=extracted_title if extracted_title != safe_filename else safe_filename,
         owner_id=owner_id,
-        content=content or markdown_content,
         case_id=case_id,
         file_path=file_path,
         original_filename=original_filename or safe_filename,
         content_hash=content_hash,
         parent_id=parent_id,
         originator_type=OriginatorType.UNKNOWN,
-        cost_candidates=extract_cost_candidates(markdown_content or "")
-        if markdown_content
-        else [],
-        meta=conversion_metadata,
+        cost_candidates=[],
         ingest_batch_id=ingest_batch_id,
     )
 
@@ -511,11 +501,10 @@ async def ingest_file(
     case_id: str | None = None,
     db: Session | None = None,
     parent_id: int | None = None,
-    skip_processing: bool = False,
     ingest_batch_id: int | None = None,
     owner_id: int | None = None,
 ) -> Document:
-    """Save uploaded file, optionally process it."""
+    """Save an uploaded file and create its Document; the pipeline processes it."""
     if db is None:
         raise ValueError("ingest_file requires a database session.")
     file_path: str | None = None
@@ -648,50 +637,6 @@ async def ingest_file(
                 detail=f"Duplicate document: '{existing.title}' (ID: {existing.id})",
             )
 
-        if skip_processing:
-            new_doc = _create_document(
-                db=db,
-                file_path=to_storage_path(file_path),
-                content_hash=content_hash,
-                case_id=preliminary_case_id,
-                safe_filename=safe_filename,
-                parent_id=parent_id,
-                ingest_batch_id=ingest_batch_id,
-                original_filename=file.filename,
-                content=None,
-                owner_id=owner_id,
-            )
-            db.add(new_doc)
-            db.flush()
-            db.commit()
-            db.refresh(new_doc)
-            return new_doc
-
-        markdown_content: str | None = None
-        conversion_metadata: dict | None = None
-        conversion_error: str | None = None
-
-        try:
-            from app.services.user_settings_service import get_extraction_engine
-
-            engine = get_extraction_engine(db)
-            conversion_result = convert_file(file_path, engine=engine)
-            markdown_content = conversion_result["content"]
-            conversion_metadata = conversion_result["metadata"]
-            conversion_metadata["chunks"] = conversion_result.get("chunks", [])
-        except TimeoutError:
-            conversion_error = "Conversion timed out after 60 seconds"
-            markdown_content = f"Conversion failed: {conversion_error}"
-        except Exception as e:
-            conversion_error = str(e)
-            markdown_content = f"Conversion failed: {conversion_error}"
-
-        if not is_valid_docling_output(markdown_content):
-            raise IngestionError(
-                "Docling conversion failed or produced empty content.",
-                detail=conversion_error,
-            )
-
         new_doc = _create_document(
             db=db,
             file_path=to_storage_path(file_path),
@@ -701,11 +646,8 @@ async def ingest_file(
             parent_id=parent_id,
             ingest_batch_id=ingest_batch_id,
             original_filename=file.filename,
-            markdown_content=markdown_content,
-            conversion_metadata=conversion_metadata,
             owner_id=owner_id,
         )
-        _apply_script_extractors(new_doc, markdown_content or "", db)
         db.add(new_doc)
         db.flush()
         db.commit()

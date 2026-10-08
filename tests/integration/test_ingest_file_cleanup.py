@@ -55,7 +55,7 @@ async def test_oversize_upload_413_does_not_leak_partial_file(db_session):
         ),
     ):
         with pytest.raises(HTTPException) as exc:
-            await ingest_file(file, db=db_session, skip_processing=True)
+            await ingest_file(file, db=db_session)
 
     assert exc.value.status_code == 413
     after = set(case_dir.glob(f"*{filename}"))

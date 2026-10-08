@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, defer
 
-from app.config import SessionLocal
 from app.models.database import Document, DocumentRelationship, Proceeding
 from app.models.enums import RelationshipConfidence, RelationshipType, SignificanceTier
 from app.services.ai_config import get_chat_config
@@ -186,6 +185,8 @@ def detect(doc_id: int) -> str | None:
     recorded as RELATIONSHIPS=SKIPPED — a transient timeout was silently
     treated the same as an intentional skip, with no retry.
     """
+    from app.config import SessionLocal
+
     # Phase 1: read
     db: Session = SessionLocal()
     try:

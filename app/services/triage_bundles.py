@@ -17,6 +17,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app.constants import SIG_ORDER as _SIG_ORDER
+from app.core.timezone import now_utc
 from app.models.database import (
     BatchSubGroup,
     Case,
@@ -314,7 +315,7 @@ def _build_bundles(
                 source_type=IngestBatchSourceType.MANUAL,
                 subject=doc.title,
                 sender_email=None,
-                received_at=doc.ingest_date or datetime.now(),
+                received_at=doc.ingest_date or now_utc(),
                 confirmed_case_id=confirmed,
                 proceeding=doc.proceeding,
                 documents=[doc],

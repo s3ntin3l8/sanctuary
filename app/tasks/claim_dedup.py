@@ -1,7 +1,6 @@
 import asyncio
 import logging
 
-from app.config import SessionLocal
 from app.services import user_settings_service
 from app.services.intelligence.claim_dedup_judge import find_duplicates_for_case
 from app.tasks.celery_app import celery_app
@@ -11,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="app.tasks.claim_dedup.claim_dedup_task", queue="ai")
 def claim_dedup_task(case_id: str) -> dict:
+    from app.config import SessionLocal
+
     db = SessionLocal()
     try:
         # Progress callback writes to UserSettings so find_duplicates_running.html

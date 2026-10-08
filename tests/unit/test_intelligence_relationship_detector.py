@@ -81,7 +81,7 @@ def test_relationships_created(db_session, proceeding_with_docs):
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -131,7 +131,7 @@ def test_ai_detected_edge_does_not_close_target_thread(
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -172,7 +172,7 @@ def test_hallucination_guard_drops_invalid_id(db_session, proceeding_with_docs):
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -214,7 +214,7 @@ def test_hallucination_guard_drops_invalid_relationship_type(
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -251,7 +251,7 @@ def test_skips_low_significance_doc(db_session, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -369,7 +369,7 @@ def test_attaches_as_proof_edge_persisted(db_session, proceeding_with_docs):
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -454,7 +454,7 @@ def test_detects_relationships_across_proceedings(db_session, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -519,7 +519,7 @@ def test_detect_reraises_and_rolls_back_on_write_phase_failure(
 
     with (
         patch(
-            "app.services.intelligence.relationship_detector.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),

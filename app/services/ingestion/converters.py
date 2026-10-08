@@ -145,64 +145,33 @@ def validate_file_magic(file_path: str) -> str | None:
         return None
 
 
-def is_allowed_extension(filename: str) -> bool:
-    """Check if file extension is allowed."""
-    ext = os.path.splitext(filename)[1].lower()
-    return ext in _allowed_extensions
-
-
 ALLOWED_EXTENSIONS = _allowed_extensions
 
 
-def get_allowed_extensions() -> set:
-    """Get allowed file extensions."""
-    return _allowed_extensions
+def _eml_to_text(file_path: str) -> str:
+    """Plain-text rendering of a .eml file: header lines, then the body.
 
-
-def parse_eml_file(file_path: str) -> str:
-    """Parse .eml file to extract text content."""
-    from email import policy
-    from email.parser import BytesParser
+    Uses the same RFC 822 parser as upload and Gmail ingest, so every path
+    reads emails identically.
+    """
+    from app.services.ingestion.email_parser import parse_rfc822
 
     with open(file_path, "rb") as f:
-        msg = BytesParser(policy=policy.default).parse(f)
+        parsed = parse_rfc822(f.read())
 
-    content = []
-    subject = msg.get("Subject", "")
-    if subject:
-        content.append(f"Subject: {subject}")
-
-    from_addr = msg.get("From", "")
-    if from_addr:
-        content.append(f"From: {from_addr}")
-
-    date = msg.get("Date", "")
-    if date:
-        content.append(f"Date: {date}")
-
-    to_addr = msg.get("To", "")
-    if to_addr:
-        content.append(f"To: {to_addr}")
-
-    if msg.is_multipart():
-        for part in msg.walk():
-            content_type = part.get_content_type()
-            if content_type == "text/plain":
-                try:
-                    payload = part.get_payload(decode=True)
-                    if isinstance(payload, bytes) and payload:
-                        content.append(payload.decode("utf-8", errors="ignore"))
-                except Exception as e:
-                    logger.debug(f"Failed to decode email part: {e}")
-    else:
-        try:
-            payload = msg.get_payload(decode=True)
-            if isinstance(payload, bytes) and payload:
-                content.append(payload.decode("utf-8", errors="ignore"))
-        except Exception as e:
-            logger.debug(f"Failed to decode email payload: {e}")
-
-    return "\n\n".join(content)
+    parts = [
+        f"{label}: {parsed[key]}"
+        for label, key in (
+            ("Subject", "subject"),
+            ("From", "sender"),
+            ("Date", "date"),
+            ("To", "to"),
+        )
+        if parsed[key]
+    ]
+    if parsed["body"]:
+        parts.append(parsed["body"])
+    return "\n\n".join(parts)
 
 
 _converter: object | None = None
@@ -776,7 +745,7 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
 
     if ext == ".eml":
         return {
-            "content": parse_eml_file(file_path),
+            "content": _eml_to_text(file_path),
             "metadata": {"pages": 1},
             "chunks": [],
         }

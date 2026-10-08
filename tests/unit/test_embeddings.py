@@ -54,7 +54,7 @@ async def test_generate_embedding_success(db_session, sample_document):
             new_callable=AsyncMock,
             return_value=_mock_embedding_response(mock_embedding),
         ),
-        patch("app.services.embeddings.SessionLocal", lambda: db_session),
+        patch("app.config.SessionLocal", lambda: db_session),
     ):
         await generate_embedding(sample_document.id)
 
@@ -82,7 +82,7 @@ async def test_generate_embedding_wrong_dim_raises(db_session, sample_document):
             new_callable=AsyncMock,
             return_value=_mock_embedding_response(mock_embedding),
         ),
-        patch("app.services.embeddings.SessionLocal", lambda: db_session),
+        patch("app.config.SessionLocal", lambda: db_session),
     ):
         with pytest.raises(ValueError, match="dim mismatch"):
             await generate_embedding(sample_document.id)
@@ -105,7 +105,7 @@ async def test_generate_embedding_failure_propagates(db_session, sample_document
             new_callable=AsyncMock,
             side_effect=Exception("Ollama offline"),
         ),
-        patch("app.services.embeddings.SessionLocal", lambda: db_session),
+        patch("app.config.SessionLocal", lambda: db_session),
     ):
         with pytest.raises(Exception, match="Ollama offline"):
             await generate_embedding(sample_document.id)
@@ -133,7 +133,7 @@ async def test_generate_embedding_is_idempotent_on_retry(db_session, sample_docu
             new_callable=AsyncMock,
             return_value=_mock_embedding_response(mock_embedding),
         ),
-        patch("app.services.embeddings.SessionLocal", lambda: db_session),
+        patch("app.config.SessionLocal", lambda: db_session),
     ):
         await generate_embedding(sample_document.id)
         await generate_embedding(sample_document.id)
@@ -273,7 +273,7 @@ def test_nearest_document_ids_dim_mismatch_returns_empty(db_session):
 async def test_generate_embedding_no_doc(db_session):
     with (
         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
-        patch("app.services.embeddings.SessionLocal") as mock_session_local,
+        patch("app.config.SessionLocal") as mock_session_local,
     ):
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = None
@@ -335,7 +335,7 @@ async def test_reindex_all_docs_failure_does_not_wipe_a_later_success(
 
     with (
         patch("httpx.AsyncClient.post", side_effect=_post_side_effect),
-        patch("app.services.embeddings.SessionLocal", lambda: db_session),
+        patch("app.config.SessionLocal", lambda: db_session),
     ):
         result = await reindex_all_docs(db_session)
 
@@ -352,3 +352,27 @@ async def test_reindex_all_docs_failure_does_not_wipe_a_later_success(
         "doc A's pre-existing chunk was wiped by doc B's later commit"
     )
     assert remaining_a[0].text == "doc a's original chunk"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_reindex_all_docs_does_not_swallow_soft_time_limit(
+    db_session, sample_case
+):
+    """A soft time limit must stop the task, not count as one failed doc."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from app.services.embeddings import reindex_all_docs
+
+    db_session.add(Document(title="A", content="content a", case_id=sample_case.id))
+    db_session.commit()
+
+    with (
+        patch(
+            "app.services.embeddings._embed_document_chunks",
+            side_effect=SoftTimeLimitExceeded(),
+        ),
+        patch("app.config.SessionLocal", lambda: db_session),
+        pytest.raises(SoftTimeLimitExceeded),
+    ):
+        await reindex_all_docs(db_session)

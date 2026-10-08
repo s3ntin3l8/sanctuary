@@ -86,9 +86,7 @@ def test_batch_analysis_skips_failed_docs(
         "app.services.intelligence.batch_analyzer._call_batch_analyzer_sync",
         mock_call_batch_analyzer_sync,
     )
-    monkeypatch.setattr(
-        "app.services.intelligence.batch_analyzer.SessionLocal", lambda: db_session
-    )
+    monkeypatch.setattr("app.config.SessionLocal", lambda: db_session)
     # Prevent analyze() from closing our test session
     monkeypatch.setattr(db_session, "close", lambda: None)
 
