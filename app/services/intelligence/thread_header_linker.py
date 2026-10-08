@@ -122,6 +122,7 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
         )
         .all()
     )
+    stale_ids: list[int] = []
     for rel in stale:
         if (
             lead is not None
@@ -132,7 +133,13 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
         ):
             continue
         affected.add(rel.to_document_id)
-        db.delete(rel)
+        stale_ids.append(rel.id)
+    if stale_ids:
+        # Bulk DELETE rather than db.delete(): a concurrent linker that already
+        # removed the same rows makes this a no-op instead of a StaleDataError.
+        db.query(DocumentRelationship).filter(
+            DocumentRelationship.id.in_(stale_ids)
+        ).delete(synchronize_session=False)
     db.flush()
 
     if lead is None or resolved is None:

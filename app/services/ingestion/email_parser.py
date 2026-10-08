@@ -1,5 +1,6 @@
 import email
 import email.utils
+import logging
 import re
 from datetime import datetime
 from email.policy import default
@@ -7,6 +8,8 @@ from email.policy import default
 from markdownify import markdownify
 
 from app.core.timezone import ensure_utc
+
+logger = logging.getLogger(__name__)
 
 # Matches beA/court-email attachment manifest lines:
 # "SCHR_ LG IN V_ 26_05_26.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt""
@@ -38,7 +41,10 @@ def parse_message_ids(header: str | None) -> list[str]:
     """
     if not header:
         return []
-    return list(dict.fromkeys(_MESSAGE_ID_RE.findall(str(header))))
+    ids = list(dict.fromkeys(_MESSAGE_ID_RE.findall(str(header))))
+    if not ids:
+        logger.debug("Threading header has no <msg-id> token: %r", str(header)[:120])
+    return ids
 
 
 def parse_email_date(date_str: str) -> datetime | None:
