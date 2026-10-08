@@ -1329,6 +1329,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gmail/new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 New Messages
+         * @description New mail awaiting a decision: arrived after the sync point, not imported.
+         */
+        get: operations["v1_new_messages_api_v1_gmail_new_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/new/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Check New
+         * @description Look for new mail now (indexes headers only; imports nothing).
+         */
+        post: operations["v1_check_new_api_v1_gmail_new_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/new/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Dismiss New
+         * @description Skip the listed new mail: move the sync point to the newest of it.
+         *
+         *     Mail that arrives (or is indexed) later is still new. Nothing is imported or
+         *     deleted; the skipped mail stays available through Import history, and failed
+         *     messages are still retried.
+         */
+        post: operations["v1_dismiss_new_api_v1_gmail_new_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/home": {
         parameters: {
             query?: never;
@@ -2070,26 +2134,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/settings/gmail/auto-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * V1 Set Auto Sync
-         * @description Opt in/out of the 5-minute background poll (off by default).
-         */
-        put: operations["v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/settings/gmail/filters": {
         parameters: {
             query?: never;
@@ -2162,6 +2206,26 @@ export interface paths {
          * @description Run one incremental sync now, regardless of the auto-sync switch.
          */
         post: operations["v1_sync_now_api_v1_settings_gmail_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/gmail/sync-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * V1 Set Sync Mode
+         * @description Off, notify (index new mail and ask) or auto (import new mail as it arrives).
+         */
+        put: operations["v1_set_sync_mode_api_v1_settings_gmail_sync_mode_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3957,11 +4021,6 @@ export interface components {
             signal_docs: components["schemas"]["CostSignalDoc"][];
             summary: components["schemas"]["FinancialsSummary"];
         };
-        /** GmailAutoSync */
-        GmailAutoSync: {
-            /** Enabled */
-            enabled: boolean;
-        };
         /** GmailFilterPreview */
         GmailFilterPreview: {
             /** Estimate */
@@ -4018,6 +4077,11 @@ export interface components {
             gmail_ids?: string[] | null;
             /** Group */
             group?: string | null;
+            /**
+             * New
+             * @default false
+             */
+            new: boolean;
             /** Oldest N */
             oldest_n?: number | null;
             /**
@@ -4101,10 +4165,37 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /**
+         * GmailNewMessages
+         * @description Mail that arrived after the sync point and isn't imported yet (the banner).
+         */
+        GmailNewMessages: {
+            /** Checked At */
+            checked_at: string | null;
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["GmailIndexedMessage"][];
+            /** Since */
+            since: string | null;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "notify" | "auto";
+        };
         /** GmailResetSync */
         GmailResetSync: {
             /** Since */
             since?: string | null;
+        };
+        /** GmailSyncMode */
+        GmailSyncMode: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "off" | "notify" | "auto";
         };
         /** GmailView */
         GmailView: {
@@ -4112,8 +4203,6 @@ export interface components {
             ai_external: boolean;
             /** Allowlist */
             allowlist: string[];
-            /** Auto Sync */
-            auto_sync: boolean;
             /** Connected */
             connected: boolean;
             /** Connected At */
@@ -4122,6 +4211,8 @@ export interface components {
             failed_count: number;
             /** Label Filter */
             label_filter: string;
+            /** Last Check At */
+            last_check_at: string | null;
             /** Last Sync At */
             last_sync_at: string | null;
             /** Last Sync Error */
@@ -4132,6 +4223,11 @@ export interface components {
             oauth_start_url: string;
             /** Reconnect Required */
             reconnect_required: boolean;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "notify" | "auto";
         };
         /** GraphBundle */
         GraphBundle: {
@@ -8093,6 +8189,91 @@ export interface operations {
             };
         };
     };
+    v1_new_messages_api_v1_gmail_new_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailNewMessages"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_check_new_api_v1_gmail_new_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_new_api_v1_gmail_new_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailNewMessages"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_home_api_v1_home_get: {
         parameters: {
             query?: never;
@@ -9441,39 +9622,6 @@ export interface operations {
             };
         };
     };
-    v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GmailAutoSync"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GmailView"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     v1_save_filters_api_v1_settings_gmail_filters_put: {
         parameters: {
             query?: never;
@@ -9588,6 +9736,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_sync_mode_api_v1_settings_gmail_sync_mode_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailSyncMode"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailView"];
+                };
             };
             /** @description Error */
             default: {

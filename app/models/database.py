@@ -1258,6 +1258,9 @@ class GmailMessageIndex(Base):
     sender: Mapped[str | None] = mapped_column(String, nullable=True)
     subject: Mapped[str | None] = mapped_column(String, nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # When Gmail received it (internalDate) — what "new since the sync point" means;
+    # sent_at is the sender-controlled Date header. NULL on rows indexed before this existed.
+    received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Case references parsed from this message's own subject.
     internal_id: Mapped[str | None] = mapped_column(String, nullable=True)
     az_court: Mapped[str | None] = mapped_column(String, nullable=True)

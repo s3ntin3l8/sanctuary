@@ -19,6 +19,7 @@ import { Chip } from '../../ui/Chip'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
 import { GmailImportStatus, useGmailRunBanner } from '../import/GmailImportStatus'
+import { NewMailNotice, useNewMailToReview } from '../import/NewMailBanner'
 import { BundleStateBar } from '../../ui/PipelineBar'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
@@ -105,6 +106,7 @@ export function TriagePage() {
 
   const stats = query.data?.stats
   const gmailRun = useGmailRunBanner()
+  const newMail = useNewMailToReview()
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
@@ -123,6 +125,11 @@ export function TriagePage() {
         <div className="ml-auto flex items-center gap-2">
           <Link to="/settings/gmail/import" className={buttonClass('secondary')}>
             <Icon name="mail" size={16} /> Import from Gmail
+            {newMail && (
+              <Badge tone="accent" mono>
+                {newMail.count}
+              </Badge>
+            )}
           </Link>
           <Button
             variant="secondary"
@@ -137,9 +144,13 @@ export function TriagePage() {
         </div>
       </header>
 
-      {gmailRun.run && (
+      {(gmailRun.run || newMail) && (
         <div className="px-6 pt-3">
-          <GmailImportStatus run={gmailRun.run} variant="compact" onDismiss={gmailRun.dismiss} />
+          {gmailRun.run ? (
+            <GmailImportStatus run={gmailRun.run} variant="compact" onDismiss={gmailRun.dismiss} />
+          ) : (
+            <NewMailNotice />
+          )}
         </div>
       )}
 

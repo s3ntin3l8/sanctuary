@@ -57,12 +57,28 @@ class GmailMessagePage(BaseModel):
     next_cursor: str | None
 
 
+class GmailNewMessages(BaseModel):
+    """Mail that arrived after the sync point and isn't imported yet (the banner)."""
+
+    count: int
+    # "auto" imports new mail itself, so the UI doesn't offer it for review.
+    sync_mode: Literal["off", "notify", "auto"]
+    # The sync point: only mail received after it counts as new.
+    since: datetime | None
+    # When the last background/manual check reached Gmail.
+    checked_at: datetime | None
+    # The oldest 100, oldest first.
+    items: list[GmailIndexedMessage]
+
+
 class GmailImportRequest(BaseModel):
     # An explicit pick wins over `group`; oldest_n/before narrow either.
     gmail_ids: list[str] | None = Field(default=None, max_length=500)
     group: str | None = None
     oldest_n: int | None = Field(default=None, ge=1, le=100)
     before: date | None = None
+    # Narrow to mail that arrived after the sync point (the "new mail" banner).
+    new: bool = False
     # Wait for each email's documents to finish processing before ingesting the
     # next, so earlier letters are enriched before their replies arrive.
     sequential: bool = True

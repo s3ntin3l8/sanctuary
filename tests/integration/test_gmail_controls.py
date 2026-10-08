@@ -127,9 +127,11 @@ def test_reconnect_keeps_the_existing_watermark(db_session):
 # --- Settings endpoints ------------------------------------------------------
 
 
-def test_view_defaults_auto_sync_off(db_session):
+def test_view_defaults_to_off_until_connected_then_notify(db_session):
     body = client.get("/api/v1/settings/gmail").json()
-    assert body["auto_sync"] is False
+    assert body["sync_mode"] == "off"  # nothing connected, nothing to watch
+    _connect(db_session, _admin(db_session))
+    assert client.get("/api/v1/settings/gmail").json()["sync_mode"] == "notify"
     assert body["reconnect_required"] is False
     assert body["failed_count"] == 0
     assert body["last_sync_error"] is None
@@ -139,7 +141,7 @@ def test_view_defaults_auto_sync_off(db_session):
 def test_controls_require_a_connection(db_session):
     assert (
         client.put(
-            "/api/v1/settings/gmail/auto-sync", json={"enabled": True}
+            "/api/v1/settings/gmail/sync-mode", json={"mode": "auto"}
         ).status_code
         == 409
     )
@@ -147,20 +149,27 @@ def test_controls_require_a_connection(db_session):
     assert client.post("/api/v1/settings/gmail/reset-sync", json={}).status_code == 409
 
 
-def test_auto_sync_toggle_gates_the_beat_fan_out(db_session):
+def test_sync_mode_gates_the_beat_fan_out(db_session):
     uid = _admin(db_session)
     _connect(db_session, uid)
-    assert user_settings_service.user_ids_with_gmail_auto_sync(db_session) == []
+    by_mode = user_settings_service.gmail_users_by_mode
+    assert by_mode(db_session) == {"notify": [uid], "auto": []}  # the default
 
-    body = client.put("/api/v1/settings/gmail/auto-sync", json={"enabled": True}).json()
-    assert body["auto_sync"] is True
-    assert user_settings_service.user_ids_with_gmail_auto_sync(db_session) == [uid]
+    body = client.put("/api/v1/settings/gmail/sync-mode", json={"mode": "auto"}).json()
+    assert body["sync_mode"] == "auto"
+    assert by_mode(db_session) == {"notify": [], "auto": [uid]}
 
-    client.put("/api/v1/settings/gmail/auto-sync", json={"enabled": False})
-    assert user_settings_service.user_ids_with_gmail_auto_sync(db_session) == []
+    client.put("/api/v1/settings/gmail/sync-mode", json={"mode": "off"})
+    assert by_mode(db_session) == {"notify": [], "auto": []}
 
 
-def test_sync_now_runs_even_with_auto_sync_off(db_session):
+def test_sync_mode_rejects_unknown_values(db_session):
+    _connect(db_session, _admin(db_session))
+    resp = client.put("/api/v1/settings/gmail/sync-mode", json={"mode": "yolo"})
+    assert resp.status_code == 422
+
+
+def test_sync_now_runs_even_when_the_mode_is_off(db_session):
     uid = _admin(db_session)
     _connect(db_session, uid)
     with patch("app.tasks.dispatch.dispatch_task") as dispatch:
@@ -196,14 +205,14 @@ def test_disconnect_revokes_and_forgets_but_keeps_filters(db_session):
     user_settings_service.set_gmail_inbox_filters(
         db_session, uid, allowlist=["lawyer@example.com"], label_filter="Sanctuary"
     )
-    _connect(db_session, uid, gmail_auto_sync=True, gmail_failed_message_ids=["a"])
+    _connect(db_session, uid, gmail_sync_mode="auto", gmail_failed_message_ids=["a"])
 
     with patch("app.api.v1.settings_gmail.revoke_token") as revoke:
         body = client.delete("/api/v1/settings/gmail").json()
 
     revoke.assert_called_once_with(CREDS)  # revoked with the decrypted grant
     assert body["connected"] is False
-    assert body["auto_sync"] is False
+    assert body["sync_mode"] == "off"
     assert body["last_sync_at"] is None
     assert body["allowlist"] == ["lawyer@example.com"]
     sj = _sj(db_session, uid)
@@ -297,8 +306,11 @@ def test_view_flags_an_external_ai_endpoint(db_session):
 
 def test_fan_out_skips_users_whose_grant_needs_a_reconnect(db_session):
     uid = _admin(db_session)
-    _connect(db_session, uid, gmail_auto_sync=True, gmail_reconnect_required=True)
-    assert user_settings_service.user_ids_with_gmail_auto_sync(db_session) == []
+    _connect(db_session, uid, gmail_sync_mode="auto", gmail_reconnect_required=True)
+    assert user_settings_service.gmail_users_by_mode(db_session) == {
+        "notify": [],
+        "auto": [],
+    }
     # Reconnecting clears the flag, so polling resumes.
     user_settings_service.set_gmail_credentials(
         db_session,
@@ -307,7 +319,7 @@ def test_fan_out_skips_users_whose_grant_needs_a_reconnect(db_session):
         connected_at="2026-02-02T00:00:00+00:00",
     )
     db_session.commit()
-    assert user_settings_service.user_ids_with_gmail_auto_sync(db_session) == [uid]
+    assert user_settings_service.gmail_users_by_mode(db_session)["auto"] == [uid]
 
 
 def test_missing_encryption_key_is_a_clear_503_on_the_ai_routes(

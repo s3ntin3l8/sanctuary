@@ -4448,19 +4448,6 @@
         "title": "FinancialsView",
         "type": "object"
       },
-      "GmailAutoSync": {
-        "properties": {
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "enabled"
-        ],
-        "title": "GmailAutoSync",
-        "type": "object"
-      },
       "GmailFilterPreview": {
         "properties": {
           "estimate": {
@@ -4626,6 +4613,11 @@
               }
             ],
             "title": "Group"
+          },
+          "new": {
+            "default": false,
+            "title": "New",
+            "type": "boolean"
           },
           "oldest_n": {
             "anyOf": [
@@ -4901,6 +4893,64 @@
         "title": "GmailMessagePage",
         "type": "object"
       },
+      "GmailNewMessages": {
+        "description": "Mail that arrived after the sync point and isn't imported yet (the banner).",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GmailIndexedMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "sync_mode": {
+            "enum": [
+              "off",
+              "notify",
+              "auto"
+            ],
+            "title": "Sync Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "sync_mode",
+          "since",
+          "checked_at",
+          "items"
+        ],
+        "title": "GmailNewMessages",
+        "type": "object"
+      },
       "GmailResetSync": {
         "properties": {
           "since": {
@@ -4919,6 +4969,24 @@
         "title": "GmailResetSync",
         "type": "object"
       },
+      "GmailSyncMode": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "off",
+              "notify",
+              "auto"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "GmailSyncMode",
+        "type": "object"
+      },
       "GmailView": {
         "properties": {
           "ai_external": {
@@ -4931,10 +4999,6 @@
             },
             "title": "Allowlist",
             "type": "array"
-          },
-          "auto_sync": {
-            "title": "Auto Sync",
-            "type": "boolean"
           },
           "connected": {
             "title": "Connected",
@@ -4958,6 +5022,17 @@
           "label_filter": {
             "title": "Label Filter",
             "type": "string"
+          },
+          "last_check_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Check At"
           },
           "last_sync_at": {
             "anyOf": [
@@ -4999,6 +5074,15 @@
           "reconnect_required": {
             "title": "Reconnect Required",
             "type": "boolean"
+          },
+          "sync_mode": {
+            "enum": [
+              "off",
+              "notify",
+              "auto"
+            ],
+            "title": "Sync Mode",
+            "type": "string"
           }
         },
         "required": [
@@ -5008,7 +5092,8 @@
           "allowlist",
           "label_filter",
           "oauth_start_url",
-          "auto_sync",
+          "sync_mode",
+          "last_check_at",
           "last_sync_result",
           "last_sync_error",
           "reconnect_required",
@@ -13044,6 +13129,95 @@
         ]
       }
     },
+    "/api/v1/gmail/new": {
+      "get": {
+        "description": "New mail awaiting a decision: arrived after the sync point, not imported.",
+        "operationId": "v1_new_messages_api_v1_gmail_new_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailNewMessages"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 New Messages",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/new/check": {
+      "post": {
+        "description": "Look for new mail now (indexes headers only; imports nothing).",
+        "operationId": "v1_check_new_api_v1_gmail_new_check_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Check New",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/new/dismiss": {
+      "post": {
+        "description": "Skip the listed new mail: move the sync point to the newest of it.\n\nMail that arrives (or is indexed) later is still new. Nothing is imported or\ndeleted; the skipped mail stays available through Import history, and failed\nmessages are still retried.",
+        "operationId": "v1_dismiss_new_api_v1_gmail_new_dismiss_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailNewMessages"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Dismiss New",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
     "/api/v1/home": {
       "get": {
         "operationId": "v1_home_api_v1_home_get",
@@ -14691,48 +14865,6 @@
         ]
       }
     },
-    "/api/v1/settings/gmail/auto-sync": {
-      "put": {
-        "description": "Opt in/out of the 5-minute background poll (off by default).",
-        "operationId": "v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailAutoSync"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "V1 Set Auto Sync",
-        "tags": [
-          "settings"
-        ]
-      }
-    },
     "/api/v1/settings/gmail/filters": {
       "put": {
         "operationId": "v1_save_filters_api_v1_settings_gmail_filters_put",
@@ -14878,6 +15010,48 @@
           }
         },
         "summary": "V1 Sync Now",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/sync-mode": {
+      "put": {
+        "description": "Off, notify (index new mail and ask) or auto (import new mail as it arrives).",
+        "operationId": "v1_set_sync_mode_api_v1_settings_gmail_sync_mode_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailSyncMode"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Sync Mode",
         "tags": [
           "settings"
         ]

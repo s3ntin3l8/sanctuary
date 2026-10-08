@@ -74,8 +74,13 @@ A running import is also shown in the **processing queue** (rail icon) and as a 
 
 ## 6. Keeping up with new mail
 
-- **Sync now** (Settings → Gmail) fetches mail received since the sync starting point.
-- **Automatic sync** polls every 5 minutes and is **off by default**; switch it on when you want it.
+"New mail" is whatever Gmail received after the **sync point**. Choose how Sanctuary handles it under *Settings → Gmail → New mail*:
+
+- **Notify me** (the default for a new connection) checks every 5 minutes, reading only the *headers* of new mail, and never imports on its own. A banner on **Import history** and a notice on **Triage** say "N new messages" with **Review** (see the list, tick what you want, *Import selected*), **Import all**, **Skip** and **Check now**. Skipping moves the sync point past the listed mail without importing or deleting anything; it stays available under Import history.
+- **Import automatically** imports new mail from your filters every 5 minutes, straight into Triage.
+- **Off** does nothing in the background. *Sync now* imports new mail when you ask.
+
+In notify mode the Sync card's button is *Check for new mail* (it looks, it doesn't import).
 - **Change sync point…** (in the Sync card) moves the starting point (today or an earlier date) and forgets failed messages. It is never cleared, so the next sync can never pull the whole mailbox.
 
 ## 7. Re-importing for testing

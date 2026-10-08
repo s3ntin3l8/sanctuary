@@ -168,7 +168,7 @@ Re-running an import over the same messages is a no-op for ingest (all already s
 
 Once seeded, Sanctuary polls the Gmail History API periodically for new messages:
 
-- Default poll interval: 5 minutes
+- Poll interval: 5 minutes, per the user's **sync mode** (`gmail_sync_mode`): `notify` (default for new connections) runs `check_gmail_new`, which indexes only the headers of mail Gmail received after the sync point (`gmail_message_index.received_at`) and never ingests — the UI offers it as "new mail" (`GET /api/v1/gmail/new`; import it with `POST /gmail/import {new: true}`; skip it with `POST /gmail/new/dismiss`, which moves the sync point to the newest listed message); `auto` runs `sync_gmail_for_user` (ingests); `off` runs nothing
 - Uses Gmail's `historyId` cursor so each poll only returns new changes since last sync
 - On new message matching filters: same downstream pipeline as the history import
 - Stored cursor in `UserSettings.settings_json["gmail_last_history_id"]`

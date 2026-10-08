@@ -12,7 +12,8 @@ const gmail = {
   allowlist: ['lawyer@example.com'],
   label_filter: '',
   oauth_start_url: '/api/ingest/gmail/oauth/start',
-  auto_sync: false,
+  sync_mode: 'notify',
+  last_check_at: null,
   last_sync_result: null,
   last_sync_error: null,
   reconnect_required: false,
@@ -100,12 +101,15 @@ const messages = {
   next_cursor: null,
 }
 
+const noNew = { count: 0, sync_mode: 'notify', since: null, checked_at: null, items: [] }
+
 const base = {
   'GET /api/v1/settings/gmail': { body: gmail },
   'GET /api/v1/gmail/index/status': { body: index },
   'GET /api/v1/gmail/groups': { body: groups },
   'GET /api/v1/gmail/import/status': { body: idle },
   'GET /api/v1/gmail/messages': { body: messages },
+  'GET /api/v1/gmail/new': { body: noNew },
 }
 
 function sent(fetch: ReturnType<typeof stubApi>, method: string, path: string) {
@@ -172,6 +176,7 @@ test('import: expanding a group shows its messages, already imported ones cannot
   expect(await sent(fetch, 'POST', '/api/v1/gmail/import')?.clone().json()).toEqual({
     gmail_ids: ['g2'],
     sequential: true,
+    new: false,
   })
 })
 
@@ -186,7 +191,7 @@ test('import: "next N oldest" covers everything, or just the open reference', as
 
   await user.click(await screen.findByRole('button', { name: 'Import' }))
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
-  expect(await post()).toEqual({ oldest_n: 25, group: null, sequential: true })
+  expect(await post()).toEqual({ oldest_n: 25, group: null, sequential: true, new: false })
 
   await user.click(screen.getByRole('button', { name: 'Expand 8372/25' }))
   expect(await screen.findByText('8372/25', { selector: 'strong' })).toBeVisible()
@@ -198,7 +203,12 @@ test('import: "next N oldest" covers everything, or just the open reference', as
   await user.click(screen.getByRole('button', { name: 'Import' }))
 
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
-  expect(await post()).toEqual({ oldest_n: 10, group: '8372-25', sequential: false })
+  expect(await post()).toEqual({
+    oldest_n: 10,
+    group: '8372-25',
+    sequential: false,
+    new: false,
+  })
 })
 
 test('import: a running import shows what it is waiting for and can be stopped', async () => {

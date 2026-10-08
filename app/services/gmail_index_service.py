@@ -226,6 +226,33 @@ def list_messages(
     return [(row, bool(ingested)) for row, ingested in rows], next_cursor
 
 
+def _arrived():
+    """When Gmail received the message (rows indexed before that was stored use
+    the Date header)."""
+    return func.coalesce(_Idx.received_at, _Idx.sent_at)
+
+
+def new_messages(
+    db: Session, owner_id: int, since: datetime, *, limit: int = 100
+) -> tuple[int, list[GmailMessageIndex]]:
+    """Messages that arrived after the sync point and aren't imported yet.
+
+    Returns (how many, the oldest ``limit`` of them oldest first).
+    """
+    base = db.query(_Idx).filter(
+        _Idx.owner_id == owner_id, ~_is_ingested(), _arrived() > since
+    )
+    return base.count(), base.order_by(_arrived(), _Idx.id).limit(limit).all()
+
+
+def newest_new_arrival(db: Session, owner_id: int, since: datetime) -> datetime | None:
+    return (
+        db.query(func.max(_arrived()))
+        .filter(_Idx.owner_id == owner_id, ~_is_ingested(), _arrived() > since)
+        .scalar()
+    )
+
+
 def select_for_import(
     db: Session,
     owner_id: int,
@@ -234,11 +261,12 @@ def select_for_import(
     group: str | None = None,
     oldest_n: int | None = None,
     before: datetime | None = None,
+    since: datetime | None = None,
 ) -> list[str]:
     """Gmail ids to import: not yet ingested, oldest first, capped.
 
-    ``gmail_ids`` (an explicit pick) wins over ``group``; ``oldest_n`` and
-    ``before`` narrow either. Ids unknown to the index are ignored.
+    ``gmail_ids`` (an explicit pick) wins over ``group``; ``oldest_n``,
+    ``before`` and ``since`` (arrived after) narrow either. Ids unknown to the index are ignored.
     """
     query = db.query(_Idx.gmail_id).filter(_Idx.owner_id == owner_id, ~_is_ingested())
     if gmail_ids:
@@ -247,5 +275,7 @@ def select_for_import(
         query = query.filter(_group_filter(group))
     if before:
         query = query.filter(_Idx.sent_at < before)
+    if since:
+        query = query.filter(_arrived() > since)
     limit = min(oldest_n or MAX_IMPORT_MESSAGES, MAX_IMPORT_MESSAGES)
     return [row[0] for row in query.order_by(_Idx.sent_at, _Idx.id).limit(limit)]

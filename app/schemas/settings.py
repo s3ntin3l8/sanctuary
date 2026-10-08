@@ -37,6 +37,10 @@ class PasswordChange(BaseModel):
 
 # --- Gmail -------------------------------------------------------------------
 
+# off: nothing in the background · notify: index new mail and offer it for import ·
+# auto: import new mail as it arrives.
+SyncMode = Literal["off", "notify", "auto"]
+
 
 class GmailView(BaseModel):
     connected: bool
@@ -45,7 +49,9 @@ class GmailView(BaseModel):
     allowlist: list[str]
     label_filter: str
     oauth_start_url: str
-    auto_sync: bool
+    sync_mode: SyncMode
+    # When the last new-mail check (notify mode) reached Gmail.
+    last_check_at: str | None
     last_sync_result: str | None
     last_sync_error: str | None
     # The stored grant is unusable; only reconnecting fixes it.
@@ -56,8 +62,8 @@ class GmailView(BaseModel):
     ai_external: bool
 
 
-class GmailAutoSync(BaseModel):
-    enabled: bool
+class GmailSyncMode(BaseModel):
+    mode: SyncMode
 
 
 class GmailResetSync(BaseModel):
