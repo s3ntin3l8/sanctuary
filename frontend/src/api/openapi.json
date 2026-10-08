@@ -7059,6 +7059,13 @@
       },
       "PipelineView": {
         "properties": {
+          "ocr_page_failures": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Ocr Page Failures",
+            "type": "array"
+          },
           "stages": {
             "items": {
               "$ref": "#/components/schemas/StageView"
@@ -7072,7 +7079,8 @@
         },
         "required": [
           "state",
-          "stages"
+          "stages",
+          "ocr_page_failures"
         ],
         "title": "PipelineView",
         "type": "object"

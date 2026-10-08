@@ -42,6 +42,8 @@ class StageView(BaseModel):
 class PipelineView(BaseModel):
     state: PipelineState
     stages: list[StageView]
+    # 1-indexed pages the OCR engine failed on while EXTRACT still completed.
+    ocr_page_failures: list[int]
 
 
 class MetadataField(BaseModel):

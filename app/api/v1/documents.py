@@ -126,7 +126,12 @@ def pipeline_view(doc: Document) -> PipelineView:
                 completed_at=rec.get("completed_at"),
             )
         )
-    return PipelineView(state=doc.pipeline_state, stages=out)
+    failures = (doc.meta or {}).get("page_failures") or []
+    return PipelineView(
+        state=doc.pipeline_state,
+        stages=out,
+        ocr_page_failures=sorted(int(p) for p in failures),
+    )
 
 
 def _field_value(doc: Document, field: str) -> str | None:

@@ -127,3 +127,29 @@ test('number keys fire reactions and Esc on the shortcuts overview stays on the 
   await waitFor(() => expect(dialog).not.toBeInTheDocument())
   expect(screen.getByRole('heading', { name: 'Klageerwiderung.pdf' })).toBeVisible()
 })
+
+test('warns about OCR page failures and re-extracts on demand', async () => {
+  const fetch = stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: { ...documentReader.pipeline, ocr_page_failures: [1, 3] },
+      },
+    },
+    'POST /api/v1/documents/2211/pipeline/extract/retry': {
+      body: { ...documentReader.pipeline, ocr_page_failures: [] },
+    },
+  })
+  page()
+  const user = userEvent.setup()
+  const alert = await screen.findByTestId('ocr-page-failures')
+  expect(alert).toHaveTextContent('OCR failed on pages 1, 3')
+  await user.click(within(alert).getByRole('button', { name: 'Re-extract' }))
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'POST' && r.url.endsWith('/documents/2211/pipeline/extract/retry'),
+      ),
+    ).toBe(true),
+  )
+})
