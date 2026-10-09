@@ -75,59 +75,6 @@ def _create_real_scan_batch(db_session, tmp_path, page_count=3):
 
 
 @pytest.mark.unit
-def test_wire_cover_letter_sets_roles_and_parent(db_session):
-    """wire_cover_letter correctly sets COVER_LETTER + ENCLOSURE roles with parent_id."""
-    from app.models.database import Document
-    from app.models.enums import DocumentRole
-    from app.services.ingestion.cover_letter_wiring import wire_cover_letter
-
-    doc1 = Document(title="p1", file_path="/tmp/s1.pdf", case_id="_TRIAGE")
-    doc2 = Document(title="p2", file_path="/tmp/s2.pdf", case_id="_TRIAGE")
-    doc3 = Document(title="p3", file_path="/tmp/s3.pdf", case_id="_TRIAGE")
-    db_session.add_all([doc1, doc2, doc3])
-    db_session.flush()
-
-    wire_cover_letter(db_session, doc1.id, [doc2.id, doc3.id], court_relay=True)
-    db_session.commit()
-
-    db_session.refresh(doc1)
-    db_session.refresh(doc2)
-    db_session.refresh(doc3)
-
-    assert doc1.role == DocumentRole.COVER_LETTER
-    assert doc1.court_relay is True
-    assert doc1.parent_id is None
-
-    assert doc2.role == DocumentRole.ENCLOSURE
-    assert doc2.parent_id == doc1.id
-
-    assert doc3.role == DocumentRole.ENCLOSURE
-    assert doc3.parent_id == doc1.id
-
-
-@pytest.mark.unit
-def test_cover_letter_wiring_idempotent(db_session):
-    """Calling wire_cover_letter twice is safe."""
-    from app.models.database import Document
-    from app.models.enums import DocumentRole
-    from app.services.ingestion.cover_letter_wiring import wire_cover_letter
-
-    cover = Document(title="cover", file_path="/tmp/c.pdf", case_id="_TRIAGE")
-    child = Document(title="child", file_path="/tmp/k.pdf", case_id="_TRIAGE")
-    db_session.add_all([cover, child])
-    db_session.flush()
-
-    wire_cover_letter(db_session, cover.id, [child.id], court_relay=True)
-    wire_cover_letter(db_session, cover.id, [child.id], court_relay=True)
-    db_session.commit()
-
-    db_session.refresh(cover)
-    db_session.refresh(child)
-    assert cover.role == DocumentRole.COVER_LETTER
-    assert child.parent_id == cover.id
-
-
-@pytest.mark.unit
 def test_slicing_confirm_idempotency_guard(db_session, tmp_path):
     """A batch not in AWAITING_SLICING should be rejected / redirected."""
     from app.models.database import IngestBatch
@@ -290,7 +237,7 @@ def test_slicing_confirm_happy_path_creates_expected_slices(db_session, tmp_path
     client = TestClient(app, raise_server_exceptions=False)
     resp = client.post(
         f"/api/v1/slicing/{batch.id}/confirm",
-        json={"cuts": [2]},
+        json={"cuts": [{"page": 2, "kind": "attachment"}]},
     )
     assert resp.status_code == 200
     assert len(resp.json()["document_ids"]) == 2
@@ -322,16 +269,14 @@ def test_slicing_confirm_failure_removes_written_slice_files(
     batch = _create_real_scan_batch(db_session, tmp_path, page_count=3)
 
     def _boom(*args, **kwargs):
-        raise RuntimeError("cover-letter wiring exploded")
+        raise RuntimeError("bundle wiring exploded")
 
-    monkeypatch.setattr(
-        "app.services.ingestion.cover_letter_wiring.wire_cover_letter", _boom
-    )
+    monkeypatch.setattr("app.services.slicing_service._wire_bundles", _boom)
 
     client = TestClient(app, raise_server_exceptions=False)
     resp = client.post(
         f"/api/v1/slicing/{batch.id}/confirm",
-        json={"cuts": [2]},
+        json={"cuts": [{"page": 2, "kind": "attachment"}]},
     )
     assert resp.status_code == 500
 
@@ -346,6 +291,7 @@ def test_slicing_confirm_titles_slices_from_batch_subject(db_session, tmp_path):
 
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+    from app.schemas.slicing import SliceCut
     from app.services.slicing_service import confirm_slices
 
     pdf = pdfium.PdfDocument.new()
@@ -364,6 +310,111 @@ def test_slicing_confirm_titles_slices_from_batch_subject(db_session, tmp_path):
     db_session.add(batch)
     db_session.commit()
 
-    ids = confirm_slices(db_session, batch, [1])
+    ids = confirm_slices(db_session, batch, [SliceCut(page=1, kind="attachment")])
     titles = sorted(db_session.get(Document, i).title for i in ids)
     assert titles == ["Gerichtspost – Part 1", "Gerichtspost – Part 2"]
+
+
+def _stack(db_session, tmp_path, pages):
+    return _create_real_scan_batch(db_session, tmp_path, page_count=pages)
+
+
+@pytest.mark.unit
+def test_slicing_confirm_builds_one_bundle_per_letter(db_session, tmp_path):
+    """[letter p1-2 | attachment p3 | letter p4 | attachment p5-6] → two bundles."""
+    from app.models.database import BatchSubGroup, Document, DocumentRelationship
+    from app.models.enums import (
+        DocumentRole,
+        RelationshipConfidence,
+        RelationshipType,
+    )
+    from app.schemas.slicing import SliceCut
+    from app.services.slicing_service import confirm_slices
+
+    batch = _stack(db_session, tmp_path, 6)
+    ids = confirm_slices(
+        db_session,
+        batch,
+        [
+            SliceCut(page=2, kind="attachment"),
+            SliceCut(page=3, kind="letter"),
+            SliceCut(page=4, kind="attachment"),
+        ],
+    )
+    docs = [db_session.get(Document, i) for i in ids]
+    first, att1, second, att2 = docs
+    assert [d.role for d in docs] == [
+        DocumentRole.COVER_LETTER,
+        DocumentRole.ENCLOSURE,
+        DocumentRole.COVER_LETTER,
+        DocumentRole.ENCLOSURE,
+    ]
+    assert att1.parent_id == first.id and att2.parent_id == second.id
+    assert first.parent_id is None and second.parent_id is None
+    assert not any(d.court_relay for d in docs)
+
+    edges = db_session.query(DocumentRelationship).all()
+    assert {(e.from_document_id, e.to_document_id) for e in edges} == {
+        (first.id, att1.id),
+        (second.id, att2.id),
+    }
+    assert all(
+        e.relationship_type == RelationshipType.ENCLOSES
+        and e.confidence == RelationshipConfidence.USER_CREATED
+        for e in edges
+    )
+
+    groups = (
+        db_session.query(BatchSubGroup)
+        .filter_by(batch_id=batch.id)
+        .order_by(BatchSubGroup.sort_order)
+        .all()
+    )
+    assert len(groups) == 2
+    assert [d.sub_group_id for d in docs] == [
+        groups[0].id,
+        groups[0].id,
+        groups[1].id,
+        groups[1].id,
+    ]
+    assert [d.sub_group_sort_order for d in docs] == [0, 1, 0, 1]
+
+
+@pytest.mark.unit
+def test_slicing_confirm_separate_letters_are_standalone(db_session, tmp_path):
+    from app.models.database import Document
+    from app.models.enums import DocumentRole
+    from app.schemas.slicing import SliceCut
+    from app.services.slicing_service import confirm_slices
+
+    batch = _stack(db_session, tmp_path, 2)
+    ids = confirm_slices(db_session, batch, [SliceCut(page=1, kind="letter")])
+    docs = [db_session.get(Document, i) for i in ids]
+    assert [d.role for d in docs] == [DocumentRole.STANDALONE] * 2
+    assert all(d.parent_id is None for d in docs)
+
+
+@pytest.mark.unit
+def test_slicing_confirm_single_document_has_no_sub_group(db_session, tmp_path):
+    from app.models.database import BatchSubGroup, Document
+    from app.models.enums import DocumentRole
+    from app.services.slicing_service import confirm_slices
+
+    batch = _stack(db_session, tmp_path, 2)
+    ids = confirm_slices(db_session, batch, [])
+    assert db_session.get(Document, ids[0]).role == DocumentRole.STANDALONE
+    assert db_session.query(BatchSubGroup).filter_by(batch_id=batch.id).count() == 0
+
+
+@pytest.mark.unit
+def test_slicing_confirm_rejects_unknown_kind_with_422(db_session, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    batch = _create_scan_batch(db_session, tmp_path)
+    resp = TestClient(app, raise_server_exceptions=False).post(
+        f"/api/v1/slicing/{batch.id}/confirm",
+        json={"cuts": [{"page": 1, "kind": "memo"}]},
+    )
+    assert resp.status_code == 422

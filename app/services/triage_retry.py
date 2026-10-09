@@ -165,6 +165,7 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
         PipelineStage,
         StageStatus,
     )
+    from app.services.intelligence.batch_analyzer import _has_manual_groups
     from app.services.pipeline_status import (
         _STAGE_ORDER,
         clear_extraction_stamp,
@@ -226,6 +227,11 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
 
     dispatch_items: list = []
 
+    # A user-organised bundle (triage sub-groups, or one built by slicing) is
+    # the user's structure and batch analysis deliberately won't re-derive it,
+    # so keep the roles and parent links instead of collapsing them.
+    keep_structure = _has_manual_groups(batch.id, db)
+
     for doc in batch.documents:
         stages_current = stages_dict(doc)
 
@@ -274,8 +280,9 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
             # needs confirming again.
             doc.confirmed_at = None
 
-        doc.role = DocumentRole.STANDALONE
-        doc.parent_id = None
+        if not keep_structure:
+            doc.role = DocumentRole.STANDALONE
+            doc.parent_id = None
         doc.court_relay = False
         doc.attributed_originator = None
 

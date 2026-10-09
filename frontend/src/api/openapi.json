@@ -7406,6 +7406,14 @@
             ],
             "title": "Confidence"
           },
+          "kind": {
+            "enum": [
+              "letter",
+              "attachment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "notes": {
             "anyOf": [
               {
@@ -7425,6 +7433,7 @@
         "required": [
           "page",
           "confidence",
+          "kind",
           "notes"
         ],
         "title": "ProposedCut",
@@ -8245,12 +8254,34 @@
         "title": "SignupToggle",
         "type": "object"
       },
+      "SliceCut": {
+        "description": "Split after ``page`` (1 \u2264 page < page_count); ``kind`` says what the next\npart is: a new letter, or an attachment of the letter before it.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "letter",
+              "attachment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "kind"
+        ],
+        "title": "SliceCut",
+        "type": "object"
+      },
       "SlicingConfirm": {
-        "description": "Split after each listed page (1 \u2264 cut < page_count).",
         "properties": {
           "cuts": {
             "items": {
-              "type": "integer"
+              "$ref": "#/components/schemas/SliceCut"
             },
             "title": "Cuts",
             "type": "array"
