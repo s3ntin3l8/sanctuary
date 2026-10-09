@@ -169,3 +169,59 @@ def test_case_detail_documents_name_their_open_reasons(db_session, sample_case):
     body = client.get(f"/api/v1/cases/{sample_case.id}").json()
     (shown,) = [d for d in body["documents"] if d["id"] == doc.id]
     assert shown["open_review_reasons"] == ["contradiction_detected"]
+
+
+def test_a_rejected_enclosure_edge_stays_rejected_when_the_cover_changes(
+    db_session, sample_case
+):
+    from app.repositories.document_relationship import reject_edge
+
+    batch = _batch(db_session, sample_case.id)
+    old = _doc(db_session, batch, sample_case.id, "Old", role=DocumentRole.COVER_LETTER)
+    new = _doc(
+        db_session,
+        batch,
+        sample_case.id,
+        "New",
+        role=DocumentRole.ENCLOSURE,
+        parent_id=old.id,
+    )
+    other = _doc(
+        db_session, batch, sample_case.id, "Other", role=DocumentRole.ENCLOSURE
+    )
+    _encloses(db_session, old, new)
+    _encloses(db_session, old, other)
+    rejected = (
+        db_session.query(DocumentRelationship)
+        .filter_by(from_document_id=old.id, to_document_id=other.id)
+        .one()
+    )
+    reject_edge(db_session, rejected)
+    # The user also rejected the edge the new cover would get to this enclosure.
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=new.id,
+            to_document_id=other.id,
+            relationship_type=RelationshipType.ENCLOSES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
+    )
+    db_session.flush()
+    again = (
+        db_session.query(DocumentRelationship)
+        .filter_by(from_document_id=new.id, to_document_id=other.id)
+        .one()
+    )
+    reject_edge(db_session, again)
+    db_session.commit()
+
+    set_cover_letter(db_session, new.id, batch.id)
+    db_session.commit()
+
+    edges = {
+        (r.from_document_id, r.to_document_id)
+        for r in db_session.query(DocumentRelationship).filter_by(
+            relationship_type=RelationshipType.ENCLOSES
+        )
+    }
+    assert edges == {(new.id, old.id)}  # new→other stays rejected

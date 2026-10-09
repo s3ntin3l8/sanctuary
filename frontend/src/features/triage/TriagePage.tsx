@@ -360,10 +360,10 @@ export function TriagePage() {
         }
         onBatchConfirmed={() => setSelected(new Set())}
         onFiled={(key) => {
-          // Keep working: open the bundle that follows the filed one (or the one before it).
+          // Keep working: open the bundle that follows the filed one.
           if (expanded !== key) return
-          const i = visible.findIndex((b) => b.key === key)
-          const next = visible[i + 1] ?? visible[i - 1]
+          const next = visible[visible.findIndex((b) => b.key === key) + 1]
+          if (!next) toast('No more bundles in the inbox')
           setParams(
             (p) => {
               const nextParams = new URLSearchParams(p)

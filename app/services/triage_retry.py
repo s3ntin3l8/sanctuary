@@ -296,12 +296,14 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
         db.execute(
             _text(
                 "UPDATE documents SET pipeline_state = :state, case_id = :case_id, "
-                "proceeding_id = :proc_id WHERE id = :doc_id"
+                "proceeding_id = :proc_id, confirmed_at = :confirmed_at "
+                "WHERE id = :doc_id"
             ),
             {
                 "state": new_state.value,
                 "case_id": doc.case_id,
                 "proc_id": doc.proceeding_id,
+                "confirmed_at": doc.confirmed_at,
                 "doc_id": doc.id,
             },
         )
