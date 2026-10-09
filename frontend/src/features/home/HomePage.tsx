@@ -360,8 +360,8 @@ function SignalsPanel({ signals }: { signals: Home['signals'] }) {
       <ul className="divide-y divide-line2">
         {signals.map((s) => (
           <li key={s.id}>
-            <a
-              href={s.link}
+            <Link
+              to={s.link}
               {...ROW}
               className={`flex items-start gap-2 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
             >
@@ -375,7 +375,7 @@ function SignalsPanel({ signals }: { signals: Home['signals'] }) {
                 <span className="block text-[11px] text-muted">{s.detail}</span>
               </span>
               <Badge>{s.action}</Badge>
-            </a>
+            </Link>
           </li>
         ))}
       </ul>

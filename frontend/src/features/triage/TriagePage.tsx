@@ -93,11 +93,15 @@ export function TriagePage() {
   // Deep links (Home → ?bundle=) land on the bundle once the feed has loaded.
   const scrolledTo = useRef<string | null>(null)
   useEffect(() => {
-    if (!expanded || scrolledTo.current === expanded) return
+    if (!expanded) {
+      scrolledTo.current = null
+      return
+    }
+    if (scrolledTo.current === expanded) return
     const row = document.querySelector(`[data-bundle-key="${CSS.escape(expanded)}"]`)
     if (!row) return
     scrolledTo.current = expanded
-    row.scrollIntoView({ block: 'start' })
+    row.scrollIntoView({ block: 'nearest' })
   }, [expanded, bundles])
   const visible = bundles.filter((b) => status === 'all' || b.status === status)
   const counts = useMemo(() => {
