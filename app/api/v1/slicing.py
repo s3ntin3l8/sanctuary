@@ -64,6 +64,7 @@ def _view(batch: IngestBatch) -> SlicingView:
     pages = meta.get("pages", [])
     page_count = meta.get("page_count", len(pages)) or 0
     status = meta.get("status", "preparing")
+    progress = meta.get("progress") or {}
     if batch.status != IngestBatchStatus.AWAITING_SLICING:
         status = "done"
     return SlicingView(
@@ -94,6 +95,9 @@ def _view(batch: IngestBatch) -> SlicingView:
             if isinstance(c, dict) and isinstance(c.get("page"), int)
         ],
         error=meta.get("error"),
+        progress_done=progress.get("done"),
+        progress_total=progress.get("total"),
+        progress_phase=progress.get("phase"),
     )
 
 
@@ -143,7 +147,7 @@ def retry(
     batch: IngestBatch = Depends(owned_batch),
     db: Session = Depends(get_db),
 ):
-    """Re-run the slice proposal for a batch whose preparation failed."""
+    """Re-run the slice proposal (after a failure, or to redo a ready one)."""
     from app.tasks.dispatch import dispatch_task
     from app.tasks.prepare_slicing import prepare_slicing_task
 

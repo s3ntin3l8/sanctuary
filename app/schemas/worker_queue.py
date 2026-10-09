@@ -11,8 +11,9 @@ from app.schemas.gmail_import import GmailImportStatus
 
 
 class QueueItem(BaseModel):
-    kind: Literal["doc", "batch"]
-    stage: PipelineStage
+    kind: Literal["doc", "batch", "slicing"]
+    # None for a scan awaiting slicing: it isn't in the document pipeline yet.
+    stage: PipelineStage | None
     label: str
     doc_id: int | None
     batch_id: int | None

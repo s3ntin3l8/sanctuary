@@ -2338,7 +2338,7 @@ export interface paths {
         put?: never;
         /**
          * V1 Retry
-         * @description Re-run the slice proposal for a batch whose preparation failed.
+         * @description Re-run the slice proposal (after a failure, or to redo a ready one).
          */
         post: operations["v1_retry_api_v1_slicing__batch_id__retry_post"];
         delete?: never;
@@ -5039,12 +5039,12 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "doc" | "batch";
+            kind: "doc" | "batch" | "slicing";
             /** Label */
             label: string;
             /** Note */
             note?: string | null;
-            stage: components["schemas"]["PipelineStage"];
+            stage: components["schemas"]["PipelineStage"] | null;
         };
         /** QueueView */
         QueueView: {
@@ -5344,6 +5344,12 @@ export interface components {
             page_count: number;
             /** Pages */
             pages: components["schemas"]["SlicingPage"][];
+            /** Progress Done */
+            progress_done?: number | null;
+            /** Progress Phase */
+            progress_phase?: ("ocr" | "ai") | null;
+            /** Progress Total */
+            progress_total?: number | null;
             /** Proposed Cuts */
             proposed_cuts: components["schemas"]["ProposedCut"][];
             /**

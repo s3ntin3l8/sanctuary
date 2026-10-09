@@ -108,8 +108,22 @@ export function SlicingPage() {
               <Button variant="secondary" onClick={() => setCuts(new Map())}>
                 Single document
               </Button>
-              <Button variant="secondary" onClick={() => setCuts(null)}>
+              <Button
+                variant="secondary"
+                title="Discard your edits and go back to the saved proposal"
+                onClick={() => setCuts(null)}
+              >
                 Reset to proposal
+              </Button>
+              <Button
+                variant="secondary"
+                title="Read the pages again and compute a fresh proposal on the server"
+                disabled={retry.isPending}
+                onClick={() =>
+                  retry.mutate(undefined, { onError: (e) => toast(e.message, 'error') })
+                }
+              >
+                <Icon name="replay" size={16} /> Re-run proposal
               </Button>
               <Button disabled={confirm.isPending} onClick={submit}>
                 Confirm <kbd className="ml-1 font-mono text-[9px] opacity-70">↵</kbd>
@@ -129,10 +143,31 @@ export function SlicingPage() {
 
       <div className="px-6 py-4">
         {view.status === 'preparing' && (
-          <p className="flex items-center gap-2 text-[12px] text-muted">
-            <Icon name="hourglass_top" size={16} className="text-warning" /> Preparing page previews
-            and a split proposal…
-          </p>
+          <div className="space-y-2">
+            <p className="flex items-center gap-2 text-[12px] text-muted">
+              <Icon name="hourglass_top" size={16} className="text-warning" />
+              {view.progress_phase === 'ai'
+                ? 'Asking the model where one letter ends and the next begins…'
+                : view.progress_done && view.progress_total
+                  ? `Reading page ${view.progress_done} of ${view.progress_total}…`
+                  : 'Preparing page previews and a split proposal…'}
+            </p>
+            {view.progress_total ? (
+              <div
+                role="progressbar"
+                aria-valuenow={view.progress_done ?? 0}
+                aria-valuemax={view.progress_total}
+                className="h-1 w-64 overflow-hidden rounded-full bg-line2"
+              >
+                <div
+                  className="h-full bg-accent transition-[width] duration-500"
+                  style={{
+                    width: `${Math.round(((view.progress_done ?? 0) / view.progress_total) * 100)}%`,
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         )}
         {view.status === 'failed' && (
           <p

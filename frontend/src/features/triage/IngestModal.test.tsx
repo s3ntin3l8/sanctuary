@@ -1,5 +1,6 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Outlet, useLocation } from 'react-router'
 import { expect, test, vi } from 'vitest'
 
 import { renderAt, stubApi } from '../../test/render'
@@ -31,25 +32,52 @@ test('hides the split toggle when uploading into a case', async () => {
   expect(screen.queryByLabelText(/scanned stack/i)).toBeNull()
 })
 
-test('sends split_scans and links the result to the slicing review', async () => {
-  stubApi({})
+function stubUpload(results: object[]) {
   // useUpload calls fetch(url, init) directly rather than going through openapi-fetch.
   const fetch = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
-    Response.json({
-      results: [{ filename: 'stack.pdf', status: 'queued', batch_id: 91, slicing: true }],
-      queued: 1,
-      failed: 0,
-      batch_id: null,
-    }),
+    Response.json({ results, queued: results.length, failed: 0, batch_id: null }),
   )
   vi.stubGlobal('fetch', fetch)
+  return fetch
+}
+
+function Where() {
+  return (
+    <>
+      <p data-testid="where">{useLocation().pathname}</p>
+      <Outlet />
+    </>
+  )
+}
+
+test('a single split scan opens the slicing review straight away', async () => {
+  stubApi({})
+  const fetch = stubUpload([
+    { filename: 'stack.pdf', status: 'queued', batch_id: 91, slicing: true },
+  ])
+  const onClose = vi.fn()
   const user = userEvent.setup()
-  renderAt('/triage', <IngestModal open onClose={vi.fn()} caseId={null} />)
+  renderAt('/triage', <IngestModal open onClose={onClose} caseId={null} />, <Where />)
   await user.upload(screen.getByLabelText('Choose files'), pdf())
   await user.click(await screen.findByLabelText(/scanned stack/i))
   await user.click(screen.getByRole('button', { name: /^Ingest/ }))
-  const link = await screen.findByRole('link', { name: 'Review cuts' })
-  expect(link).toHaveAttribute('href', '/ingest/slice/91')
+  await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/ingest/slice/91'))
+  expect(onClose).toHaveBeenCalled()
   const body = fetch.mock.calls[0]?.[1].body as FormData
   expect(body?.get('split_scans')).toBe('true')
+})
+
+test('several uploads keep the result list with a link to the slicing review', async () => {
+  stubApi({})
+  stubUpload([
+    { filename: 'stack.pdf', status: 'queued', batch_id: 91, slicing: true },
+    { filename: 'other.pdf', status: 'queued', batch_id: 92, slicing: true },
+  ])
+  const user = userEvent.setup()
+  renderAt('/triage', <IngestModal open onClose={vi.fn()} caseId={null} />)
+  await user.upload(screen.getByLabelText('Choose files'), [pdf(), new File(['%PDF'], 'other.pdf')])
+  await user.click(await screen.findByLabelText(/scanned stack/i))
+  await user.click(screen.getByRole('button', { name: /^Ingest/ }))
+  const links = await screen.findAllByRole('link', { name: 'Review cuts' })
+  expect(links[0]).toHaveAttribute('href', '/ingest/slice/91')
 })
