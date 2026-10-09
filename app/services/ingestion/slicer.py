@@ -66,12 +66,10 @@ def _ocr_page_text(image: Image.Image) -> str:
 
         ocr = _get_ocr()
         arr = np.array(image.convert("RGB"))
-        result, _ = ocr(arr)
-        if not result:
-            return ""
-        return " ".join(r[1] for r in result if r and len(r) > 1)
+        # rapidocr 3.x returns an output object; ``txts`` is None on a blank page.
+        return " ".join(ocr(arr).txts or ())
     except Exception as exc:
-        logger.debug("OCR failed for page: %s", exc)
+        logger.warning("OCR failed for page: %s", exc)
         return ""
 
 
@@ -333,6 +331,24 @@ def _combine_proposed_cuts(
 # ---------------------------------------------------------------------------
 
 
+_PROGRESS_EVERY = 5
+
+
+def _write_progress(db: Session, batch: IngestBatch, done: int, total: int, phase: str):
+    """Record prep progress for the review page.
+
+    Merges into the existing ``meta["slicing"]`` so ``dispatched_at`` /
+    ``recovered`` (read by the stuck-prep sweep) survive.
+    """
+    meta = dict(batch.meta or {})
+    meta["slicing"] = {
+        **meta.get("slicing", {}),
+        "progress": {"done": done, "total": total, "phase": phase},
+    }
+    batch.meta = meta
+    db.commit()
+
+
 def prepare(batch_id: int) -> None:
     """Render thumbnails, OCR, run heuristics + AI, write proposed_cuts to batch.meta."""
     from app.config import SessionLocal
@@ -372,6 +388,10 @@ def prepare(batch_id: int) -> None:
                 bitmap = page.render(scale=_THUMBNAIL_DPI / 72.0)
                 img = bitmap.to_pil()
 
+                # OCR the full render: at thumbnail size the text is garbled
+                # ("Sete 2", "freundichen") and the boundary regexes miss.
+                text = _ocr_page_text(img)
+
                 # Resize long edge to _THUMBNAIL_LONG_EDGE
                 w, h = img.size
                 long = max(w, h)
@@ -385,7 +405,6 @@ def prepare(batch_id: int) -> None:
                 img.save(str(thumb_path))
                 images.append(img)
 
-                text = _ocr_page_text(img)
                 page_data.append(
                     {
                         "text_head": text[:_TEXT_HEAD_CHARS],
@@ -393,6 +412,8 @@ def prepare(batch_id: int) -> None:
                         "thumbnail_path": str(thumb_path),
                     }
                 )
+                if (i + 1) % _PROGRESS_EVERY == 0 or i + 1 == page_count:
+                    _write_progress(db, batch, i + 1, page_count, "ocr")
         finally:
             pdf_doc.close()
 
@@ -415,6 +436,8 @@ def prepare(batch_id: int) -> None:
                 )
 
         # AI pass
+        if heuristic_candidates:
+            _write_progress(db, batch, page_count, page_count, "ai")
         chat_provider.reload_from_db(db)
         chat_cfg = get_chat_config(db)
         summary_model = chat_cfg.summary_model

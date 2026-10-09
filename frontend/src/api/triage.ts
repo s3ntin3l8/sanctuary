@@ -40,7 +40,10 @@ export function useTriage(filters: TriageFilters) {
     queryFn: () => unwrap(api.GET('/api/v1/triage', { params: { query: filters } })),
     // Keep pipeline chips live while anything is still being processed.
     refetchInterval: (query) =>
-      query.state.data?.bundles.some((b) => b.status === 'processing') ? 4_000 : false,
+      query.state.data?.bundles.some((b) => b.status === 'processing') ||
+      query.state.data?.slicing_queue.some((s) => s.status === 'preparing')
+        ? 4_000
+        : false,
   })
 }
 

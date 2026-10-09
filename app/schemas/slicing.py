@@ -32,6 +32,9 @@ class SlicingView(BaseModel):
     pages: list[SlicingPage]
     proposed_cuts: list[ProposedCut]
     error: str | None
+    progress_done: int | None = None
+    progress_total: int | None = None
+    progress_phase: Literal["ocr", "ai"] | None = None
 
 
 class SliceCut(BaseModel):

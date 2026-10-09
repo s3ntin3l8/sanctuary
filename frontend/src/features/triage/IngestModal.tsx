@@ -1,4 +1,5 @@
 import { type DragEvent, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router'
 
 import type { Schemas } from '../../api/client'
 import { useDocumentStatus, useUpload, useUploadTarget } from '../../api/triage'
@@ -22,6 +23,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
   const input = useRef<HTMLInputElement>(null)
   const target = useUploadTarget(caseId).data
   const upload = useUpload()
+  const navigate = useNavigate()
 
   function add(list: FileList | null) {
     if (!list) return
@@ -60,7 +62,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
       {results ? (
         <ul className="divide-y divide-line2">
           {results.map((r, i) => (
-            <ResultRow key={`${r.filename}-${i}`} result={r} />
+            <ResultRow key={`${r.filename}-${i}`} result={r} onNavigate={close} />
           ))}
         </ul>
       ) : (
@@ -177,7 +179,19 @@ export function IngestModal({ open, onClose, caseId }: Props) {
             onClick={() =>
               upload.mutate(
                 { files, caseId, parentId, splitScans: caseId === null && splitScans },
-                { onSuccess: (r) => setResults(r.results) },
+                {
+                  onSuccess: (r) => {
+                    // One scan and nothing else: the result list has nothing to
+                    // add, so go straight to choosing the cuts.
+                    const only = r.results.length === 1 ? r.results[0] : undefined
+                    if (only?.status === 'queued' && only.slicing && only.batch_id) {
+                      close()
+                      navigate(`/ingest/slice/${only.batch_id}`)
+                    } else {
+                      setResults(r.results)
+                    }
+                  },
+                },
               )
             }
           >
@@ -189,7 +203,13 @@ export function IngestModal({ open, onClose, caseId }: Props) {
   )
 }
 
-function ResultRow({ result }: { result: Schemas['UploadResult'] }) {
+function ResultRow({
+  result,
+  onNavigate,
+}: {
+  result: Schemas['UploadResult']
+  onNavigate: () => void
+}) {
   return (
     <li className="flex items-center gap-2 py-1.5 text-[12px]">
       <Icon
@@ -205,12 +225,13 @@ function ResultRow({ result }: { result: Schemas['UploadResult'] }) {
       />
       <span className="min-w-0 flex-1 truncate">{result.filename}</span>
       {result.status === 'queued' && result.slicing && result.batch_id ? (
-        <a
-          href={`/ingest/slice/${result.batch_id}`}
+        <Link
+          to={`/ingest/slice/${result.batch_id}`}
+          onClick={onNavigate}
           className="font-mono text-[11px] text-tealink hover:underline"
         >
           Review cuts
-        </a>
+        </Link>
       ) : result.status === 'queued' && result.doc_id ? (
         <LiveStatus docId={result.doc_id} />
       ) : (

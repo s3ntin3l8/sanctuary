@@ -359,3 +359,44 @@ def test_doc_items_carry_batch_and_doc_ids(app_client, db_session, sample_case):
     assert item["doc_id"] == doc.id
     assert item["batch_id"] == batch.id
     assert item["label"] == "Badge Test Doc"
+
+
+def _scan_batch(db_session, slicing: dict) -> IngestBatch:
+    from app.models.database import User
+
+    owner = db_session.query(User).filter_by(email="admin@localhost").one()
+    batch = IngestBatch(
+        owner_id=owner.id,
+        source_type=IngestBatchSourceType.SCAN,
+        subject="stack.pdf",
+        status=IngestBatchStatus.AWAITING_SLICING,
+        meta={"slicing": slicing},
+    )
+    db_session.add(batch)
+    db_session.commit()
+    return batch
+
+
+@pytest.mark.unit
+def test_scans_awaiting_slicing_appear_in_the_queue(app_client, db_session):
+    """A scan being prepared executes; one waiting for the user's cuts is queued."""
+    preparing = _scan_batch(
+        db_session,
+        {"status": "preparing", "progress": {"done": 23, "total": 69, "phase": "ocr"}},
+    )
+    ready = _scan_batch(db_session, {"status": "ready"})
+
+    body = app_client.get("/api/v1/worker-queue").json()
+
+    assert body["counts"]["executing"] == 1
+    assert body["counts"]["queued"] == 1
+    (running,) = body["executing"]
+    assert (running["kind"], running["batch_id"], running["stage"]) == (
+        "slicing",
+        preparing.id,
+        None,
+    )
+    assert running["note"] == "Preparing (23/69)"
+    (waiting,) = body["queued"]
+    assert (waiting["kind"], waiting["batch_id"]) == ("slicing", ready.id)
+    assert waiting["note"] == "Ready — review cuts"

@@ -7498,7 +7498,8 @@
           "kind": {
             "enum": [
               "doc",
-              "batch"
+              "batch",
+              "slicing"
             ],
             "title": "Kind",
             "type": "string"
@@ -7519,7 +7520,14 @@
             "title": "Note"
           },
           "stage": {
-            "$ref": "#/components/schemas/PipelineStage"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -8403,6 +8411,43 @@
             },
             "title": "Pages",
             "type": "array"
+          },
+          "progress_done": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Done"
+          },
+          "progress_phase": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ocr",
+                  "ai"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Phase"
+          },
+          "progress_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Total"
           },
           "proposed_cuts": {
             "items": {
@@ -15398,7 +15443,7 @@
     },
     "/api/v1/slicing/{batch_id}/retry": {
       "post": {
-        "description": "Re-run the slice proposal for a batch whose preparation failed.",
+        "description": "Re-run the slice proposal (after a failure, or to redo a ready one).",
         "operationId": "v1_retry_api_v1_slicing__batch_id__retry_post",
         "parameters": [
           {

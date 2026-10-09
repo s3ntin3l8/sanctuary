@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 
 import { useRetryFailed, useWorkerQueue } from '../api/shell'
 import type { Schemas } from '../api/client'
@@ -125,8 +126,18 @@ function QueueModal({
         <p className="py-6 text-center text-[12px] text-muted">All document pipelines idle.</p>
       ) : (
         <div className="max-h-[60vh] space-y-4 overflow-y-auto">
-          <QueueSection title="Executing" items={queue?.executing ?? []} tone="warning" />
-          <QueueSection title="Queued" items={queue?.queued ?? []} tone="muted" />
+          <QueueSection
+            title="Executing"
+            items={queue?.executing ?? []}
+            tone="warning"
+            onNavigate={onClose}
+          />
+          <QueueSection
+            title="Queued"
+            items={queue?.queued ?? []}
+            tone="muted"
+            onNavigate={onClose}
+          />
           {queue && queue.failed.length > 0 && (
             <section>
               <h3 className="mb-1 text-[10px] font-extrabold tracking-[.12em] text-danger uppercase">
@@ -155,10 +166,12 @@ function QueueSection({
   title,
   items,
   tone,
+  onNavigate,
 }: {
   title: string
   items: Schemas['QueueItem'][]
   tone: 'warning' | 'muted'
+  onNavigate: () => void
 }) {
   if (items.length === 0) return null
   return (
@@ -175,7 +188,7 @@ function QueueSection({
             className="flex items-center gap-2 py-1.5 text-[12px]"
           >
             <span className="font-mono text-[10px] text-muted">
-              {item.kind === 'batch' ? `B#${item.batch_id}` : `D#${item.doc_id}`}
+              {item.kind === 'doc' ? `D#${item.doc_id}` : `B#${item.batch_id}`}
             </span>
             <span className="min-w-0 flex-1 truncate">
               {item.label}
@@ -186,7 +199,17 @@ function QueueSection({
                 {pluralize(item.doc_count, 'doc')}
               </span>
             )}
-            <span className="font-mono text-[10px] text-tealink">{item.stage}</span>
+            {item.kind === 'slicing' ? (
+              <Link
+                to={`/ingest/slice/${item.batch_id}`}
+                onClick={onNavigate}
+                className="font-mono text-[10px] text-tealink hover:underline"
+              >
+                review cuts
+              </Link>
+            ) : (
+              <span className="font-mono text-[10px] text-tealink">{item.stage}</span>
+            )}
           </li>
         ))}
       </ul>

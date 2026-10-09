@@ -842,6 +842,36 @@ const REL_GLYPH: Record<string, string> = {
   encloses: '⊃',
 }
 
+const DECISION_TONE = {
+  success: 'text-success hover:bg-success/15 focus-visible:outline-success',
+  danger: 'text-danger hover:bg-danger/15 focus-visible:outline-danger',
+} as const
+
+/** ✓ / ✕ control for AI proposals: tinted on hover, presses in when clicked. */
+function DecisionButton({
+  tone,
+  label,
+  disabled,
+  onClick,
+}: {
+  tone: keyof typeof DECISION_TONE
+  label: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-md p-0.5 transition-[background-color,transform] duration-150 hover:scale-110 focus-visible:outline-2 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:bg-transparent ${DECISION_TONE[tone]}`}
+    >
+      <Icon name={tone === 'success' ? 'check' : 'close'} size={14} />
+    </button>
+  )
+}
+
 function Relationships({ review }: { review: Review }) {
   const decide = useRelationshipDecision(review.id)
   const toast = useToast()
@@ -889,9 +919,9 @@ function Relationships({ review }: { review: Review }) {
             </span>
             {r.confidence === 'ai_detected' ? (
               <>
-                <button
-                  type="button"
-                  aria-label="Confirm relationship"
+                <DecisionButton
+                  tone="success"
+                  label="Confirm relationship"
                   disabled={decide.isPending}
                   onClick={() =>
                     decide.mutate(
@@ -899,13 +929,10 @@ function Relationships({ review }: { review: Review }) {
                       { onError: (e) => toast(e.message, 'error') },
                     )
                   }
-                  className="text-success"
-                >
-                  <Icon name="check" size={14} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Reject relationship"
+                />
+                <DecisionButton
+                  tone="danger"
+                  label="Reject relationship"
                   disabled={decide.isPending}
                   onClick={() =>
                     decide.mutate(
@@ -913,10 +940,7 @@ function Relationships({ review }: { review: Review }) {
                       { onError: (e) => toast(e.message, 'error') },
                     )
                   }
-                  className="text-danger"
-                >
-                  <Icon name="close" size={14} />
-                </button>
+                />
               </>
             ) : r.confidence === 'email_header' ? (
               <Badge tone="neutral">email header</Badge>
@@ -967,24 +991,18 @@ function ClaimLinks({ review }: { review: Review }) {
                 <span className="block text-[10.5px] text-muted italic">“{p.excerpt}”</span>
               )}
             </span>
-            <button
-              type="button"
-              aria-label="Confirm claim link"
+            <DecisionButton
+              tone="success"
+              label="Confirm claim link"
               disabled={decide.isPending}
               onClick={() => act(p.proposal_id, 'confirm')}
-              className="text-success"
-            >
-              <Icon name="check" size={14} />
-            </button>
-            <button
-              type="button"
-              aria-label="Dismiss claim link"
+            />
+            <DecisionButton
+              tone="danger"
+              label="Dismiss claim link"
               disabled={decide.isPending}
               onClick={() => act(p.proposal_id, 'dismiss')}
-              className="text-danger"
-            >
-              <Icon name="close" size={14} />
-            </button>
+            />
           </li>
         ))}
       </ul>
