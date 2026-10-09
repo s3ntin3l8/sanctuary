@@ -123,3 +123,23 @@ test('j / k move focus across the panels in order, Enter follows the link, ? lis
   await user.keyboard('{Escape}')
   await waitFor(() => expect(dialog).not.toBeInTheDocument())
 })
+
+test('the lone case card lists the next few items and counts the rest', async () => {
+  const [first] = homeView.today_items
+  if (!first) throw new Error('fixture has no deadline')
+  const extra = [2, 3, 4, 5, 6].map((id) => ({ ...first, id, title: `Frist ${id}` }))
+  stubApi({
+    'GET /api/v1/home': { body: { ...homeView, today_items: [first, ...extra] } },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
+  })
+  renderAt('/', <HomePage />)
+  const card = (await screen.findByText('Coming up')).closest('a')
+  if (!card) throw new Error('lone case card not found')
+  const inCard = within(card)
+  // The next action stays on the left; three of the five others are listed, two are counted.
+  expect(inCard.getByText('Frist 2')).toBeVisible()
+  expect(inCard.getByText('Frist 4')).toBeVisible()
+  expect(inCard.queryByText('Frist 5')).not.toBeInTheDocument()
+  expect(inCard.getByText('+2 more')).toBeVisible()
+})
