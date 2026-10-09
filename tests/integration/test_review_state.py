@@ -263,3 +263,59 @@ def test_migration_backfill(db_session, sample_case):
     assert waiting.confirmed_at is None
     ev = db_session.query(ClaimEvidence).filter_by(document_id=waiting.id).one()
     assert ev.confidence == RelationshipConfidence.USER_CONFIRMED
+
+
+def test_triage_bundle_names_its_open_reasons(db_session):
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+
+    owner = _owner(db_session)
+    batch = IngestBatch(
+        owner_id=owner,
+        source_type=IngestBatchSourceType.EMAIL,
+        subject="Klage",
+        status=IngestBatchStatus.PROCESSING,
+    )
+    db_session.add(batch)
+    db_session.flush()
+    for title, reasons in (
+        ("a", ["pending_confirmation", "unresolved_relationship"]),
+        ("b", ["pending_confirmation", "missing_parent", "contradiction_detected"]),
+        ("c", ["pending_confirmation"]),
+    ):
+        _doc(
+            db_session,
+            "_TRIAGE",
+            owner,
+            title,
+            ingest_batch_id=batch.id,
+            review_reasons=reasons,
+            needs_review=True,
+        )
+
+    (bundle,) = client.get("/api/v1/triage").json()["bundles"]
+    assert bundle["open_review_reasons"] == [
+        "contradiction_detected",
+        "unresolved_relationship",
+    ]
+
+
+def test_review_relationships_carry_the_other_partys_originator(
+    db_session, sample_case
+):
+    owner = _owner(db_session)
+    src = _doc(db_session, sample_case.id, owner, "Src")
+    court = _doc(db_session, sample_case.id, owner, "Beschluss")
+    court.originator_type = OriginatorType.COURT
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=src.id,
+            to_document_id=court.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
+    )
+    db_session.commit()
+
+    (rel,) = client.get(f"/api/v1/documents/{src.id}/review").json()["relationships"]
+    assert rel["originator_type"] == "court"

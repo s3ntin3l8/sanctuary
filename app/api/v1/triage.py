@@ -179,7 +179,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
         ],
         has_manual_groups=bool(bundle.sub_groups),
         has_unconfirmed_metadata=bundle.has_unconfirmed_metadata,
-        unresolved_review_count=bundle.unresolved_review_count,
+        open_review_reasons=bundle.open_review_reasons,
         to_confirm_count=bundle.to_confirm_count,
         lead_doc_id=lead.id
         if lead

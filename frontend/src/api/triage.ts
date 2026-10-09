@@ -301,6 +301,21 @@ export function useRelationshipDecision(docId: number) {
   })
 }
 
+/** Dismiss the AI's "this contradicts something" flag on a document. */
+export function useAcknowledgeContradiction(docId: number) {
+  const queryClient = useQueryClient()
+  return useMutation<S['DocumentReview'], ApiError, undefined>({
+    mutationFn: () =>
+      unwrap(api.POST('/api/v1/documents/{doc_id}/contradiction/acknowledge', docPath(docId))),
+    onSuccess: (view) => {
+      queryClient.setQueriesData<S['DocumentReview']>({ queryKey: ['document', docId] }, (prev) =>
+        prev ? { ...prev, ...view } : prev,
+      )
+      queryClient.invalidateQueries({ queryKey: KEY })
+    },
+  })
+}
+
 /** Confirm or dismiss an AI-proposed claim link (CONTESTS / REFUTES / ...) from the review pane. */
 export function useEvidenceDecision(docId: number) {
   const queryClient = useQueryClient()

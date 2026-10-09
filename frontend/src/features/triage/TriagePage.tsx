@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
+import { reviewReasonLabel } from '../documents/reviewReasons'
 import { useOpenDocument } from '../documents/useOpenDocument'
 
 import type { Schemas } from '../../api/client'
@@ -556,8 +557,12 @@ function BundleRow({
                 {b.pipeline.failed_error}
               </span>
             )}
-            {!b.pipeline.failed_error && b.unresolved_review_count > 0 && (
-              <span>{b.unresolved_review_count} need metadata review</span>
+            {!b.pipeline.failed_error && b.open_review_reasons.length > 0 && (
+              <span className="truncate text-warning">
+                {b.open_review_reasons.length <= 2
+                  ? b.open_review_reasons.map(reviewReasonLabel).join(' · ')
+                  : `${b.open_review_reasons.length} open items`}
+              </span>
             )}
           </span>
         </span>

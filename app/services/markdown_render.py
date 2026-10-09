@@ -9,7 +9,7 @@ import hashlib
 import re
 
 from markdown_it import MarkdownIt
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 from app.services.text_offsets import find_text_offsets
 
@@ -23,6 +23,24 @@ _md = (
     .enable("table")
     .enable("strikethrough")
 )
+
+
+def _render_image(self, tokens, idx, options, env) -> str:
+    """Pictures become a caption chip.
+
+    The OCR engine describes pictures as `<img alt="...">` and is told not to
+    fill `src`, so the markdown is `![alt]()` — a broken-image icon in the
+    browser. Stored content never carries a resolvable image, so show the
+    description (logo, stamp, signature) as a labelled placeholder instead.
+    """
+    alt = escape(tokens[idx].content.strip() or "Abbildung")
+    return (
+        f'<span class="reader-figure" role="img" aria-label="{alt}">'
+        f'<span class="reader-figure-icon" aria-hidden="true">image</span>{alt}</span>'
+    )
+
+
+_md.add_render_rule("image", _render_image)
 
 
 # Highlight sentinels — private-use unicode pairs that survive markdown

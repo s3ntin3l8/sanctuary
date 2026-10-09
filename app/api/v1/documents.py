@@ -30,6 +30,7 @@ from app.models.database import (
     User,
 )
 from app.models.enums import (
+    OriginatorType,
     PipelineStage,
     RelationshipConfidence,
     StageStatus,
@@ -269,6 +270,7 @@ def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
                 id=r["rel_obj"].id,
                 doc_id=r["id"],
                 title=r["title"],
+                originator_type=r["originator_type"] or OriginatorType.UNKNOWN,
                 rel_type=r["rel_obj"].relationship_type,
                 confidence=r["rel_obj"].confidence
                 or RelationshipConfidence.AI_DETECTED,

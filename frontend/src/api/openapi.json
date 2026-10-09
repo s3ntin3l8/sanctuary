@@ -7838,6 +7838,9 @@
             "title": "Id",
             "type": "integer"
           },
+          "originator_type": {
+            "$ref": "#/components/schemas/OriginatorType"
+          },
           "rel_type": {
             "$ref": "#/components/schemas/RelationshipType"
           },
@@ -7850,6 +7853,7 @@
           "id",
           "doc_id",
           "title",
+          "originator_type",
           "rel_type",
           "confidence",
           "direction"
@@ -8871,6 +8875,13 @@
             ],
             "title": "Lead Doc Id"
           },
+          "open_review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Open Review Reasons",
+            "type": "array"
+          },
           "originator_types": {
             "items": {
               "$ref": "#/components/schemas/OriginatorType"
@@ -8965,10 +8976,6 @@
           "total_pages": {
             "title": "Total Pages",
             "type": "integer"
-          },
-          "unresolved_review_count": {
-            "title": "Unresolved Review Count",
-            "type": "integer"
           }
         },
         "required": [
@@ -8991,7 +8998,7 @@
           "action_dates",
           "has_manual_groups",
           "has_unconfirmed_metadata",
-          "unresolved_review_count",
+          "open_review_reasons",
           "to_confirm_count",
           "lead_doc_id",
           "documents",

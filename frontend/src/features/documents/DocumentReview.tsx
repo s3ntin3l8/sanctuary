@@ -23,6 +23,7 @@ import { Modal } from '../../ui/Modal'
 import { QueryState } from '../../ui/QueryState'
 import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
+import { ReviewChecklist } from '../triage/ReviewChecklist'
 import { type Routing, RoutingCards } from '../triage/RoutingPickers'
 
 type Review = Schemas['DocumentReview']
@@ -84,6 +85,7 @@ export function ReviewSections({
 }) {
   return (
     <>
+      <ReviewChecklist review={review} bundle={routing?.bundle} />
       <Pipeline review={review} />
       <CaseAndProceeding review={review} routing={routing} />
       <Metadata review={review} singleColumn={singleColumn} />
@@ -114,6 +116,7 @@ function Section({
   children,
   action,
   dataAttr,
+  id,
 }: {
   title: string
   meta?: React.ReactNode
@@ -125,9 +128,12 @@ function Section({
   children: React.ReactNode
   action?: React.ReactNode
   dataAttr?: Record<string, string>
+  /** Anchor the review checklist jumps to. */
+  id?: string
 }) {
   return (
     <section
+      id={id}
       className={`${boxed ? 'rounded-[11px] border border-line bg-card p-3' : 'border-b border-line2 px-4.5 py-3'} ${className}`}
       {...dataAttr}
     >
@@ -325,7 +331,7 @@ function CaseAndProceeding({ review, routing }: { review: Review; routing?: Rout
   const draft = useDraftDecision()
   const toast = useToast()
   return (
-    <section className="border-b border-line2 px-4.5 py-3">
+    <section id="review-case" className="border-b border-line2 px-4.5 py-3">
       <h4 className={`${SECTION_TITLE} mb-2 text-muted`}>
         Case &amp; proceeding{' '}
         {routing && (
@@ -450,6 +456,7 @@ function Metadata({ review, singleColumn }: { review: Review; singleColumn?: boo
   const graded = review.metadata.some((f) => f.confidence)
   return (
     <Section
+      id="review-metadata"
       title="Metadata review"
       icon="edit_note"
       meta={
@@ -457,8 +464,6 @@ function Metadata({ review, singleColumn }: { review: Review; singleColumn?: boo
           <Badge tone="warning" pill>
             {flagged} need review
           </Badge>
-        ) : review.needs_review ? (
-          review.review_reasons.join(', ')
         ) : (
           'all confirmed'
         )
@@ -636,9 +641,16 @@ function MetadataModal({
             ))}
           </select>
         </Field>
-        <Field label="AZ" hint="Comes from the proceeding.">
-          <div className={`${inputClass} text-muted`}>{review.az_court ?? '—'}</div>
-        </Field>
+        <TextField
+          label="AZ"
+          value={review.az_court ?? ''}
+          placeholder="—"
+          readOnly
+          tabIndex={-1}
+          title="Comes from the proceeding."
+          className="cursor-default font-mono text-muted focus:border-line"
+          onChange={() => undefined}
+        />
         <div className="col-span-2 flex justify-end gap-2 pt-1">
           <Button variant="secondary" onClick={onClose}>
             Cancel
@@ -812,11 +824,25 @@ const REL_GLYPH: Record<string, string> = {
 function Relationships({ review }: { review: Review }) {
   const decide = useRelationshipDecision(review.id)
   const toast = useToast()
+  const toConfirm = review.relationships.filter((r) => r.confidence === 'ai_detected').length
   return (
     <Section
+      id="review-relationships"
       boxed
       title="Relationships"
-      meta={review.relationships.length ? `${review.relationships.length}` : 'none'}
+      meta={
+        <>
+          <span className="font-mono text-[10px] text-muted">
+            {review.relationships.length || 'none'}
+          </span>
+          {toConfirm > 0 && (
+            <Badge tone="warning" pill>
+              {toConfirm} to confirm
+            </Badge>
+          )}
+        </>
+      }
+      className={toConfirm > 0 ? 'border-warning/60' : ''}
     >
       <ul className="space-y-1 text-[11.5px] text-ink2">
         {review.relationships.map((r) => (
@@ -824,6 +850,12 @@ function Relationships({ review }: { review: Review }) {
             <span className="w-4 text-center font-mono text-muted">
               {REL_GLYPH[r.rel_type] ?? '·'}
             </span>
+            <span
+              role="img"
+              aria-label={`from ${r.originator_type.replace('_', ' ')}`}
+              title={r.originator_type.replace('_', ' ')}
+              className={`h-2 w-2 shrink-0 rounded-full ${ORIGINATOR_COLOR[r.originator_type]}`}
+            />
             <Link
               to={`/document/${r.doc_id}`}
               className="min-w-0 flex-1 truncate hover:underline"
@@ -938,6 +970,7 @@ function ClaimLinks({ review }: { review: Review }) {
 function Grounds({ review }: { review: Review }) {
   return (
     <Section
+      id="review-grounds"
       boxed
       title="Grounds"
       meta={
