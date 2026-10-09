@@ -2327,6 +2327,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/slicing/{batch_id}/page/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Page Image
+         * @description The full-size render of one page, for the viewer (rendered on demand).
+         */
+        get: operations["v1_page_image_api_v1_slicing__batch_id__page__page__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/slicing/{batch_id}/retry": {
         parameters: {
             query?: never;
@@ -5329,6 +5349,16 @@ export interface components {
             batch_id: number;
             /** Page Count */
             page_count: number | null;
+            /** Progress Done */
+            progress_done?: number | null;
+            /** Progress Phase */
+            progress_phase?: ("ocr" | "ai") | null;
+            /** Progress Total */
+            progress_total?: number | null;
+            /** Proposed Cut Count */
+            proposed_cut_count?: number | null;
+            /** Received At */
+            received_at?: string | null;
             /** Status */
             status: string;
             /** Subject */
@@ -10033,6 +10063,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SlicingConfirmed"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_page_image_api_v1_slicing__batch_id__page__page__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page: number;
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

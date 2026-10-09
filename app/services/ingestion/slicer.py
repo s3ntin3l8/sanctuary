@@ -332,6 +332,22 @@ def _combine_proposed_cuts(
 
 
 _PROGRESS_EVERY = 5
+_VIEWER_DPI = 150
+
+
+def render_page_png(pdf_path, page: int, dpi: int = _VIEWER_DPI) -> bytes | None:
+    """Render one 1-based page of a PDF as PNG bytes (150 DPI by default); None when out of range."""
+    import io
+
+    pdf_doc = pdfium.PdfDocument(str(pdf_path))
+    try:
+        if not 0 < page <= len(pdf_doc):
+            return None
+        buf = io.BytesIO()
+        pdf_doc[page - 1].render(scale=dpi / 72.0).to_pil().save(buf, format="PNG")
+        return buf.getvalue()
+    finally:
+        pdf_doc.close()
 
 
 def _write_progress(db: Session, batch: IngestBatch, done: int, total: int, phase: str):

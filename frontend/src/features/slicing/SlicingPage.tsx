@@ -9,6 +9,7 @@ import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
+import { PageViewer } from './PageViewer'
 
 type Kind = Schemas['SliceCut']['kind']
 
@@ -22,6 +23,7 @@ export function SlicingPage() {
   const toast = useToast()
   const [cuts, setCuts] = useState<Map<number, Kind> | null>(null)
   const [cursor, setCursor] = useState(1)
+  const [viewing, setViewing] = useState<number | null>(null)
   const view = query.data
 
   useEffect(() => {
@@ -35,6 +37,21 @@ export function SlicingPage() {
     if (!view || view.status !== 'ready') return
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return
+      if (viewing !== null) {
+        // The viewer owns the keyboard: Esc closes it, not the page; Enter never confirms.
+        const k = e.key.toLowerCase()
+        if (e.key === 'ArrowLeft') setViewing(Math.max(viewing - 1, 1))
+        else if (e.key === 'ArrowRight') setViewing(Math.min(viewing + 1, view.page_count))
+        else if (e.key === 'Escape') setViewing(null)
+        else if (viewing > 1 && k === 'c') toggle(viewing - 1)
+        else if (viewing > 1 && k === 'l') setKind(viewing - 1, 'letter')
+        else if (viewing > 1 && k === 'a') setKind(viewing - 1, 'attachment')
+        return
+      }
+      if (e.key === ' ' || e.key.toLowerCase() === 'o') {
+        e.preventDefault()
+        setViewing(cursor)
+      }
       if (e.key === 'ArrowDown') setCursor((c) => Math.min(c + 1, view.page_count - 1))
       else if (e.key === 'ArrowUp') setCursor((c) => Math.max(c - 1, 1))
       else if (e.key.toLowerCase() === 'c') toggle(cursor)
@@ -71,8 +88,9 @@ export function SlicingPage() {
 
   function setKind(after: number, kind: Kind) {
     setCuts((prev) => {
+      // Choosing a kind on a gap that isn't cut yet cuts it.
       const next = new Map(prev ?? activeCuts)
-      if (next.has(after)) next.set(after, kind)
+      next.set(after, kind)
       return next
     })
   }
@@ -105,8 +123,17 @@ export function SlicingPage() {
         <div className="ml-auto flex items-center gap-2">
           {view.status === 'ready' && (
             <>
-              <Button variant="secondary" onClick={() => setCuts(new Map())}>
-                Single document
+              <Button
+                variant="secondary"
+                disabled={activeCuts.size === 0}
+                title={
+                  activeCuts.size === 0
+                    ? 'No cuts — Confirm keeps the scan as one document'
+                    : 'Remove every cut and keep the scan as one document'
+                }
+                onClick={() => setCuts(new Map())}
+              >
+                Clear all cuts
               </Button>
               <Button
                 variant="secondary"
@@ -192,7 +219,8 @@ export function SlicingPage() {
               Click a gutter (or press <kbd className="font-mono">C</kbd> on the highlighted one) to
               split after that page, then mark the new part as a <b>new letter</b> or an{' '}
               <b>attachment</b> of the letter above (<kbd className="font-mono">L</kbd> /{' '}
-              <kbd className="font-mono">A</kbd>). ↑↓ moves the highlight, ↵ confirms, Esc leaves.
+              <kbd className="font-mono">A</kbd>). ↑↓ moves the highlight,{' '}
+              <kbd className="font-mono">Space</kbd> opens the page, ↵ confirms, Esc leaves.
             </p>
             <ol className="space-y-1">
               {view.pages.map((p, i) => {
@@ -203,7 +231,15 @@ export function SlicingPage() {
                 return (
                   <li key={p.page}>
                     <div className="flex gap-3 rounded-xl border border-line bg-card p-2">
-                      <div className="h-28 w-20 shrink-0 overflow-hidden rounded-md border border-line2 bg-panel2">
+                      <button
+                        type="button"
+                        aria-label={`Open page ${p.page}`}
+                        onClick={() => {
+                          setCursor(Math.min(p.page, view.page_count - 1))
+                          setViewing(p.page)
+                        }}
+                        className="h-28 w-20 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-line2 bg-panel2 hover:border-accent"
+                      >
                         {p.has_thumbnail ? (
                           <img
                             src={`/api/v1/slicing/${batchId}/thumb/${p.page}`}
@@ -216,11 +252,17 @@ export function SlicingPage() {
                             p. {p.page}
                           </span>
                         )}
-                      </div>
+                      </button>
                       <div className="min-w-0 flex-1 text-[11px]">
                         <div className="font-mono text-[10px] text-muted">Page {p.page}</div>
-                        <p className="line-clamp-2 text-ink2">{p.text_head}</p>
-                        <p className="mt-1 line-clamp-1 text-muted">…{p.text_tail}</p>
+                        <p className="line-clamp-2 text-ink2" title={p.text_head}>
+                          <span className="font-mono text-[9px] text-muted uppercase">starts </span>
+                          {p.text_head}
+                        </p>
+                        <p className="mt-1 line-clamp-1 text-muted" title={p.text_tail}>
+                          <span className="font-mono text-[9px] uppercase">ends </span>…
+                          {p.text_tail}
+                        </p>
                       </div>
                     </div>
                     {i < view.pages.length - 1 && (
@@ -283,6 +325,18 @@ export function SlicingPage() {
           </>
         )}
       </div>
+      {viewing !== null && view.status === 'ready' && (
+        <PageViewer
+          batchId={batchId}
+          page={viewing}
+          pages={view.pages}
+          cuts={activeCuts}
+          onPage={setViewing}
+          onClose={() => setViewing(null)}
+          onToggleCut={toggle}
+          onSetKind={setKind}
+        />
+      )}
     </div>
   )
 }

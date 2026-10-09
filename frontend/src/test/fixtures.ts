@@ -333,7 +333,19 @@ export const triageView: Schemas['TriageView'] = {
     { id: 'ADV-019-C', title: 'Brandt GmbH ./. Keller' },
   ],
   proceedings: [{ id: 5, case_id: 'ADV-024-A', label: 'Amtsgericht Hamburg · 003 F 426/25' }],
-  slicing_queue: [{ batch_id: 77, subject: 'scan.pdf', page_count: 9, status: 'ready' }],
+  slicing_queue: [
+    {
+      batch_id: 77,
+      subject: 'scan.pdf',
+      page_count: 9,
+      status: 'ready',
+      received_at: '2026-10-01T08:00:00Z',
+      progress_done: null,
+      progress_total: null,
+      progress_phase: null,
+      proposed_cut_count: 1,
+    },
+  ],
 }
 
 export const documentReview: Schemas['DocumentReview'] = {
