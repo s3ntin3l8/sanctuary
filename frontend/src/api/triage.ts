@@ -407,13 +407,14 @@ export function useUpload() {
   return useMutation<
     S['UploadResponse'],
     ApiError,
-    { files: File[]; caseId: string | null; parentId: number | null }
+    { files: File[]; caseId: string | null; parentId: number | null; splitScans?: boolean }
   >({
-    mutationFn: async ({ files, caseId, parentId }) => {
+    mutationFn: async ({ files, caseId, parentId, splitScans }) => {
       const form = new FormData()
       files.forEach((f) => form.append('files', f))
       if (caseId) form.append('case_id', caseId)
       if (parentId) form.append('parent_id', String(parentId))
+      if (splitScans) form.append('split_scans', 'true')
       const response = await fetch('/api/v1/upload', {
         method: 'POST',
         body: form,

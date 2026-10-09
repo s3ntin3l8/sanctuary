@@ -337,3 +337,33 @@ def test_slicing_confirm_failure_removes_written_slice_files(
 
     assert not (tmp_path / "slice_1.pdf").exists()
     assert not (tmp_path / "slice_2.pdf").exists()
+
+
+@pytest.mark.unit
+def test_slicing_confirm_titles_slices_from_batch_subject(db_session, tmp_path):
+    """Uploaded scans are stored as original.pdf; slices keep the real name."""
+    import pypdfium2 as pdfium
+
+    from app.models.database import Document, IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+    from app.services.slicing_service import confirm_slices
+
+    pdf = pdfium.PdfDocument.new()
+    for _ in range(2):
+        pdf.new_page(200, 300)
+    path = tmp_path / "original.pdf"
+    pdf.save(str(path))
+    batch = IngestBatch(
+        owner_id=_admin_id(db_session),
+        source_type=IngestBatchSourceType.SCAN,
+        subject="Gerichtspost.pdf",
+        raw_source_path=str(path),
+        status=IngestBatchStatus.AWAITING_SLICING,
+        meta={"slicing": {"status": "ready", "page_count": 2}},
+    )
+    db_session.add(batch)
+    db_session.commit()
+
+    ids = confirm_slices(db_session, batch, [1])
+    titles = sorted(db_session.get(Document, i).title for i in ids)
+    assert titles == ["Gerichtspost – Part 1", "Gerichtspost – Part 2"]

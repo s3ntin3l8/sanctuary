@@ -42,6 +42,9 @@ def confirm_slices(
     if not pdf_path.exists():
         raise ValueError("Source PDF no longer available")
 
+    # Uploads are stored as original.pdf; the batch subject keeps the real name.
+    base_name = Path(batch.subject).stem if batch.subject else pdf_path.stem
+
     boundaries = [0] + cut_positions + [page_count]
     slices = [
         (boundaries[i] + 1, boundaries[i + 1]) for i in range(len(boundaries) - 1)
@@ -72,7 +75,7 @@ def confirm_slices(
             slice_page_count = end_page - start_page + 1
 
             doc = Document(
-                title=f"{pdf_path.stem} – Part {slice_idx + 1}",
+                title=f"{base_name} – Part {slice_idx + 1}",
                 owner_id=batch.owner_id,  # sliced docs inherit the batch's owner
                 file_path=to_storage_path(slice_filename),
                 original_filename=slice_filename.name,
