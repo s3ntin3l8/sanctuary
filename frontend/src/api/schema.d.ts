@@ -2659,6 +2659,9 @@ export interface paths {
         /**
          * V1 Upload
          * @description Ingest files: non-.eml files share one manual batch; each .eml is its own batch.
+         *
+         *     With ``split_scans`` each PDF is its own scan batch: multi-page PDFs go to
+         *     slicing review, single-page ones straight to the pipeline. Triage only.
          */
         post: operations["v1_upload_api_v1_upload_post"];
         delete?: never;
@@ -2959,6 +2962,11 @@ export interface components {
             files: string[];
             /** Parent Id */
             parent_id?: number | null;
+            /**
+             * Split Scans
+             * @default false
+             */
+            split_scans: boolean;
         };
         /**
          * BriefView
@@ -5687,6 +5695,11 @@ export interface components {
             filename: string;
             /** Message */
             message?: string | null;
+            /**
+             * Slicing
+             * @default false
+             */
+            slicing: boolean;
             /**
              * Status
              * @enum {string}

@@ -503,14 +503,19 @@ def ingest_scanned_file(
     batch_id: str,
     source_hash: str,
     owner_id: int | None = None,
+    display_name: str | None = None,
 ) -> IngestBatch | None:
-    """Ingest a single scanned PDF from the scan folder.
+    """Ingest a single scanned PDF from the scan folder (or an upload).
+
+    ``display_name`` overrides the file's own name for the batch subject and a
+    single-page document title (uploads are stored as ``original.pdf``).
 
     Returns None when the file is a duplicate (already ingested).
     Returns the created IngestBatch otherwise.
     """
     owner_id = _resolve_owner_id(db, owner_id)
     batch_repo = IngestBatchRepository(db)
+    name = display_name or pdf_path.name
 
     existing = batch_repo.get_by_source_hash(source_hash, owner_id)
     if existing:
@@ -520,7 +525,7 @@ def ingest_scanned_file(
     batch = batch_repo.create_batch(
         source_type=IngestBatchSourceType.SCAN,
         owner_id=owner_id,
-        subject=pdf_path.name[:255],
+        subject=name[:255],
         raw_source_path=to_storage_path(pdf_path),
     )
     batch.source_hash = source_hash
@@ -552,10 +557,10 @@ def ingest_scanned_file(
         # computed it), so don't read the whole PDF into memory a second time.
         content_hash = source_hash
         doc = Document(
-            title=pdf_path.name,
+            title=name,
             owner_id=owner_id,
             file_path=to_storage_path(pdf_path),
-            original_filename=pdf_path.name,
+            original_filename=name,
             content_hash=content_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,

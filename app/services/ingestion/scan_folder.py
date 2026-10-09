@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.config import (
@@ -18,8 +19,9 @@ from app.config import (
     SCAN_PROCESSING_STALE_SECONDS,
 )
 from app.core.paths import to_storage_path
+from app.models.database import IngestBatch
 from app.services.ingestion.batch_orchestrator import ingest_scanned_file
-from app.services.ingestion.converters import MAX_FILE_SIZE
+from app.services.ingestion.converters import MAX_FILE_SIZE, validate_file_magic
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +177,61 @@ def _ingest_archived(
         logger.error("scan_and_ingest: ingest failed for %s: %s", pdf_name, exc)
         _fail_batch(archive_dir, batch_id, str(exc))
         return 0
+
+
+async def ingest_uploaded_scan(
+    db: Session, file: UploadFile, owner_id: int | None
+) -> IngestBatch | None:
+    """Ingest an uploaded PDF through the scan pipeline (slicing for multi-page).
+
+    Same on-disk layout as a folder scan (processed/<date>/<uuid>/original.pdf
+    plus owner sidecar), so dedup, slicing prep, recovery and bundle deletion
+    treat it identically. Returns None for a duplicate; raises ``ValueError``
+    for an invalid or oversized file.
+    """
+    import aiofiles
+
+    batch_id = str(uuid4())
+    processing_dir = SCAN_PROCESSING_DIR / batch_id
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    dest = processing_dir / "original.pdf"
+    digest = hashlib.sha256()
+    try:
+        total = 0
+        async with aiofiles.open(dest, "wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_FILE_SIZE:
+                    raise ValueError(
+                        f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
+                    )
+                digest.update(chunk)
+                await out.write(chunk)
+        if validate_file_magic(str(dest)) != ".pdf":
+            raise ValueError("File content is not a PDF.")
+        if owner_id is not None:
+            (processing_dir / _OWNER_SIDECAR).write_text(str(owner_id))
+    except Exception:
+        shutil.rmtree(processing_dir, ignore_errors=True)
+        raise
+
+    archive_dir = _archive_batch(processing_dir, batch_id)
+    try:
+        batch = ingest_scanned_file(
+            db,
+            archive_dir / dest.name,
+            batch_id,
+            digest.hexdigest(),
+            owner_id=owner_id,
+            display_name=os.path.basename(file.filename or "") or None,
+        )
+    except Exception as exc:
+        db.rollback()
+        _fail_batch(archive_dir, batch_id, str(exc))
+        raise
+    if batch is None:
+        shutil.rmtree(archive_dir, ignore_errors=True)
+    return batch
 
 
 def _sha256_file(path: Path) -> str:

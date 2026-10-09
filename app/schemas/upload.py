@@ -13,6 +13,8 @@ class UploadResult(BaseModel):
     doc_id: int | None = None
     batch_id: int | None = None
     message: str | None = None
+    # True when the PDF was queued for slicing review at /ingest/slice/{batch_id}.
+    slicing: bool = False
 
 
 class UploadResponse(BaseModel):

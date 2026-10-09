@@ -380,6 +380,86 @@ def test_upload_rejects_unknown_case_and_empty_selection(db_session):
     )
 
 
+def _pdf_bytes(pages: int, tag: str) -> bytes:
+    import io
+
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument.new()
+    for i in range(pages):
+        pdf.new_page(200 + i, 300)
+    pdf.new_page(100, 100 + len(tag))  # distinct bytes per tag => distinct hash
+    buf = io.BytesIO()
+    pdf.save(buf)
+    return buf.getvalue()
+
+
+def _scan_dirs(monkeypatch, tmp_path):
+    from app.services.ingestion import scan_folder
+
+    monkeypatch.setattr(scan_folder, "SCAN_PROCESSING_DIR", tmp_path / "processing")
+    monkeypatch.setattr(scan_folder, "SCAN_PROCESSED_DIR", tmp_path / "processed")
+    monkeypatch.setattr(scan_folder, "SCAN_FAILED_DIR", tmp_path / "failed")
+    return scan_folder
+
+
+def test_upload_split_scans_queues_multipage_for_slicing(
+    db_session, monkeypatch, tmp_path
+):
+    from app.models.database import Document, IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+
+    _scan_dirs(monkeypatch, tmp_path)
+    dispatched = []
+    monkeypatch.setattr(
+        "app.services.ingestion.batch_orchestrator.dispatch_task",
+        lambda task, *a, **k: dispatched.append(task),
+    )
+    data = _pdf_bytes(3, "multi")
+    body = client.post(
+        "/api/v1/upload",
+        files=[("files", ("stack.pdf", data, "application/pdf"))],
+        data={"split_scans": "true"},
+    ).json()
+    result = body["results"][0]
+    assert result["status"] == "queued" and result["slicing"] is True
+    batch = db_session.get(IngestBatch, result["batch_id"])
+    assert batch.status == IngestBatchStatus.AWAITING_SLICING
+    assert batch.source_type == IngestBatchSourceType.SCAN
+    assert batch.subject == "stack.pdf"
+    assert len(list((tmp_path / "processed").glob("*/*/original.pdf"))) == 1
+    assert any("prepare_slicing" in str(t) for t in dispatched)
+    assert db_session.query(Document).filter_by(ingest_batch_id=batch.id).count() == 0
+
+    dup = client.post(
+        "/api/v1/upload",
+        files=[("files", ("stack.pdf", data, "application/pdf"))],
+        data={"split_scans": "true"},
+    ).json()
+    assert dup["results"][0]["status"] == "duplicate"
+    assert len(list((tmp_path / "processed").glob("*/*"))) == 1
+
+
+def test_upload_split_scans_rejects_case_target_and_non_pdf(
+    db_session, sample_case, monkeypatch, tmp_path
+):
+    _scan_dirs(monkeypatch, tmp_path)
+    resp = client.post(
+        "/api/v1/upload",
+        files=[("files", ("a.pdf", b"%PDF-1.4", "application/pdf"))],
+        data={"split_scans": "true", "case_id": sample_case.id},
+    )
+    assert resp.status_code == 422 and resp.json()["code"] == "split_needs_triage"
+
+    fake = client.post(
+        "/api/v1/upload",
+        files=[("files", ("fake.pdf", b"not a pdf at all", "application/pdf"))],
+        data={"split_scans": "true"},
+    ).json()
+    assert fake["results"][0]["status"] == "error"
+    assert not list((tmp_path / "processing").glob("*"))
+
+
 def test_upload_filename_is_echoed_safely(db_session):
     name = "<img src=x onerror=alert(1)>.txt"
     with patch("app.tasks.dispatch.dispatch_task"):

@@ -18,6 +18,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
   const [results, setResults] = useState<Schemas['UploadResult'][] | null>(null)
   const [dragging, setDragging] = useState(false)
   const [parentId, setParentId] = useState<number | null>(null)
+  const [splitScans, setSplitScans] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const target = useUploadTarget(caseId).data
   const upload = useUpload()
@@ -38,6 +39,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
     setFiles([])
     setResults(null)
     setParentId(null)
+    setSplitScans(false)
     upload.reset()
     onClose()
   }
@@ -137,6 +139,22 @@ export function IngestModal({ open, onClose, caseId }: Props) {
               </select>
             </Field>
           )}
+          {caseId === null && files.some((f) => f.name.toLowerCase().endsWith('.pdf')) && (
+            <label className="flex items-start gap-2 text-[12px]">
+              <input
+                type="checkbox"
+                checked={splitScans}
+                onChange={(e) => setSplitScans(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-semibold">Scanned stack — split into documents</span>
+                <span className="block text-[10.5px] text-muted">
+                  Each PDF is checked for letter boundaries; you confirm the cuts before processing.
+                </span>
+              </span>
+            </label>
+          )}
           <p className="flex items-center gap-1 text-[10.5px] text-muted">
             <Icon name="lock" size={12} /> Each file runs through the local pipeline: Extract ›
             Metadata › Enrich › Relationships › Claims › Entities › Embeddings.
@@ -157,7 +175,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
             disabled={files.length === 0 || upload.isPending}
             onClick={() =>
               upload.mutate(
-                { files, caseId, parentId },
+                { files, caseId, parentId, splitScans: caseId === null && splitScans },
                 { onSuccess: (r) => setResults(r.results) },
               )
             }
@@ -185,7 +203,14 @@ function ResultRow({ result }: { result: Schemas['UploadResult'] }) {
         className={result.status === 'error' ? 'text-danger' : 'text-muted'}
       />
       <span className="min-w-0 flex-1 truncate">{result.filename}</span>
-      {result.status === 'queued' && result.doc_id ? (
+      {result.status === 'queued' && result.slicing && result.batch_id ? (
+        <a
+          href={`/ingest/slice/${result.batch_id}`}
+          className="font-mono text-[11px] text-tealink hover:underline"
+        >
+          Review cuts
+        </a>
+      ) : result.status === 'queued' && result.doc_id ? (
         <LiveStatus docId={result.doc_id} />
       ) : (
         <Badge tone={result.status === 'error' ? 'danger' : 'neutral'}>

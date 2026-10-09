@@ -754,6 +754,11 @@
               }
             ],
             "title": "Parent Id"
+          },
+          "split_scans": {
+            "default": false,
+            "title": "Split Scans",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9652,6 +9657,11 @@
             ],
             "title": "Message"
           },
+          "slicing": {
+            "default": false,
+            "title": "Slicing",
+            "type": "boolean"
+          },
           "status": {
             "enum": [
               "queued",
@@ -16286,7 +16296,7 @@
     },
     "/api/v1/upload": {
       "post": {
-        "description": "Ingest files: non-.eml files share one manual batch; each .eml is its own batch.",
+        "description": "Ingest files: non-.eml files share one manual batch; each .eml is its own batch.\n\nWith ``split_scans`` each PDF is its own scan batch: multi-page PDFs go to\nslicing review, single-page ones straight to the pipeline. Triage only.",
         "operationId": "v1_upload_api_v1_upload_post",
         "requestBody": {
           "content": {
