@@ -7,6 +7,7 @@ import { formatShortDate } from '../../../format'
 import { Badge } from '../../../ui/Badge'
 import { Icon } from '../../../ui/Icon'
 import { DocumentReview, ORIGINATOR_COLOR } from '../../documents/DocumentReview'
+import { reviewReasonLabel } from '../../documents/reviewReasons'
 
 type Props = {
   detail: CaseDetail
@@ -60,6 +61,11 @@ export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
                   className={`absolute top-3.5 left-2 h-2 w-2 rounded-full ${ORIGINATOR_COLOR[d.originator_type]}`}
                 />
                 <span className="block truncate font-medium">{d.title}</span>
+                {d.open_review_reasons.length > 0 && (
+                  <span className="block truncate text-[10.5px] text-warning">
+                    {d.open_review_reasons.map(reviewReasonLabel).join(' · ')}
+                  </span>
+                )}
                 <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted">
                   {formatShortDate(d.issued_date ?? d.received_date) || '—'}
                   {d.significance_tier === 'critical' && <span className="text-danger">⚑</span>}

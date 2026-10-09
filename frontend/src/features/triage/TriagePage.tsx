@@ -359,6 +359,22 @@ export function TriagePage() {
           )
         }
         onBatchConfirmed={() => setSelected(new Set())}
+        onFiled={(key) => {
+          // Keep working: open the bundle that follows the filed one (or the one before it).
+          if (expanded !== key) return
+          const i = visible.findIndex((b) => b.key === key)
+          const next = visible[i + 1] ?? visible[i - 1]
+          setParams(
+            (p) => {
+              const nextParams = new URLSearchParams(p)
+              nextParams.delete('doc')
+              if (next) nextParams.set('bundle', next.key)
+              else nextParams.delete('bundle')
+              return nextParams
+            },
+            { replace: true },
+          )
+        }}
       />
       <ConfirmDialog
         open={retryTarget !== null}
