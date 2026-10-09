@@ -163,7 +163,11 @@ def compute_review_reasons(doc: Document) -> list[str]:
     try:
         from sqlalchemy import inspect
 
-        from app.models.database import ClaimEvidenceProposal, DocumentRelationship
+        from app.models.database import (
+            Claim,
+            ClaimEvidenceProposal,
+            DocumentRelationship,
+        )
         from app.models.enums import (
             ClaimEvidenceRole,
             ProposalStatus,
@@ -188,7 +192,9 @@ def compute_review_reasons(doc: Document) -> list[str]:
             # until the user confirms or dismisses each CONTESTS/REFUTES one.
             contested = (
                 db.query(ClaimEvidenceProposal)
+                .join(Claim, Claim.id == ClaimEvidenceProposal.target_claim_id)
                 .filter(
+                    Claim.dismissed_at.is_(None),
                     ClaimEvidenceProposal.source_document_id == doc.id,
                     ClaimEvidenceProposal.proposed_role.in_(
                         [ClaimEvidenceRole.CONTESTS, ClaimEvidenceRole.REFUTES]

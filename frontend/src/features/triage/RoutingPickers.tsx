@@ -195,6 +195,7 @@ function PickerCard({
   onClick,
   sub,
   reserveSub,
+  icon = 'edit',
   children,
 }: {
   label: string
@@ -205,6 +206,8 @@ function PickerCard({
   sub?: string
   /** Keep the subtitle row so a sibling card with one stays the same height. */
   reserveSub: boolean
+  /** Affordance glyph; both pickers open a popover and read as "change". */
+  icon?: string
   children: ReactNode
 }) {
   return (
@@ -219,7 +222,7 @@ function PickerCard({
       <div className={CARD_LABEL}>{label}</div>
       <div className="flex items-center gap-[7px]">
         {children}
-        <Icon name="edit" size={14} className="ml-auto text-muted2" />
+        <Icon name={icon} size={14} className="ml-auto text-muted2" />
       </div>
       {reserveSub && <div className="mt-1 h-[15px] truncate text-[10px] text-muted">{sub}</div>}
     </button>

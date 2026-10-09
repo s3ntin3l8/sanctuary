@@ -147,7 +147,12 @@ def confirm_evidence(proposal_id: int, db: Session) -> ClaimEvidenceProposal | N
         )
         .first()
     )
-    if existing is None:
+    if existing is not None:
+        # A row the AI wrote out-of-band must not pass for user-confirmed.
+        existing.confidence = RelationshipConfidence.USER_CONFIRMED
+        if prop.excerpt:
+            existing.excerpt = prop.excerpt
+    else:
         db.add(
             ClaimEvidence(
                 claim_id=prop.target_claim_id,

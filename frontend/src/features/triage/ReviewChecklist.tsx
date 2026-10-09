@@ -64,6 +64,8 @@ export function reviewItems(review: Review): Item[] {
       target: 'review-relationships',
     })
   }
+  // Any proposal that takes a stance other than mere support (contests, refutes, ...)
+  // needs a decision; plain supporting links don't hold the document in review.
   const links = review.evidence_proposals.filter((p) => p.proposed_role !== 'supports').length
   if (links > 0) {
     items.push({
