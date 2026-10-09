@@ -46,6 +46,7 @@ def reset_ai_enrichment(db: Session) -> tuple[int, int]:
         text(
             "UPDATE documents SET "
             "ai_summary = NULL, ai_summary_created_at = NULL, "
+            "ai_summary_approved_at = NULL, "
             "significance_tier = NULL, key_passages = NULL "
             "WHERE 1=1"
         )

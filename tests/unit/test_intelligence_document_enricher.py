@@ -445,3 +445,26 @@ def test_apply_enrichment_keeps_issued_date_set_by_metadata(
     _apply_enrichment(doc_with_content, {"issued_date": "2020-01-01"}, db=db_session)
 
     assert doc_with_content.issued_date.date() == datetime(2026, 4, 30).date()
+
+
+@pytest.mark.unit
+def test_apply_enrichment_clears_a_stale_summary_approval(doc_with_content):
+    """New summary text must not inherit the approval of the one it replaces."""
+    from datetime import UTC, datetime
+
+    doc_with_content.ai_summary = {"legal_significance": "old"}
+    doc_with_content.ai_summary_approved_at = datetime.now(UTC)
+    result = {
+        "management_summary": {
+            "legal_significance": "Die Klage wird abgewiesen.",
+            "required_action": "Frist notieren.",
+            "financial_impact": "Kosten trägt der Kläger.",
+        }
+    }
+    _apply_enrichment(doc_with_content, result)
+
+    assert (
+        doc_with_content.ai_summary["legal_significance"]
+        == "Die Klage wird abgewiesen."
+    )
+    assert doc_with_content.ai_summary_approved_at is None

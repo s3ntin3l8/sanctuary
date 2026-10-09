@@ -515,7 +515,11 @@ def summary_action(
     from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 
     if body.action == "approve":
+        if not summary_bullets_from_ai_summary(doc.ai_summary):
+            raise ApiError(409, "no_summary", "There is no summary to approve.")
         doc.ai_summary_approved_at = datetime.now(UTC)
+    elif body.action == "unapprove":
+        doc.ai_summary_approved_at = None
     else:
         doc.ai_summary = None
         doc.ai_summary_approved_at = None

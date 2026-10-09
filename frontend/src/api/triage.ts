@@ -192,16 +192,21 @@ export function useGroupOp() {
 
 // --- Document review ---------------------------------------------------------
 
-export function useDocumentReview(docId: number | null) {
-  return useQuery<S['DocumentReview'], ApiError>({
+/** Shared by `useDocumentReview` and batched `useQueries` so both hit the same cache entry. */
+export function documentReviewOptions(docId: number | null) {
+  return {
     queryKey: ['document', docId],
     queryFn: () => unwrap(api.GET('/api/v1/documents/{doc_id}/review', docPath(docId ?? 0))),
     enabled: docId !== null,
-    refetchInterval: (query) =>
+    refetchInterval: (query: { state: { data?: S['DocumentReview'] } }) =>
       ['pending', 'running', 'partial'].includes(query.state.data?.pipeline.state ?? '')
         ? 4_000
         : false,
-  })
+  }
+}
+
+export function useDocumentReview(docId: number | null) {
+  return useQuery<S['DocumentReview'], ApiError>(documentReviewOptions(docId))
 }
 
 /**
@@ -232,12 +237,17 @@ export function useUpdateMetadata(docId: number) {
 
 export function useSummaryAction(docId: number) {
   const patch = useDocPatch(docId)
+  const queryClient = useQueryClient()
   return useMutation<S['SummaryView'], ApiError, S['SummaryAction']['action']>({
     mutationFn: (action) =>
       unwrap(
         api.POST('/api/v1/documents/{doc_id}/summary', { ...docPath(docId), body: { action } }),
       ),
-    onSuccess: (summary) => patch((prev) => ({ ...prev, summary })),
+    onSuccess: (summary) => {
+      patch((prev) => ({ ...prev, summary }))
+      // The bundle row's "summaries to approve" and the readiness state follow it.
+      queryClient.invalidateQueries({ queryKey: KEY })
+    },
   })
 }
 

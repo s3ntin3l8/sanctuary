@@ -312,6 +312,9 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             )
             doc.ai_summary = validated_summary.model_dump()
             doc.ai_summary_created_at = datetime.now(UTC)
+            # Only when new text is actually written: a failed validation keeps the
+            # old summary, so its approval stays with it.
+            doc.ai_summary_approved_at = None
         except Exception as e:
             logger.warning("Doc %d: invalid ai_summary skipped: %s", doc.id, e)
 
