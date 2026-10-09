@@ -23,7 +23,10 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    uses: s3ntin3l8/.github/.github/workflows/docker-publish.yml@main
+    uses: s3ntin3l8/.github/.github/workflows/docker-publish.yml@ci/dockerhub-login
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     with:
       image-name: s3ntin3l8/sanctuary
       push-release: true
