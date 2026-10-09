@@ -173,7 +173,6 @@ class ConfirmedCase(BaseModel):
 
 class TriageConfirmResult(BaseModel):
     bundle: TriageBundle | None
-    next_doc_id: int | None
     case: ConfirmedCase
 
 

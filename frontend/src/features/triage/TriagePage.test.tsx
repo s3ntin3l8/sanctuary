@@ -59,7 +59,6 @@ test('confirm uses the AI suggestion and posts the routing', async () => {
     'POST /api/v1/triage/confirm': {
       body: {
         bundle: null,
-        next_doc_id: null,
         case: { id: 'ADV-024-A', title: 'Weber ./. Weber', action: 'assigned' },
       },
     },
@@ -167,7 +166,6 @@ test('the case card re-routes the bundle from an inline picker', async () => {
     'POST /api/v1/triage/confirm': {
       body: {
         bundle: null,
-        next_doc_id: null,
         case: { id: 'ADV-019-C', title: 'Brandt GmbH ./. Keller', action: 'assigned' },
       },
     },
@@ -199,7 +197,6 @@ test('the proceeding picker lists only the assigned case’s proceedings', async
     'POST /api/v1/triage/confirm': {
       body: {
         bundle: null,
-        next_doc_id: null,
         case: { id: 'ADV-024-A', title: 'Weber ./. Weber', action: 'assigned' },
       },
     },
@@ -521,4 +518,32 @@ test('a deep link to a bundle that is no longer in the feed is dropped', async (
   )
   await screen.findByText('Klageerwiderung')
   await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^$/))
+})
+
+test('filing the open bundle moves on to the next one', async () => {
+  stub({
+    'POST /api/v1/triage/confirm': {
+      body: {
+        bundle: null,
+        case: { id: 'ADV-024-A', title: 'Weber ./. Weber', action: 'assigned' },
+      },
+    },
+  })
+  renderAt(
+    '/triage?bundle=batch-42&doc=2212',
+    <>
+      <TriagePage />
+      <Search />
+    </>,
+  )
+  const user = userEvent.setup()
+  await screen.findByText('Bundle contents · 3')
+  const row = (await screen.findByText('Klageerwiderung')).closest('li')
+  if (!row) throw new Error('row')
+  await user.click(within(row).getByRole('button', { name: 'Confirm' }))
+  await user.click(
+    within(screen.getByRole('dialog')).getByRole('button', { name: /Confirm & complete/ }),
+  )
+  await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('?bundle=batch-39'))
+  expect(screen.getByTestId('search')).not.toHaveTextContent('doc=')
 })

@@ -30,6 +30,8 @@ type Props = {
   onReview: (bundleKey: string, docId: number) => void
   /** The batch confirm went through (clears the selection). */
   onBatchConfirmed: () => void
+  /** A single bundle was filed and left triage. */
+  onFiled: (bundleKey: string) => void
 }
 
 /** Route one bundle (or a selection) to a case: suggested, picked, or newly created. */
@@ -143,6 +145,7 @@ function Dialog({
   cases,
   proceedings,
   onReview,
+  onFiled,
 }: Props & { target: Exclude<ConfirmTarget, { mode: 'batch_confirm' }> }) {
   const confirm = useConfirmBundle()
   const assign = useBatchAssign()
@@ -193,14 +196,16 @@ function Dialog({
           ...routing,
         },
         {
-          onSuccess: (r) =>
+          onSuccess: (r) => {
+            if (!r.bundle) onFiled(target.bundle.key)
             done(
               r.case.action === 'created'
                 ? `Case ${r.case.id} created`
                 : target.action === 'confirm_bundle'
                   ? `Filed into ${r.case.id}`
                   : `Assigned to ${r.case.id}`,
-            ),
+            )
+          },
         },
       )
     }

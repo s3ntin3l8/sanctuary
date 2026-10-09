@@ -542,14 +542,6 @@ def _route_document(
         reset_and_reenrich(db, [doc])
 
 
-def _next_doc_id(bundles: list[BundleView]) -> int | None:
-    for b in bundles:
-        for d in b.documents:
-            if d.needs_review or d.case_id == "_TRIAGE":
-                return d.id
-    return None
-
-
 @router.post("/confirm", response_model=TriageConfirmResult)
 @limiter.limit("30/minute")
 def confirm_bundle_route(
@@ -577,14 +569,8 @@ def confirm_bundle_route(
         key = f"loose-{body.doc_id}"
         _route_document(db, body.doc_id or 0, case_id, body.proceeding_id, finalize)
 
-    updated = _bundle_by_key(db, user, key)
-    if updated is not None:
-        next_id = updated.documents[0].id if updated.documents else None
-    else:
-        next_id = _next_doc_id(get_triage_bundles(db, limit=500, owner_id=user.id))
     return TriageConfirmResult(
-        bundle=updated,
-        next_doc_id=next_id,
+        bundle=_bundle_by_key(db, user, key),
         case=ConfirmedCase(
             id=case_id, title=case.title if case else case_id, action=action
         ),  # type: ignore[arg-type]

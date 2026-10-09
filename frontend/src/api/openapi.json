@@ -1472,6 +1472,14 @@
             "title": "Needs Review",
             "type": "boolean"
           },
+          "open_review_reasons": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Open Review Reasons",
+            "type": "array"
+          },
           "originator_type": {
             "$ref": "#/components/schemas/OriginatorType"
           },
@@ -9161,22 +9169,10 @@
           },
           "case": {
             "$ref": "#/components/schemas/ConfirmedCase"
-          },
-          "next_doc_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Doc Id"
           }
         },
         "required": [
           "bundle",
-          "next_doc_id",
           "case"
         ],
         "title": "TriageConfirmResult",

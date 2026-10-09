@@ -58,8 +58,9 @@ export function reviewItems(review: Review): Item[] {
   }
   // Only edges *from* this document count, as on the backend; an incoming AI edge
   // belongs to (and is confirmed from) the other document.
+  // Cover→enclosure edges follow the bundle layout; they are not the AI's call to confirm.
   const rels = review.relationships.filter(
-    (r) => r.direction === 'out' && r.confidence === 'ai_detected',
+    (r) => r.direction === 'out' && r.confidence === 'ai_detected' && r.rel_type !== 'encloses',
   ).length
   if (rels > 0) {
     items.push({

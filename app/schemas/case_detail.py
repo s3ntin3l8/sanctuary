@@ -97,6 +97,8 @@ class CaseDocument(BaseModel):
     role: str
     thread_open: bool
     needs_review: bool
+    # What a human still has to act on, by reason code (labels live in the SPA).
+    open_review_reasons: list[str] = []
     summary_pending: bool = False
     is_new: bool
 

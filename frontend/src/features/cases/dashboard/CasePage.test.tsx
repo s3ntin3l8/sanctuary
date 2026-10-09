@@ -71,6 +71,8 @@ test('renders the header, spine, review panel and brief rail', async () => {
   expect(await screen.findByRole('heading', { level: 1, name: 'Vane ./. Vane' })).toBeVisible()
   const spine = screen.getByRole('complementary', { name: 'Case spine' })
   expect(within(spine).getAllByRole('button')).toHaveLength(2)
+  // Open reasons, including ones raised after confirmation, are named on the spine.
+  expect(within(spine).getByText('relationships to confirm')).toBeVisible()
   expect(within(spine).getByRole('button', { name: /Klageerwiderung/ })).toHaveAttribute(
     'aria-current',
     'true',

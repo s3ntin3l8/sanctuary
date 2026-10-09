@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,31 @@ from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM, fence
 from app.services.intelligence.schemas import Phase1Metadata
 
 logger = logging.getLogger(__name__)
+
+
+_SAME_NOTE_RATIO = 0.8
+
+
+def _already_acknowledged(notes: list, acknowledged: list | None) -> bool:
+    """True when every note matches one the user already dismissed.
+
+    The model rewords the same finding between runs, so notes are compared
+    fuzzily (case and spacing ignored); a note that matches nothing is new.
+    """
+    if not acknowledged:
+        return False
+
+    def norm(text: object) -> str:
+        return " ".join(str(text).casefold().split())
+
+    known = [norm(a) for a in acknowledged]
+    return all(
+        any(
+            SequenceMatcher(None, norm(n), k).ratio() >= _SAME_NOTE_RATIO for k in known
+        )
+        for n in notes
+    )
+
 
 _LAW_FIRM_INDICATORS = re.compile(
     r"\b(?:rechtsanw[äa]lt(?:e|in)?|kanzlei|partnerschaft|partner\b)",
@@ -395,9 +421,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     contradictions = summary_data.get("contradictions", [])
     if contradictions:
         new_meta["contradiction_notes"] = contradictions
-        # The user dismissed exactly these notes; only different ones re-raise it.
-        new_meta["ai_contradiction"] = (
-            new_meta.get("contradiction_acknowledged") != contradictions
+        # The user dismissed these notes; only genuinely new ones re-raise it.
+        new_meta["ai_contradiction"] = not _already_acknowledged(
+            contradictions, new_meta.get("contradiction_acknowledged")
         )
     else:
         new_meta["ai_contradiction"] = False

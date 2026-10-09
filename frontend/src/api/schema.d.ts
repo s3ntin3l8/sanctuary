@@ -3177,6 +3177,11 @@ export interface components {
             issued_date: string | null;
             /** Needs Review */
             needs_review: boolean;
+            /**
+             * Open Review Reasons
+             * @default []
+             */
+            open_review_reasons: string[];
             originator_type: components["schemas"]["OriginatorType"];
             /** Received Date */
             received_date: string | null;
@@ -5548,8 +5553,6 @@ export interface components {
         TriageConfirmResult: {
             bundle: components["schemas"]["TriageBundle"] | null;
             case: components["schemas"]["ConfirmedCase"];
-            /** Next Doc Id */
-            next_doc_id: number | null;
         };
         /** TriageDocument */
         TriageDocument: {
