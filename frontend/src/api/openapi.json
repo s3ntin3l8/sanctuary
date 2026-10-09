@@ -1501,6 +1501,11 @@
               }
             ]
           },
+          "summary_pending": {
+            "default": false,
+            "title": "Summary Pending",
+            "type": "boolean"
+          },
           "thread_open": {
             "title": "Thread Open",
             "type": "boolean"

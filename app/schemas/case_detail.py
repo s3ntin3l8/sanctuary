@@ -97,6 +97,7 @@ class CaseDocument(BaseModel):
     role: str
     thread_open: bool
     needs_review: bool
+    summary_pending: bool = False
     is_new: bool
 
 

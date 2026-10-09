@@ -83,6 +83,28 @@ def confirm_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
             ev.claim_id = existing.id
             existing_keys.add((ev.document_id, ev.role))
 
+    # Pending evidence proposals aimed at the absorbed claim follow the
+    # survivor; left alone they would cascade away with it, silently dropping
+    # the contest/refute decisions the user still has to make.
+    # A proposal the survivor already has (same document and role) is not repeated.
+    already = {
+        (p.source_document_id, p.proposed_role)
+        for p in db.query(ClaimEvidenceProposal).filter(
+            ClaimEvidenceProposal.target_claim_id == existing.id,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        )
+    }
+    for p in db.query(ClaimEvidenceProposal).filter(
+        ClaimEvidenceProposal.target_claim_id == new_claim.id
+    ):
+        if (
+            p.status == ProposalStatus.PENDING
+            and (p.source_document_id, p.proposed_role) in already
+        ):
+            db.delete(p)
+        else:
+            p.target_claim_id = existing.id
+
     # embedding lives on the claim row itself, so deleting it drops the vector too.
     db.delete(new_claim)
 

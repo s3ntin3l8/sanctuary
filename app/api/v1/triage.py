@@ -524,11 +524,18 @@ def _route_document(
     doc = confirm_document(db, doc_id, case_id=case_id, finalize=finalize)
     if doc is None:
         raise ApiError(404, "not_found", "Document not found.")
+    # Filing into a draft case makes it real, as confirm_bundle does.
+    target = db.get(Case, case_id) if case_id != "_TRIAGE" else None
+    promoted = target is not None and target.is_draft
+    if target is not None and promoted:
+        target.is_draft = False
     if proceeding_id is not None:
         doc.proceeding_id = proceeding_id
         proc = db.get(Proceeding, proceeding_id)
         if proc and proc.is_draft:
             proc.is_draft = False
+    # Otherwise confirm_document's own commit above already persisted everything.
+    if proceeding_id is not None or promoted:
         db.commit()
         db.refresh(doc)
     if (not pre_case or pre_case == "_TRIAGE") and case_id != "_TRIAGE":
@@ -561,6 +568,8 @@ def confirm_bundle_route(
     case = _require_editable_target(db, user, case_id)
     _check_proceeding(db, body.proceeding_id, case_id)
     finalize = body.action == "confirm_bundle"
+    if finalize and case_id == "_TRIAGE":
+        raise ApiError(422, "validation_error", "Choose a case to confirm into.")
     if body.batch_id is not None:
         key = f"batch-{body.batch_id}"
         _route_batch(db, body.batch_id, case_id, body.proceeding_id, finalize)
@@ -669,6 +678,10 @@ def set_title(
     db: Session = Depends(get_db),
 ):
     doc.title = body.title.strip()
+    doc.extraction_confidence = {
+        **(doc.extraction_confidence or {}),
+        "title": "user_set",
+    }
     db.commit()
 
 

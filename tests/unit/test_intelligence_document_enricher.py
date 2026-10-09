@@ -468,3 +468,47 @@ def test_apply_enrichment_clears_a_stale_summary_approval(doc_with_content):
         == "Die Klage wird abgewiesen."
     )
     assert doc_with_content.ai_summary_approved_at is None
+
+
+@pytest.mark.unit
+def test_apply_enrichment_keeps_approval_for_identical_summary(doc_with_content):
+    """The re-enrich right after confirm rewrites the same text: approval stays."""
+    from datetime import UTC, datetime
+
+    summary = {
+        "legal_significance": "Die Klage wird abgewiesen.",
+        "required_action": "Frist notieren.",
+        "financial_impact": "Kosten trägt der Kläger.",
+    }
+    approved = datetime.now(UTC)
+    doc_with_content.ai_summary = dict(summary)
+    doc_with_content.ai_summary_approved_at = approved
+    _apply_enrichment(doc_with_content, {"management_summary": summary})
+
+    assert doc_with_content.ai_summary_approved_at == approved
+
+
+@pytest.mark.unit
+def test_apply_enrichment_respects_user_set_fields(doc_with_content):
+    from app.models.enums import DocumentType, SignificanceTier
+
+    doc_with_content.title = "My title"
+    doc_with_content.significance_tier = SignificanceTier.CRITICAL
+    doc_with_content.document_type = DocumentType.MOTION
+    doc_with_content.extraction_confidence = {
+        "title": "user_set",
+        "significance_tier": "user_set",
+        "document_type": "user_set",
+    }
+    _apply_enrichment(
+        doc_with_content,
+        {
+            "title": "AI title",
+            "significance_tier": "informational",
+            "document_type": "letter",
+        },
+    )
+
+    assert doc_with_content.title == "My title"
+    assert doc_with_content.significance_tier == SignificanceTier.CRITICAL
+    assert doc_with_content.document_type == DocumentType.MOTION

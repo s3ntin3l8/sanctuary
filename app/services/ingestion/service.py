@@ -150,7 +150,6 @@ def compute_review_reasons(doc: Document) -> list[str]:
     # If any primary field is low/medium confidence, flag it
     for field in [
         "internal_id",
-        "az_court",
         "sender",
         "issued_date",
         "originator_type",
@@ -466,19 +465,24 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
         if access_service.can_edit_case(db, owner, target_case):
             doc.case_id = result_case_id["value"]
 
-    doc.sender = result_sender["value"]
-    doc.issued_date = result_date["value"]
+    # Fields the user set in triage ("user_set") are not the extractor's to redo.
+    conf = dict(doc.extraction_confidence or {})
+    if conf.get("sender") != "user_set":
+        doc.sender = result_sender["value"]
+    if conf.get("issued_date") != "user_set":
+        doc.issued_date = result_date["value"]
     if not doc.received_date:
         doc.received_date = datetime.now(UTC)
     if result_internal_id["value"] and not doc.internal_id:
         doc.internal_id = result_internal_id["value"]
+    extracted = ExtractionConfidenceSchema(
+        sender=result_sender["confidence"],
+        issued_date=result_date["confidence"],
+        internal_id=result_internal_id["confidence"],
+    ).model_dump()
     doc.extraction_confidence = {
-        **(doc.extraction_confidence or {}),
-        **ExtractionConfidenceSchema(
-            sender=result_sender["confidence"],
-            issued_date=result_date["confidence"],
-            internal_id=result_internal_id["confidence"],
-        ).model_dump(),
+        **conf,
+        **{k: v for k, v in extracted.items() if conf.get(k) != "user_set"},
     }
 
     apply_review_reasons(doc)

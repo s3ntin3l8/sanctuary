@@ -82,6 +82,7 @@ from app.services.case_service import (
     set_case_opposing_parties,
 )
 from app.services.case_timeline_service import CaseTimelineService
+from app.services.triage_bundles import summary_awaits_approval
 
 router = APIRouter(tags=["cases"])
 
@@ -237,6 +238,7 @@ def case_detail(
             role=d.role.value,
             thread_open=bool(d.thread_open),
             needs_review=bool(d.needs_review),
+            summary_pending=summary_awaits_approval(d),
             is_new=bool(last_visit and d.ingest_date and d.ingest_date > last_visit),
         )
         for d in docs

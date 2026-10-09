@@ -148,19 +148,23 @@ def confirm_document(
         if document_type is not None:
             doc.document_type = document_type
 
-        if finalize:
-            conf = dict(doc.extraction_confidence or {})
-            field_map = {
-                "originator_type": originator_type,
-                "sender": sender,
-                "issued_date": issued_date,
-                "significance_tier": significance_tier,
-                "document_type": document_type,
-            }
-            for key, val in field_map.items():
-                if val is not None:
-                    conf[key] = "user_set"
-            doc.extraction_confidence = conf
+        # Whatever the user supplied is now verified, whether or not this call
+        # also files the document: it clears "low confidence" and tells later
+        # AI runs not to overwrite it.
+        field_map = {
+            "title": title,
+            "originator_type": originator_type,
+            "sender": sender,
+            "internal_id": internal_id,
+            "issued_date": issued_date,
+            "significance_tier": significance_tier,
+            "document_type": document_type,
+        }
+        conf = dict(doc.extraction_confidence or {})
+        for key, val in field_map.items():
+            if val not in (None, ""):
+                conf[key] = "user_set"
+        doc.extraction_confidence = conf
 
         if finalize and doc.confirmed_at is None:
             doc.confirmed_at = now_utc()
