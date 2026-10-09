@@ -534,6 +534,7 @@ def _route_document(
         proc = db.get(Proceeding, proceeding_id)
         if proc and proc.is_draft:
             proc.is_draft = False
+    # Otherwise confirm_document's own commit above already persisted everything.
     if proceeding_id is not None or promoted:
         db.commit()
         db.refresh(doc)

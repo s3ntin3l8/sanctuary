@@ -26,6 +26,7 @@ down_revision: str | Sequence[str] | None = "b4e8c2a6d0f3"  # pragma: allowlist 
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# Frozen copy of the fields compute_review_reasons checked when this ran.
 TRACKED = ("internal_id", "sender", "issued_date", "originator_type")
 
 
