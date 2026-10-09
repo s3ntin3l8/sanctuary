@@ -89,7 +89,8 @@ export function CaseCardTile({
       {wide && (
         <div className="flex min-w-0 flex-col gap-1.5 border-l border-line2 pl-6">
           <div className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
-            Upcoming <span className="font-mono normal-case">{card.open_action_count} open</span>
+            Due in 30 days{' '}
+            <span className="font-mono normal-case">· {card.open_action_count} open in total</span>
           </div>
           {upcoming.length === 0 ? (
             <div className="text-[11px] text-muted2">None due in the next 30 days</div>

@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { documentReview, triageBundle, triageView } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
@@ -32,6 +32,15 @@ test('lists bundles with their state and filters by status chip', async () => {
   await user.click(screen.getByRole('button', { name: /^Stuck/ }))
   expect(screen.getAllByRole('listitem')).toHaveLength(1)
   expect(screen.getByRole('link', { name: '#77' })).toHaveAttribute('href', '/ingest/slice/77')
+})
+
+test('a ?bundle= deep link opens that bundle and scrolls it into view', async () => {
+  const scrollIntoView = vi.fn()
+  Element.prototype.scrollIntoView = scrollIntoView
+  stub()
+  renderAt('/triage?bundle=batch-42', <TriagePage />)
+  expect(await screen.findByText('Bundle contents · 3')).toBeVisible()
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
 })
 
 test('confirm uses the AI suggestion and posts the routing', async () => {
