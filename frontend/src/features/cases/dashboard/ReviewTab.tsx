@@ -10,14 +10,16 @@ import { DocumentReview, ORIGINATOR_COLOR } from '../../documents/DocumentReview
 
 type Props = {
   detail: CaseDetail
+  /** Start with the "to review" filter on (Home card link). */
+  initialOnlyOpen?: boolean
   selectedDoc: number | null
   onSelect: (id: number) => void
 }
 
 /** The case spine (documents of the active proceeding) beside the selected document's review. */
-export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
+export function ReviewTab({ detail, selectedDoc, onSelect, initialOnlyOpen = false }: Props) {
   const openDocument = useOpenDocument()
-  const [onlyOpen, setOnlyOpen] = useState(false)
+  const [onlyOpen, setOnlyOpen] = useState(initialOnlyOpen)
   const openCount = detail.documents.filter((d) => d.needs_review).length
   const docs = onlyOpen ? detail.documents.filter((d) => d.needs_review) : detail.documents
   return (

@@ -143,3 +143,19 @@ test('the lone case card lists the next few items and counts the rest', async ()
   expect(inCard.queryByText('Frist 5')).not.toBeInTheDocument()
   expect(inCard.getByText('+2 more')).toBeVisible()
 })
+
+test('a case card with documents to review says so and opens the filtered Review tab', async () => {
+  const [card] = homeView.active_cases
+  if (!card) throw new Error('fixture has no case')
+  stubApi({
+    'GET /api/v1/home': {
+      body: { ...homeView, active_cases: [{ ...card, to_review_count: 3 }] },
+    },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
+  })
+  renderAt('/', <HomePage />)
+  const link = await screen.findByRole('link', { name: /A\. Weber vs\. M\. Weber/ })
+  expect(within(link).getByText('3 to review')).toBeVisible()
+  expect(link).toHaveAttribute('href', '/cases/ADV-024-A?view=review&open=1')
+})

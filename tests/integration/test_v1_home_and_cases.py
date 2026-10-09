@@ -196,6 +196,19 @@ def test_cases_directory_counts_and_cards(db_session, sample_case):
     assert {c["id"] for c in body["cases"]} == {"TEST-001", "CLOSED-1"}
 
 
+def test_case_cards_count_documents_to_review(db_session, sample_case):
+    db_session.add_all(
+        [
+            Document(title="Open", case_id=sample_case.id, needs_review=True),
+            Document(title="Done", case_id=sample_case.id, needs_review=False),
+        ]
+    )
+    db_session.commit()
+    (card,) = client.get("/api/v1/cases").json()["cases"]
+    assert card["to_review_count"] == 1
+    assert card["doc_count"] == 2
+
+
 def test_create_case_creates_active_proceeding(db_session):
     resp = client.post(
         "/api/v1/cases",

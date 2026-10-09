@@ -47,6 +47,7 @@ def case_cards(
         doc_counts = service.doc_repo.bulk_count_by_case(ids)
     if action_counts is None:
         action_counts = service.action_repo.bulk_count_open_by_case(ids)
+    review_counts = service.doc_repo.bulk_count_needs_review_by_case(ids)
     cards = []
     for c in enriched:
         action = c["next_action"]
@@ -77,6 +78,7 @@ def case_cards(
                 exposure_eur=c["exposure_eur"],
                 doc_count=doc_counts.get(c["id"], 0),
                 open_action_count=action_counts.get(c["id"], 0),
+                to_review_count=review_counts.get(c["id"], 0),
                 new_docs=c["new_docs"],
                 days_since_activity=c["days_since_activity"],
                 is_dormant=c["is_dormant"],

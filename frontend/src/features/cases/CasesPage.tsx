@@ -192,6 +192,12 @@ function CaseRow({ card }: { card: CaseCard }) {
         <span className="text-right font-mono text-muted">
           {card.doc_count}
           {card.new_docs > 0 && <span className="text-tealink"> +{card.new_docs}</span>}
+          {card.to_review_count > 0 && (
+            <span className="text-warning" title="documents to review">
+              {' '}
+              ⚑{card.to_review_count}
+            </span>
+          )}
         </span>
         <Icon name="chevron_right" size={16} className="text-muted" />
       </Link>

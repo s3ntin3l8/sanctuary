@@ -48,7 +48,8 @@ export function CaseCardTile({
   const rest = (upcoming ?? []).filter((i) => i.id !== action?.id)
   return (
     <Link
-      to={`/cases/${card.id}`}
+      // Open work goes straight to the documents that need it.
+      to={`/cases/${card.id}${card.to_review_count > 0 ? '?view=review&open=1' : ''}`}
       {...(navRow ? { [ROW_ATTR]: '' } : {})}
       className={`rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40 focus-visible:border-accent focus-visible:outline-none ${wide ? 'grid grid-cols-2 gap-6' : 'flex flex-col gap-2'}`}
     >
@@ -57,6 +58,9 @@ export function CaseCardTile({
           <span className="font-mono text-[11px] font-semibold text-tealink">{card.id}</span>
           <SignificanceDot tier={card.max_significance} />
           {card.new_docs > 0 && <Badge tone="accent">+{card.new_docs} new</Badge>}
+          {card.to_review_count > 0 && (
+            <Badge tone="warning">{card.to_review_count} to review</Badge>
+          )}
           <span className="flex-1" />
           {card.is_draft && <Badge tone="warning">Draft</Badge>}
           <Badge>{card.status_label}</Badge>

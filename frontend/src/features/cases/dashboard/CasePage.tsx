@@ -78,6 +78,7 @@ export function CasePage() {
       key={caseId}
       detail={detail}
       view={VIEWS.some(([v]) => v === view) ? view : 'graph'}
+      openOnly={params.get('open') === '1'}
       setView={(v) => {
         params.set('view', v)
         setParams(params, { replace: true })
@@ -90,10 +91,12 @@ function Dashboard({
   detail,
   view,
   setView,
+  openOnly,
 }: {
   detail: CaseDetail
   view: View
   setView: (v: View) => void
+  openOnly: boolean
 }) {
   const navigate = useNavigate()
   const toast = useToast()
@@ -299,7 +302,12 @@ function Dashboard({
       <div className="flex min-h-0 flex-1">
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-card2">
           {view === 'review' && (
-            <ReviewTab detail={detail} selectedDoc={currentDoc} onSelect={setSelectedDoc} />
+            <ReviewTab
+              detail={detail}
+              selectedDoc={currentDoc}
+              onSelect={setSelectedDoc}
+              initialOnlyOpen={openOnly}
+            />
           )}
           {view === 'graph' && (
             <GraphTab detail={detail} onOpen={setSelectedDoc} selectedDoc={selectedDoc} />

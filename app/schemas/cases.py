@@ -39,6 +39,8 @@ class CaseCard(BaseModel):
     exposure_eur: float
     doc_count: int
     open_action_count: int
+    # Documents of the case that still need a human look (the Review tab's filter).
+    to_review_count: int
     new_docs: int
     days_since_activity: int
     is_dormant: bool
