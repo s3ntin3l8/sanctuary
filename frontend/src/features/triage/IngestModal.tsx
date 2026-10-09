@@ -151,6 +151,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
                 <span className="font-semibold">Scanned stack — split into documents</span>
                 <span className="block text-[10.5px] text-muted">
                   Each PDF is checked for letter boundaries; you confirm the cuts before processing.
+                  Other file types are ingested as usual.
                 </span>
               </span>
             </label>

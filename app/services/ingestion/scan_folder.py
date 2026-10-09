@@ -21,7 +21,7 @@ from app.config import (
 from app.core.paths import to_storage_path
 from app.models.database import IngestBatch
 from app.services.ingestion.batch_orchestrator import ingest_scanned_file
-from app.services.ingestion.converters import MAX_FILE_SIZE, validate_file_magic
+from app.services.ingestion.converters import MAX_FILE_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,8 @@ async def ingest_uploaded_scan(
         total = 0
         async with aiofiles.open(dest, "wb") as out:
             while chunk := await file.read(1024 * 1024):
+                if total == 0 and not chunk.startswith(b"%PDF"):
+                    raise ValueError("File content is not a PDF.")
                 total += len(chunk)
                 if total > MAX_FILE_SIZE:
                     raise ValueError(
@@ -207,8 +209,8 @@ async def ingest_uploaded_scan(
                     )
                 digest.update(chunk)
                 await out.write(chunk)
-        if validate_file_magic(str(dest)) != ".pdf":
-            raise ValueError("File content is not a PDF.")
+        if total == 0:
+            raise ValueError("File is empty.")
         if owner_id is not None:
             (processing_dir / _OWNER_SIDECAR).write_text(str(owner_id))
     except Exception:
@@ -223,7 +225,7 @@ async def ingest_uploaded_scan(
             batch_id,
             digest.hexdigest(),
             owner_id=owner_id,
-            display_name=os.path.basename(file.filename or "") or None,
+            display_name=Path(file.filename or "").name or None,
         )
     except Exception as exc:
         db.rollback()
