@@ -3474,6 +3474,13 @@
             ],
             "title": "Context Strategy"
           },
+          "contradiction_notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contradiction Notes",
+            "type": "array"
+          },
           "cost_signals": {
             "items": {
               "$ref": "#/components/schemas/CostSignalView"
@@ -3494,6 +3501,13 @@
                 "type": "null"
               }
             ]
+          },
+          "evidence_proposals": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceProposalView"
+            },
+            "title": "Evidence Proposals",
+            "type": "array"
           },
           "grounds": {
             "items": {
@@ -3705,6 +3719,8 @@
           "key_passages",
           "relationships",
           "grounds",
+          "evidence_proposals",
+          "contradiction_notes",
           "claims_status",
           "actions",
           "cost_signals",
@@ -3825,6 +3841,13 @@
             ],
             "title": "Content Hash"
           },
+          "contradiction_notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contradiction Notes",
+            "type": "array"
+          },
           "cost_signals": {
             "items": {
               "$ref": "#/components/schemas/CostSignalView"
@@ -3845,6 +3868,13 @@
                 "type": "null"
               }
             ]
+          },
+          "evidence_proposals": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceProposalView"
+            },
+            "title": "Evidence Proposals",
+            "type": "array"
           },
           "grounds": {
             "items": {
@@ -4038,6 +4068,8 @@
           "key_passages",
           "relationships",
           "grounds",
+          "evidence_proposals",
+          "contradiction_notes",
           "claims_status",
           "actions",
           "cost_signals",
@@ -12307,6 +12339,49 @@
           }
         },
         "summary": "V1 Delete Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/contradiction/acknowledge": {
+      "post": {
+        "description": "Dismiss the AI's contradiction flag. A re-enrich that reports the same\nnotes leaves it dismissed; different notes raise it again.",
+        "operationId": "v1_acknowledge_contradiction_api_v1_documents__doc_id__contradiction_acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Acknowledge Contradiction",
         "tags": [
           "documents"
         ]

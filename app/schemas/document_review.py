@@ -23,6 +23,7 @@ from app.models.enums import (
     StageStatus,
     UserReactionType,
 )
+from app.schemas.case_detail import EvidenceProposalView
 
 Confidence = Literal["high", "medium", "low"]
 
@@ -163,6 +164,8 @@ class DocumentReview(BaseModel):
     key_passages: list[KeyPassage]
     relationships: list[RelationshipView]
     grounds: list[GroundView]
+    evidence_proposals: list[EvidenceProposalView]
+    contradiction_notes: list[str]
     claims_status: Literal["skipped", "ran", "pending_triage", "pending"]
     actions: list[ActionView]
     cost_signals: list[CostSignalView]

@@ -228,3 +228,38 @@ test('email-header relationships get a badge, not confirm/reject controls', asyn
   expect(screen.getAllByRole('button', { name: 'Confirm relationship' })).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: 'Reject relationship' })).toHaveLength(1)
 })
+
+test('pending claim links can be confirmed from the Grounds card', async () => {
+  const fetch = stub({
+    'GET /api/v1/documents/2211/review': {
+      body: {
+        ...documentReview,
+        evidence_proposals: [
+          {
+            proposal_id: 31,
+            proposed_role: 'contests',
+            excerpt: 'Der Umgang wurde nie verweigert.',
+            target_claim_id: 9,
+            target_claim_text: 'Umgang wurde verweigert',
+            target_claim_status: 'asserted',
+            source_document_id: 2211,
+            source_document_title: 'Klageerwiderung.pdf',
+          },
+        ],
+      },
+    },
+    'POST /api/v1/claims/proposals/evidence/31/confirm': { status: 204, body: null },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  expect(await screen.findByText('Claim links to confirm')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Confirm claim link' }))
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'POST' && r.url.endsWith('/claims/proposals/evidence/31/confirm'),
+      ),
+    ).toBe(true),
+  )
+})

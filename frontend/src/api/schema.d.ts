@@ -988,6 +988,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{doc_id}/contradiction/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Acknowledge Contradiction
+         * @description Dismiss the AI's contradiction flag. A re-enrich that reports the same
+         *     notes leaves it dismissed; different notes raise it again.
+         */
+        post: operations["v1_acknowledge_contradiction_api_v1_documents__doc_id__contradiction_acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{doc_id}/cost-signals/promote": {
         parameters: {
             query?: never;
@@ -3760,11 +3781,15 @@ export interface components {
             content_hash: string | null;
             /** Context Strategy */
             context_strategy: string | null;
+            /** Contradiction Notes */
+            contradiction_notes: string[];
             /** Cost Signals */
             cost_signals: components["schemas"]["CostSignalView"][];
             /** Court Relay */
             court_relay: boolean;
             document_type: components["schemas"]["DocumentType"] | null;
+            /** Evidence Proposals */
+            evidence_proposals: components["schemas"]["EvidenceProposalView"][];
             /** Grounds */
             grounds: components["schemas"]["GroundView"][];
             /** Has Original */
@@ -3836,11 +3861,15 @@ export interface components {
             claims_status: "skipped" | "ran" | "pending_triage" | "pending";
             /** Content Hash */
             content_hash: string | null;
+            /** Contradiction Notes */
+            contradiction_notes: string[];
             /** Cost Signals */
             cost_signals: components["schemas"]["CostSignalView"][];
             /** Court Relay */
             court_relay: boolean;
             document_type: components["schemas"]["DocumentType"] | null;
+            /** Evidence Proposals */
+            evidence_proposals: components["schemas"]["EvidenceProposalView"][];
             /** Grounds */
             grounds: components["schemas"]["GroundView"][];
             /** Id */
@@ -7574,6 +7603,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_acknowledge_contradiction_api_v1_documents__doc_id__contradiction_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentReview"];
+                };
             };
             /** @description Error */
             default: {

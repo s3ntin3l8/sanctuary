@@ -17,6 +17,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import (
     Case,
     Document,
@@ -113,7 +114,7 @@ def confirm_document(
     if not doc:
         return None
 
-    from app.services.ingestion.service import compute_review_reasons
+    from app.services.ingestion.service import apply_review_reasons
     from app.services.pipeline_status import retry_on_db_locked
 
     # The mutations live *inside* the retried closure, not just db.commit():
@@ -161,10 +162,9 @@ def confirm_document(
                     conf[key] = "user_set"
             doc.extraction_confidence = conf
 
-        reasons = compute_review_reasons(doc, confirmed=finalize)
-        doc.review_reasons = reasons
-        actionable = [r for r in reasons if r != "missing_parent"]
-        doc.needs_review = bool(actionable)
+        if finalize and doc.confirmed_at is None:
+            doc.confirmed_at = now_utc()
+        apply_review_reasons(doc)
 
         db.commit()
 
@@ -189,7 +189,7 @@ def confirm_bundle(
     for further per-doc review.
     """
     from app.models.database import ActionItem, Proceeding
-    from app.services.ingestion.service import compute_review_reasons
+    from app.services.ingestion.service import apply_review_reasons
     from app.services.pipeline_status import retry_on_db_locked
 
     batch_repo = IngestBatchRepository(db)
@@ -238,10 +238,9 @@ def confirm_bundle(
             doc.case_id = case_id
             if proceeding_id is not None:
                 doc.proceeding_id = proceeding_id
-            reasons = compute_review_reasons(doc, confirmed=finalize)
-            doc.review_reasons = reasons
-            actionable = [r for r in reasons if r != "missing_parent"]
-            doc.needs_review = bool(actionable)
+            if finalize and doc.confirmed_at is None:
+                doc.confirmed_at = now_utc()
+            apply_review_reasons(doc)
 
         # Cascade case/proceeding to ActionItems still parked under _TRIAGE.
         for item in orphaned:

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { useOpenDocument } from '../../documents/useOpenDocument'
 
 import type { CaseDetail } from '../../../api/caseDetail'
@@ -15,6 +17,9 @@ type Props = {
 /** The case spine (documents of the active proceeding) beside the selected document's review. */
 export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
   const openDocument = useOpenDocument()
+  const [onlyOpen, setOnlyOpen] = useState(false)
+  const openCount = detail.documents.filter((d) => d.needs_review).length
+  const docs = onlyOpen ? detail.documents.filter((d) => d.needs_review) : detail.documents
   return (
     <div className="flex min-h-0 flex-1">
       <aside
@@ -28,9 +33,22 @@ export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
               {detail.new_doc_count} new
             </Badge>
           )}
+          {openCount > 0 && (
+            <button
+              type="button"
+              aria-pressed={onlyOpen}
+              aria-label={onlyOpen ? 'Show all documents' : 'Show only documents to review'}
+              onClick={() => setOnlyOpen((v) => !v)}
+              className="ml-2 align-middle"
+            >
+              <Badge tone={onlyOpen ? 'warning' : 'neutral'} pill>
+                {openCount} to review
+              </Badge>
+            </button>
+          )}
         </h2>
         <ul className="flex-1 overflow-y-auto px-3 pb-3">
-          {detail.documents.map((d) => (
+          {docs.map((d) => (
             <li key={d.id}>
               <button
                 type="button"
@@ -52,9 +70,9 @@ export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
               </button>
             </li>
           ))}
-          {detail.documents.length === 0 && (
+          {docs.length === 0 && (
             <li className="px-3 py-6 text-center text-[12px] text-muted">
-              No documents in this proceeding yet.
+              {onlyOpen ? 'Nothing left to review.' : 'No documents in this proceeding yet.'}
             </li>
           )}
         </ul>

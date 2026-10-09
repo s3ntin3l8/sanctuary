@@ -1247,6 +1247,7 @@ class CaseService:
             doc.case_id = "_TRIAGE"
             doc.proceeding_id = None
             doc.needs_review = True
+            doc.confirmed_at = None
 
         # Revert any IngestBatches whose case_id pointed at this case.
         if batch_ids:
