@@ -5,7 +5,7 @@ import { type TriageBundle, useAcknowledgeContradiction } from '../../api/triage
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
-import { actionableReasons, reviewReasonLabel } from '../documents/reviewReasons'
+import { openReasons, reviewReasonLabel } from '../documents/reviewReasons'
 
 type Review = Schemas['DocumentReview']
 
@@ -56,7 +56,11 @@ export function reviewItems(review: Review): Item[] {
       target: 'review-metadata',
     })
   }
-  const rels = review.relationships.filter((r) => r.confidence === 'ai_detected').length
+  // Only edges *from* this document count, as on the backend; an incoming AI edge
+  // belongs to (and is confirmed from) the other document.
+  const rels = review.relationships.filter(
+    (r) => r.direction === 'out' && r.confidence === 'ai_detected',
+  ).length
   if (rels > 0) {
     items.push({
       key: 'relationships',
@@ -64,9 +68,10 @@ export function reviewItems(review: Review): Item[] {
       target: 'review-relationships',
     })
   }
-  // Any proposal that takes a stance other than mere support (contests, refutes, ...)
-  // needs a decision; plain supporting links don't hold the document in review.
-  const links = review.evidence_proposals.filter((p) => p.proposed_role !== 'supports').length
+  // Only proposals that contest or refute an existing claim hold the document in review.
+  const links = review.evidence_proposals.filter(
+    (p) => p.proposed_role === 'contests' || p.proposed_role === 'refutes',
+  ).length
   if (links > 0) {
     items.push({
       key: 'claim-links',
@@ -93,8 +98,7 @@ export function reviewItems(review: Review): Item[] {
 /** Other documents in the bundle that still have open items (⌘↵ confirms them all). */
 function openSiblings(review: Review, bundle: TriageBundle) {
   return bundle.documents.filter(
-    (d) =>
-      d.id !== review.id && (actionableReasons(d.review_reasons).length > 0 || d.summary_pending),
+    (d) => d.id !== review.id && (openReasons(d).length > 0 || d.summary_pending),
   )
 }
 

@@ -4,7 +4,13 @@ import { expect, test, vi } from 'vitest'
 
 import { documentReview, triageBundle, triageView } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
+import { useLocation } from 'react-router'
+
 import { TriagePage } from './TriagePage'
+
+function Search() {
+  return <span data-testid="search">{useLocation().search}</span>
+}
 
 function stub(extra: Parameters<typeof stubApi>[0] = {}) {
   return stubApi({
@@ -107,15 +113,16 @@ test('batch selection confirms every selected bundle', async () => {
   const user = userEvent.setup()
   await screen.findByText('Klageerwiderung')
   await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
-  await user.click(screen.getByRole('button', { name: 'Confirm (2)' }))
+  // The stuck bundle can't be selected, just as it can't be confirmed on its own.
+  await user.click(screen.getByRole('button', { name: 'Confirm (1)' }))
   // Nothing is sent until the summary dialog is confirmed.
-  const dialog = await screen.findByRole('dialog', { name: 'Confirm 2 bundles' })
+  const dialog = await screen.findByRole('dialog', { name: 'Confirm 1 bundles' })
   expect(await postedJson(fetch, '/batch/confirm')).toBeUndefined()
   // Open items per bundle are listed (the fixture bundle has a relationship to confirm).
   expect(within(dialog).getAllByText(/relationships to confirm/).length).toBeGreaterThan(0)
   await user.click(within(dialog).getByRole('button', { name: /Confirm & complete/ }))
   await waitFor(async () =>
-    expect(await postedJson(fetch, '/batch/confirm')).toEqual({ keys: ['batch-42', 'batch-39'] }),
+    expect(await postedJson(fetch, '/batch/confirm')).toEqual({ keys: ['batch-42'] }),
   )
 })
 
@@ -427,4 +434,91 @@ test('an approved summary can be undone', async () => {
   await waitFor(async () =>
     expect(await postedJson(fetch, '/documents/2211/summary')).toEqual({ action: 'unapprove' }),
   )
+})
+
+test('the checklist only counts what the backend flags', async () => {
+  const [rel] = documentReview.relationships
+  const [proposal] = documentReview.evidence_proposals
+  if (!rel || !proposal) throw new Error('fixture')
+  stub({
+    'GET /api/v1/documents/2211/review': {
+      body: {
+        ...documentReview,
+        // An incoming AI edge is the other document's to confirm; an "asserts" link is no stance.
+        relationships: [{ ...rel, direction: 'in' as const }],
+        evidence_proposals: [{ ...proposal, proposed_role: 'asserts' as const }],
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  const list = await screen.findByRole('region', { name: 'To review' })
+  expect(within(list).queryByText(/relationship.* to confirm/)).not.toBeInTheDocument()
+  expect(within(list).queryByText(/claim link.* to confirm/)).not.toBeInTheDocument()
+})
+
+test('confirming an already-routed bundle pre-fills its case', async () => {
+  const [bundle, ...rest] = triageView.bundles
+  if (!bundle) throw new Error('fixture')
+  stub({
+    'GET /api/v1/triage': {
+      body: {
+        ...triageView,
+        bundles: [{ ...bundle, suggestion: null, confirmed_case_id: 'ADV-024-A' }, ...rest],
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  const row = (await screen.findByText('Klageerwiderung')).closest('li')
+  if (!row) throw new Error('row')
+  await user.click(within(row).getByRole('button', { name: /^(Confirm|Route)/ }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByRole('combobox', { name: /case/i })).toHaveValue('ADV-024-A')
+})
+
+test('the batch dialog skips a suggestion whose case does not exist yet', async () => {
+  const [bundle, ...rest] = triageView.bundles
+  if (!bundle?.suggestion) throw new Error('fixture')
+  stub({
+    'GET /api/v1/triage': {
+      body: {
+        ...triageView,
+        bundles: [{ ...bundle, suggestion: { ...bundle.suggestion, exists: false } }, ...rest],
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await screen.findByText('Klageerwiderung')
+  await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
+  await user.click(screen.getByRole('button', { name: /^Confirm \(/ }))
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(/case not created yet · skipped/)).toBeVisible()
+})
+
+test('⌘↵ is ignored while typing in a field', async () => {
+  stub()
+  renderAt('/triage?bundle=batch-42', <TriagePage />)
+  const user = userEvent.setup()
+  await screen.findByText('Bundle contents · 3')
+  const title = await screen.findByTitle('Rename')
+  await user.click(title)
+  await user.type(await screen.findByLabelText('Document title'), 'x')
+  await user.keyboard('{Meta>}{Enter}{/Meta}')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('a deep link to a bundle that is no longer in the feed is dropped', async () => {
+  stub()
+  renderAt(
+    '/triage?bundle=batch-999&doc=1',
+    <>
+      <TriagePage />
+      <Search />
+    </>,
+  )
+  await screen.findByText('Klageerwiderung')
+  await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^$/))
 })

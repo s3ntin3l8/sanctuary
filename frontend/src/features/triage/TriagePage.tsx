@@ -77,6 +77,15 @@ export function TriagePage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter' || !expanded) return
+      // Not while typing, and not on top of another dialog (Edit metadata, the confirm modal).
+      const el = e.target instanceof HTMLElement ? e.target : null
+      if (
+        el?.closest(
+          'input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]',
+        )
+      )
+        return
+      if (document.querySelector('[role="dialog"]')) return
       const b = bundles.find((x) => x.key === expanded)
       if (!b || b.status === 'processing' || b.status === 'stuck') return
       e.preventDefault()
@@ -89,6 +98,23 @@ export function TriagePage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [expanded, bundles])
+  // The expanded bundle leaves the feed once it is filed (or a stale link points nowhere).
+  const feedLoaded = query.data !== undefined
+  const expandedGone = feedLoaded && expanded !== null && !bundles.some((b) => b.key === expanded)
+  useEffect(() => {
+    if (!expandedGone) return
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        next.delete('bundle')
+        next.delete('doc')
+        return next
+      },
+      { replace: true },
+    )
+  }, [expandedGone, setParams])
+  // Selected bundles that are still in the feed (a filed one drops out by itself).
+  const picked = useMemo(() => bundles.filter((b) => selected.has(b.key)), [bundles, selected])
   const visible = bundles.filter((b) => status === 'all' || b.status === status)
   const rowVisible = visible.some((b) => b.key === expanded)
   // Deep links (Home → ?bundle=) land on the bundle once the feed has loaded.
@@ -117,7 +143,7 @@ export function TriagePage() {
     })
     return c
   }, [bundles])
-  const selectable = visible.filter((b) => b.status !== 'processing')
+  const selectable = visible.filter((b) => b.status !== 'processing' && b.status !== 'stuck')
   const allSelected = selectable.length > 0 && selectable.every((b) => selected.has(b.key))
 
   function toggleSort(sort: TriageFilters['sort']) {
@@ -204,24 +230,24 @@ export function TriagePage() {
         )}
       </div>
 
-      {selected.size > 0 && (
+      {picked.length > 0 && (
         <div className="mx-6 mb-2 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 px-3 py-2 text-[12px]">
-          <span className="font-semibold">{selected.size} selected</span>
+          <span className="font-semibold">{picked.length} selected</span>
           <Button
             size="sm"
             onClick={() =>
               setConfirmTarget({
                 mode: 'batch_confirm',
-                bundles: bundles.filter((b) => selected.has(b.key)),
+                bundles: picked,
               })
             }
           >
-            Confirm ({selected.size})
+            Confirm ({picked.length})
           </Button>
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => setConfirmTarget({ mode: 'batch', keys: [...selected] })}
+            onClick={() => setConfirmTarget({ mode: 'batch', keys: picked.map((b) => b.key) })}
           >
             Assign to…
           </Button>
@@ -540,7 +566,7 @@ function BundleRow({
           type="checkbox"
           aria-label={`Select ${b.subject ?? b.key}`}
           checked={selected}
-          disabled={processing}
+          disabled={processing || b.status === 'stuck'}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onSelect(e.target.checked)}
           className="h-3.5 w-3.5 accent-accent"

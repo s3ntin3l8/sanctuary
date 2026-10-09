@@ -154,6 +154,7 @@ function Section({
 
 function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number) => void }) {
   const setTitle = useSetTitle()
+  const toast = useToast()
   const [editing, setEditing] = useState(false)
   const tierTone: Tone =
     review.significance_tier === 'critical'
@@ -171,8 +172,13 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
           <form
             onSubmit={(e: FormEvent<HTMLFormElement>) => {
               e.preventDefault()
+              // Enter submits and the blur that follows would submit again.
+              if (setTitle.isPending) return
               const title = String(new FormData(e.currentTarget).get('title'))
-              setTitle.mutate({ docId: review.id, title }, { onSuccess: () => setEditing(false) })
+              setTitle.mutate(
+                { docId: review.id, title },
+                { onSuccess: () => setEditing(false), onError: (e) => toast(e.message, 'error') },
+              )
             }}
           >
             <input
@@ -270,6 +276,7 @@ function Pipeline({ review }: { review: Review }) {
                 key={s.key}
                 type="button"
                 aria-label={`Retry ${s.label}`}
+                disabled={retry.isPending}
                 onClick={() => retry.mutate(s.key, { onError: (e) => toast(e.message, 'error') })}
                 className="inline-flex items-center gap-1 rounded border border-danger/40 px-1.5 py-0.5 font-mono text-[10px] text-danger hover:bg-danger/10"
               >
@@ -734,7 +741,8 @@ function Summary({ review }: { review: Review }) {
             disabled={act.isPending || retry.isPending}
             onClick={() =>
               act.mutate('reject', {
-                onSuccess: () => retry.mutate('enrich'),
+                onSuccess: () =>
+                  retry.mutate('enrich', { onError: (e) => toast(e.message, 'error') }),
                 onError: (e) => toast(e.message, 'error'),
               })
             }
@@ -884,6 +892,7 @@ function Relationships({ review }: { review: Review }) {
                 <button
                   type="button"
                   aria-label="Confirm relationship"
+                  disabled={decide.isPending}
                   onClick={() =>
                     decide.mutate(
                       { relId: r.id, decision: 'confirm' },
@@ -897,6 +906,7 @@ function Relationships({ review }: { review: Review }) {
                 <button
                   type="button"
                   aria-label="Reject relationship"
+                  disabled={decide.isPending}
                   onClick={() =>
                     decide.mutate(
                       { relId: r.id, decision: 'reject' },
@@ -936,7 +946,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 /** AI-proposed links from this document to claims in the case, awaiting a decision. */
 function ClaimLinks({ review }: { review: Review }) {
-  const decide = useEvidenceDecision(review.id)
+  const decide = useEvidenceDecision()
   const toast = useToast()
   const act = (proposalId: number, decision: 'confirm' | 'dismiss') =>
     decide.mutate({ proposalId, decision }, { onError: (e) => toast(e.message, 'error') })
@@ -960,6 +970,7 @@ function ClaimLinks({ review }: { review: Review }) {
             <button
               type="button"
               aria-label="Confirm claim link"
+              disabled={decide.isPending}
               onClick={() => act(p.proposal_id, 'confirm')}
               className="text-success"
             >
@@ -968,6 +979,7 @@ function ClaimLinks({ review }: { review: Review }) {
             <button
               type="button"
               aria-label="Dismiss claim link"
+              disabled={decide.isPending}
               onClick={() => act(p.proposal_id, 'dismiss')}
               className="text-danger"
             >
@@ -1049,6 +1061,7 @@ function Actions({ review }: { review: Review }) {
               <>
                 <button
                   type="button"
+                  disabled={set.isPending}
                   onClick={() =>
                     set.mutate(
                       { itemId: a.id, status: 'completed' },
@@ -1061,6 +1074,7 @@ function Actions({ review }: { review: Review }) {
                 </button>
                 <button
                   type="button"
+                  disabled={set.isPending}
                   onClick={() =>
                     set.mutate(
                       { itemId: a.id, status: 'dismissed' },

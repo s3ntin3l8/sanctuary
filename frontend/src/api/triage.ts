@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, ApiError, type Schemas, unwrap } from './client'
 
@@ -23,6 +23,17 @@ export const defaultFilters: TriageFilters = {
 
 const KEY = ['triage'] as const
 
+/**
+ * A review decision moves the bundle row, the checklist and the case spine's
+ * "to review" marker; refresh all three. `documents` also covers the peer of a
+ * relationship and every pane showing a case that just changed.
+ */
+function refreshReviewState(queryClient: QueryClient, { documents = false } = {}) {
+  queryClient.invalidateQueries({ queryKey: KEY })
+  queryClient.invalidateQueries({ queryKey: ['case'] })
+  if (documents) queryClient.invalidateQueries({ queryKey: ['document'] })
+}
+
 export function useTriage(filters: TriageFilters) {
   return useQuery<S['TriageView'], ApiError>({
     queryKey: [...KEY, filters],
@@ -44,7 +55,7 @@ function useBundlePatch() {
         : view.bundles.filter((b) => b.key !== key)
       return { ...view, bundles }
     })
-    queryClient.invalidateQueries({ queryKey: KEY })
+    refreshReviewState(queryClient, { documents: true })
     queryClient.invalidateQueries({ queryKey: ['shell'] })
   }
 }
@@ -108,7 +119,7 @@ export function useBatchConfirm() {
   return useMutation<S['BatchResult'], ApiError, string[]>({
     mutationFn: (keys) => unwrap(api.POST('/api/v1/triage/batch/confirm', { body: { keys } })),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient, { documents: true })
       queryClient.invalidateQueries({ queryKey: ['shell'] })
     },
   })
@@ -119,7 +130,7 @@ export function useBatchAssign() {
   return useMutation<S['BatchResult'], ApiError, S['BatchAssign']>({
     mutationFn: (body) => unwrap(api.POST('/api/v1/triage/batch/assign', { body })),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient, { documents: true })
       queryClient.invalidateQueries({ queryKey: ['shell'] })
     },
   })
@@ -133,7 +144,7 @@ export function useSetTitle() {
         api.PUT('/api/v1/triage/documents/{doc_id}/title', { ...docPath(docId), body: { title } }),
       ),
     onSuccess: (_, { docId }) => {
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient)
       queryClient.invalidateQueries({ queryKey: ['document', docId] })
     },
   })
@@ -230,7 +241,7 @@ export function useUpdateMetadata(docId: number) {
       queryClient.setQueriesData<S['DocumentReview']>({ queryKey: ['document', docId] }, (prev) =>
         prev ? { ...prev, ...view } : prev,
       )
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient)
     },
   })
 }
@@ -246,7 +257,7 @@ export function useSummaryAction(docId: number) {
     onSuccess: (summary) => {
       patch((prev) => ({ ...prev, summary }))
       // The bundle row's "summaries to approve" and the readiness state follow it.
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient)
     },
   })
 }
@@ -305,8 +316,7 @@ export function useRelationshipDecision(docId: number) {
               ),
       }))
       // The decision can clear review reasons, here and on the bundle row.
-      queryClient.invalidateQueries({ queryKey: ['document', docId] })
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient, { documents: true })
     },
   })
 }
@@ -321,13 +331,13 @@ export function useAcknowledgeContradiction(docId: number) {
       queryClient.setQueriesData<S['DocumentReview']>({ queryKey: ['document', docId] }, (prev) =>
         prev ? { ...prev, ...view } : prev,
       )
-      queryClient.invalidateQueries({ queryKey: KEY })
+      refreshReviewState(queryClient)
     },
   })
 }
 
 /** Confirm or dismiss an AI-proposed claim link (CONTESTS / REFUTES / ...) from the review pane. */
-export function useEvidenceDecision(docId: number) {
+export function useEvidenceDecision() {
   const queryClient = useQueryClient()
   return useMutation<unknown, ApiError, { proposalId: number; decision: 'confirm' | 'dismiss' }>({
     mutationFn: ({ proposalId, decision }) => {
@@ -338,10 +348,7 @@ export function useEvidenceDecision(docId: number) {
           : api.POST('/api/v1/claims/proposals/evidence/{proposal_id}/dismiss', p),
       )
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['document', docId] })
-      queryClient.invalidateQueries({ queryKey: KEY })
-    },
+    onSuccess: () => refreshReviewState(queryClient, { documents: true }),
   })
 }
 

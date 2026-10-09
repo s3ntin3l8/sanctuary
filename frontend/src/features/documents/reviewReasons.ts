@@ -10,7 +10,7 @@ const LABELS: Record<string, string> = {
   contradiction_detected: 'contradiction to review',
 }
 
-/** Review reasons that need a human to fix metadata (not just a ratification click). */
+/** Reasons that never hold a document in review (the confirm click / enclosure without parent). */
 const IGNORABLE = new Set(['pending_confirmation', 'missing_parent'])
 
 export function reviewReasonLabel(reason: string): string {
@@ -32,4 +32,12 @@ export function bundleOpenParts(b: {
       ? [`${b.summaries_pending} ${b.summaries_pending === 1 ? 'summary' : 'summaries'} to approve`]
       : []),
   ]
+}
+
+/**
+ * What a bundle document still has open before the bundle can be confirmed. The
+ * case is not one of them: confirming assigns it.
+ */
+export function openReasons(doc: { review_reasons: string[] }): string[] {
+  return actionableReasons(doc.review_reasons).filter((r) => r !== 'missing_case_id')
 }
