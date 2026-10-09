@@ -37,6 +37,22 @@ from app.services.pipeline_status import stages_dict
 from app.services.triage_confirmation import _sanitize_case_title
 
 
+def summary_awaits_approval(doc: Document) -> bool:
+    """A real AI summary exists and the user hasn't approved it yet.
+
+    Deliberately separate from `review_reasons`/`needs_review`: those gate the
+    file move to the case folder and the case "to review" filter, which an
+    unapproved summary must not hold up.
+    """
+    from app.services.case_dashboard_service import summary_bullets_from_ai_summary
+
+    return (
+        doc.ai_summary_approved_at is None
+        and bool(summary_bullets_from_ai_summary(doc.ai_summary))
+        and not (isinstance(doc.ai_summary, dict) and "error" in doc.ai_summary)
+    )
+
+
 @dataclass
 class BundleView:
     """One row in the triage feed — either a real IngestBatch or a synthetic
@@ -79,6 +95,10 @@ class BundleView:
         return sorted(
             {r for d in self.documents for r in (d.review_reasons or [])} - ignorable
         )
+
+    @property
+    def summaries_pending(self) -> int:
+        return sum(1 for d in self.documents if summary_awaits_approval(d))
 
     @property
     def to_confirm_count(self) -> int:

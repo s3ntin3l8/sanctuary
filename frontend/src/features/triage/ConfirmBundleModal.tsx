@@ -1,8 +1,14 @@
 import { type FormEvent, useState } from 'react'
 
 import type { Schemas } from '../../api/client'
-import { useBatchAssign, useConfirmBundle, type TriageBundle } from '../../api/triage'
-import { actionableReasons, reviewReasonLabel } from '../documents/reviewReasons'
+import {
+  useBatchAssign,
+  useBatchConfirm,
+  useConfirmBundle,
+  type TriageBundle,
+} from '../../api/triage'
+import { bundleOpenParts } from '../documents/reviewReasons'
+import { OpenItems } from './OpenItems'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Field, inputClass } from '../../ui/Field'
@@ -13,29 +19,125 @@ import { useToast } from '../../ui/toast'
 export type ConfirmTarget =
   | { mode: 'single'; bundle: TriageBundle; action: 'confirm_bundle' | 'assign_case' }
   | { mode: 'batch'; keys: string[] }
+  | { mode: 'batch_confirm'; bundles: TriageBundle[] }
 
 type Props = {
   target: ConfirmTarget | null
   onClose: () => void
   cases: Schemas['PickerCase'][]
   proceedings: Schemas['PickerProceeding'][]
+  /** Open one bundle document in the review pane (the modal closes first). */
+  onReview: (bundleKey: string, docId: number) => void
+  /** The batch confirm went through (clears the selection). */
+  onBatchConfirmed: () => void
 }
 
 /** Route one bundle (or a selection) to a case: suggested, picked, or newly created. */
-export function ConfirmBundleModal({ target, onClose, cases, proceedings }: Props) {
+export function ConfirmBundleModal(props: Props) {
+  const { target, onClose, onBatchConfirmed } = props
   if (!target) return null
+  if (target.mode === 'batch_confirm') {
+    return (
+      <BatchConfirmDialog
+        key={target.bundles.map((b) => b.key).join(',')}
+        bundles={target.bundles}
+        onClose={onClose}
+        onDone={onBatchConfirmed}
+      />
+    )
+  }
   return (
     <Dialog
       key={target.mode === 'single' ? target.bundle.key : target.keys.join(',')}
+      {...props}
       target={target}
-      onClose={onClose}
-      cases={cases}
-      proceedings={proceedings}
     />
   )
 }
 
-function Dialog({ target, onClose, cases, proceedings }: Props & { target: ConfirmTarget }) {
+function BatchConfirmDialog({
+  bundles,
+  onClose,
+  onDone,
+}: {
+  bundles: TriageBundle[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const batchConfirm = useBatchConfirm()
+  const toast = useToast()
+  const caseOf = (b: TriageBundle) => b.suggestion?.case_id ?? b.confirmed_case_id
+  const skipped = bundles.filter((b) => !caseOf(b)).length
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Confirm ${bundles.length} bundles`}
+      subtitle="Each goes to its suggested case."
+      icon="drive_file_move"
+      width={520}
+    >
+      <ul className="space-y-1.5 text-[11.5px]">
+        {bundles.map((b) => {
+          const open = bundleOpenParts(b)
+          return (
+            <li key={b.key} className="flex items-start gap-2 rounded-lg border border-line p-2">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{b.subject ?? b.key}</span>
+                {open.length > 0 && <span className="block text-warning">{open.join(' · ')}</span>}
+              </span>
+              {caseOf(b) ? (
+                <span className="font-mono text-tealink">→ {caseOf(b)}</span>
+              ) : (
+                <Badge tone="neutral">no suggestion · skipped</Badge>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-2 text-[10.5px] text-muted">
+        Open items stay open — you can still fix them from the case.
+        {skipped > 0 && ` ${skipped} without a suggested case will be skipped.`}
+      </p>
+      {batchConfirm.error && (
+        <p role="alert" className="mt-2 text-[11px] text-danger">
+          {batchConfirm.error.message}
+        </p>
+      )}
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={batchConfirm.isPending}
+          onClick={() =>
+            batchConfirm.mutate(
+              bundles.map((b) => b.key),
+              {
+                onSuccess: (r) => {
+                  toast(`${r.confirmed} confirmed, ${r.skipped} skipped (no suggestion)`)
+                  onDone()
+                  onClose()
+                },
+                onError: (e) => toast(e.message, 'error'),
+              },
+            )
+          }
+        >
+          Confirm & complete →
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+function Dialog({
+  target,
+  onClose,
+  cases,
+  proceedings,
+  onReview,
+}: Props & { target: Exclude<ConfirmTarget, { mode: 'batch_confirm' }> }) {
   const confirm = useConfirmBundle()
   const assign = useBatchAssign()
   const toast = useToast()
@@ -53,12 +155,6 @@ function Dialog({ target, onClose, cases, proceedings }: Props & { target: Confi
         ? 'Confirm bundle'
         : 'Route bundle'
   const docCount = target.mode === 'single' ? target.bundle.doc_count : null
-  const openReviews =
-    target.mode === 'single' && target.action === 'confirm_bundle'
-      ? target.bundle.documents
-          .map((d) => ({ doc: d, reasons: actionableReasons(d.review_reasons) }))
-          .filter((x) => x.reasons.length > 0)
-      : []
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -115,27 +211,14 @@ function Dialog({ target, onClose, cases, proceedings }: Props & { target: Confi
       width={460}
     >
       <form onSubmit={onSubmit} className="space-y-3">
-        {openReviews.length > 0 && (
-          <div
-            role="note"
-            className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-[11px]"
-          >
-            <p className="font-semibold text-warning">
-              {openReviews.length} {openReviews.length === 1 ? 'document needs' : 'documents need'}{' '}
-              metadata review
-            </p>
-            <ul className="mt-1 space-y-0.5 text-ink2">
-              {openReviews.map(({ doc, reasons }) => (
-                <li key={doc.id} className="flex gap-1.5">
-                  <span className="min-w-0 truncate">{doc.title}</span>
-                  <span className="shrink-0 text-muted">
-                    · {reasons.map(reviewReasonLabel).join(', ')}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-muted">You can still confirm; fix them later from the case.</p>
-          </div>
+        {target.mode === 'single' && target.action === 'confirm_bundle' && (
+          <OpenItems
+            bundle={target.bundle}
+            onReview={(docId) => {
+              onClose()
+              onReview(target.bundle.key, docId)
+            }}
+          />
         )}
         {suggestion && useSuggested && !newCase ? (
           <div className="rounded-xl border border-accent/30 bg-accent/8 p-3">

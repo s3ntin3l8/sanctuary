@@ -108,6 +108,12 @@ test('batch selection confirms every selected bundle', async () => {
   await screen.findByText('Klageerwiderung')
   await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
   await user.click(screen.getByRole('button', { name: 'Confirm (2)' }))
+  // Nothing is sent until the summary dialog is confirmed.
+  const dialog = await screen.findByRole('dialog', { name: 'Confirm 2 bundles' })
+  expect(await postedJson(fetch, '/batch/confirm')).toBeUndefined()
+  // Open items per bundle are listed (the fixture bundle has a relationship to confirm).
+  expect(within(dialog).getAllByText(/relationships to confirm/).length).toBeGreaterThan(0)
+  await user.click(within(dialog).getByRole('button', { name: /Confirm & complete/ }))
   await waitFor(async () =>
     expect(await postedJson(fetch, '/batch/confirm')).toEqual({ keys: ['batch-42', 'batch-39'] }),
   )
@@ -289,6 +295,7 @@ test('the checklist lists what is left to review on the open document', async ()
   expect(within(list).getByText(/Check metadata:.*sender.*issued/)).toBeVisible()
   expect(within(list).getByText('1 relationship to confirm')).toBeVisible()
   expect(within(list).getByText('1 claim link to confirm')).toBeVisible()
+  expect(within(list).getByText('AI summary to approve')).toBeVisible()
 })
 
 const clearReview = {
@@ -297,13 +304,16 @@ const clearReview = {
   metadata: documentReview.metadata.map((f) => ({ ...f, confidence: 'high' as const })),
   relationships: [],
   evidence_proposals: [],
+  summary: { ...documentReview.summary, approved_at: '2026-06-21T11:00:00Z' },
 }
 
-function withSiblingReasons(reasons: string[]) {
+function withSiblingReasons(reasons: string[], summaryPending = false) {
   const [bundle, ...rest] = triageView.bundles
   if (!bundle) throw new Error('fixture has no bundle')
   const documents = bundle.documents.map((d) =>
-    d.id === 2210 ? { ...d, review_reasons: reasons } : { ...d, review_reasons: [] },
+    d.id === 2210
+      ? { ...d, review_reasons: reasons, summary_pending: summaryPending }
+      : { ...d, review_reasons: [], summary_pending: false },
   )
   return { ...triageView, bundles: [{ ...bundle, documents }, ...rest] }
 }
@@ -319,6 +329,18 @@ test('the checklist is green when this document and its bundle are clear', async
   expect(await screen.findByText(/Ready to confirm/)).toBeVisible()
 })
 
+test('a sibling with an unapproved summary also keeps the bundle from being ready', async () => {
+  stub({
+    'GET /api/v1/triage': { body: withSiblingReasons([], true) },
+    'GET /api/v1/documents/2211/review': { body: clearReview },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  expect(await screen.findByText(/This document is clear, but 1 other document/)).toBeVisible()
+  expect(screen.queryByText(/Ready to confirm/)).not.toBeInTheDocument()
+})
+
 test('a clear document is not "ready" while a sibling still has open items', async () => {
   stub({
     'GET /api/v1/triage': { body: withSiblingReasons(['unresolved_relationship']) },
@@ -329,4 +351,80 @@ test('a clear document is not "ready" while a sibling still has open items', asy
   await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
   expect(await screen.findByText(/This document is clear, but 1 other document/)).toBeVisible()
   expect(screen.queryByText(/Ready to confirm/)).not.toBeInTheDocument()
+})
+
+test('the confirm modal itemises what is still open, per document', async () => {
+  stub()
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  const row = (await screen.findByText('Klageerwiderung')).closest('li')
+  if (!row) throw new Error('row')
+  await user.click(within(row).getByRole('button', { name: 'Confirm' }))
+  const dialog = screen.getByRole('dialog')
+  const note = within(dialog).getByRole('note')
+  expect(within(note).getByText('Still open in this bundle')).toBeVisible()
+  expect(within(note).getByText('Klageerwiderung.pdf')).toBeVisible()
+  // Same rows as the in-pane checklist, once the document's review has loaded.
+  expect(await within(note).findByText(/1 relationship to confirm/)).toBeVisible()
+  expect(within(note).getByText(/AI summary to approve/)).toBeVisible()
+  expect(within(dialog).queryByText(/metadata review/)).not.toBeInTheDocument()
+  // Open items never block confirming.
+  expect(within(dialog).getByRole('button', { name: /Confirm & complete/ })).toBeEnabled()
+})
+
+test('Review in the confirm modal opens that document and closes the dialog', async () => {
+  stub({
+    'GET /api/v1/documents/2212/review': {
+      body: { ...documentReview, id: 2212, title: 'Anlage B1.pdf' },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  const row = (await screen.findByText('Klageerwiderung')).closest('li')
+  if (!row) throw new Error('row')
+  await user.click(within(row).getByRole('button', { name: 'Confirm' }))
+  const dialog = screen.getByRole('dialog')
+  await user.click(await within(dialog).findByRole('button', { name: 'Review' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(await screen.findByText('Bundle contents · 3')).toBeVisible()
+})
+
+test('?doc= selects the document shown in the pane, falling back to the lead', async () => {
+  // Review titles differ from the bundle-tree titles so the pane is identifiable.
+  stub({
+    'GET /api/v1/documents/2211/review': {
+      body: { ...documentReview, title: 'Pane: lead document' },
+    },
+    'GET /api/v1/documents/2212/review': {
+      body: { ...documentReview, id: 2212, title: 'Pane: chosen document' },
+    },
+  })
+  const first = renderAt('/triage?bundle=batch-42&doc=2212', <TriagePage />)
+  expect(await screen.findByText('Pane: chosen document')).toBeVisible()
+  first.unmount()
+
+  // A document that isn't in the bundle is ignored.
+  renderAt('/triage?bundle=batch-42&doc=9999', <TriagePage />)
+  expect(await screen.findByText('Pane: lead document')).toBeVisible()
+})
+
+test('an approved summary can be undone', async () => {
+  const fetch = stub({
+    'GET /api/v1/documents/2211/review': {
+      body: {
+        ...documentReview,
+        summary: { ...documentReview.summary, approved_at: '2026-06-21T11:00:00Z' },
+      },
+    },
+    'POST /api/v1/documents/2211/summary': {
+      body: { ...documentReview.summary, approved_at: null },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  await user.click(await screen.findByRole('button', { name: 'Undo' }))
+  await waitFor(async () =>
+    expect(await postedJson(fetch, '/documents/2211/summary')).toEqual({ action: 'unapprove' }),
+  )
 })

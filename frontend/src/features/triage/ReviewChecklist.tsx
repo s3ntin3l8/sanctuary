@@ -74,6 +74,13 @@ export function reviewItems(review: Review): Item[] {
       target: 'review-grounds',
     })
   }
+  if (review.summary.bullets.length > 0 && !review.summary.approved_at) {
+    items.push({
+      key: 'summary',
+      label: 'AI summary to approve',
+      target: 'review-summary',
+    })
+  }
   if (reasons.has('contradiction_detected')) {
     items.push({
       key: 'contradiction',
@@ -86,7 +93,8 @@ export function reviewItems(review: Review): Item[] {
 /** Other documents in the bundle that still have open items (⌘↵ confirms them all). */
 function openSiblings(review: Review, bundle: TriageBundle) {
   return bundle.documents.filter(
-    (d) => d.id !== review.id && actionableReasons(d.review_reasons).length > 0,
+    (d) =>
+      d.id !== review.id && (actionableReasons(d.review_reasons).length > 0 || d.summary_pending),
   )
 }
 

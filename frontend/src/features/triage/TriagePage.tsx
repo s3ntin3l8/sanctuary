@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
-import { reviewReasonLabel } from '../documents/reviewReasons'
+import { bundleOpenParts } from '../documents/reviewReasons'
 import { useOpenDocument } from '../documents/useOpenDocument'
 
 import type { Schemas } from '../../api/client'
@@ -9,7 +9,6 @@ import {
   type TriageBundle,
   type TriageFilters,
   defaultFilters,
-  useBatchConfirm,
   useBundleAction,
   useRetryAll,
   useRetryBundle,
@@ -53,6 +52,7 @@ export function TriagePage() {
     setParams(
       (p) => {
         const next = new URLSearchParams(p)
+        next.delete('doc')
         if (next.get('bundle') === key) next.delete('bundle')
         else next.set('bundle', key)
         return next
@@ -64,7 +64,6 @@ export function TriagePage() {
   const [retryAllOpen, setRetryAllOpen] = useState(false)
   const query = useTriage(filters)
   const retryAll = useRetryAll()
-  const batchConfirm = useBatchConfirm()
   const retry = useRetryBundle()
   const toast = useToast()
 
@@ -210,14 +209,10 @@ export function TriagePage() {
           <span className="font-semibold">{selected.size} selected</span>
           <Button
             size="sm"
-            disabled={batchConfirm.isPending}
             onClick={() =>
-              batchConfirm.mutate([...selected], {
-                onSuccess: (r) => {
-                  toast(`${r.confirmed} confirmed, ${r.skipped} skipped (no suggestion)`)
-                  setSelected(new Set())
-                },
-                onError: (e) => toast(e.message, 'error'),
+              setConfirmTarget({
+                mode: 'batch_confirm',
+                bundles: bundles.filter((b) => selected.has(b.key)),
               })
             }
           >
@@ -326,6 +321,18 @@ export function TriagePage() {
         onClose={() => setConfirmTarget(null)}
         cases={query.data?.cases ?? []}
         proceedings={query.data?.proceedings ?? []}
+        onReview={(key, docId) =>
+          setParams(
+            (p) => {
+              const next = new URLSearchParams(p)
+              next.set('bundle', key)
+              next.set('doc', String(docId))
+              return next
+            },
+            { replace: true },
+          )
+        }
+        onBatchConfirmed={() => setSelected(new Set())}
       />
       <ConfirmDialog
         open={retryTarget !== null}
@@ -489,12 +496,26 @@ function BundleRow({
   const openDocument = useOpenDocument()
   const toast = useToast()
   const [menu, setMenu] = useState(false)
-  const [activeDoc, setActiveDoc] = useState<number | null>(b.lead_doc_id)
+  // The selected document lives in the URL (`?doc=`), like the expanded bundle, so the
+  // confirm modal can jump to one and a round-trip through the HUD reopens it.
+  const [params, setParams] = useSearchParams()
+  const docParam = Number(params.get('doc'))
+  const activeDoc = b.documents.some((d) => d.id === docParam) ? docParam : b.lead_doc_id
+  const setActiveDoc = (id: number) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        next.set('doc', String(id))
+        return next
+      },
+      { replace: true },
+    )
   const [confirmDanger, setConfirmDanger] = useState<'dismiss' | 'delete' | null>(null)
   const processing = b.status === 'processing'
   const sourceIcon = { email: 'mail', scan: 'scanner', manual: 'upload_file' }[b.source_type]
   const confidence = b.sub_groups[0]?.case_confidence ?? null
   const confirmable = !processing && b.status !== 'stuck'
+  const openParts = bundleOpenParts(b)
 
   return (
     <li
@@ -571,14 +592,9 @@ function BundleRow({
                 {b.pipeline.failed_error}
               </span>
             )}
-            {!b.pipeline.failed_error && b.open_review_reasons.length > 0 && (
-              <span
-                className="truncate text-warning"
-                title={b.open_review_reasons.map(reviewReasonLabel).join(' · ')}
-              >
-                {b.open_review_reasons.length <= 2
-                  ? b.open_review_reasons.map(reviewReasonLabel).join(' · ')
-                  : `${b.open_review_reasons.length} open items`}
+            {!b.pipeline.failed_error && openParts.length > 0 && (
+              <span className="truncate text-warning" title={openParts.join(' · ')}>
+                {openParts.length <= 2 ? openParts.join(' · ') : `${openParts.length} open items`}
               </span>
             )}
           </span>

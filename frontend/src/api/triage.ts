@@ -232,12 +232,17 @@ export function useUpdateMetadata(docId: number) {
 
 export function useSummaryAction(docId: number) {
   const patch = useDocPatch(docId)
+  const queryClient = useQueryClient()
   return useMutation<S['SummaryView'], ApiError, S['SummaryAction']['action']>({
     mutationFn: (action) =>
       unwrap(
         api.POST('/api/v1/documents/{doc_id}/summary', { ...docPath(docId), body: { action } }),
       ),
-    onSuccess: (summary) => patch((prev) => ({ ...prev, summary })),
+    onSuccess: (summary) => {
+      patch((prev) => ({ ...prev, summary }))
+      // The bundle row's "summaries to approve" and the readiness state follow it.
+      queryClient.invalidateQueries({ queryKey: KEY })
+    },
   })
 }
 

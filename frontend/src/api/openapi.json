@@ -8502,6 +8502,7 @@
           "action": {
             "enum": [
               "approve",
+              "unapprove",
               "reject"
             ],
             "title": "Action",
@@ -8979,6 +8980,10 @@
               }
             ]
           },
+          "summaries_pending": {
+            "title": "Summaries Pending",
+            "type": "integer"
+          },
           "to_confirm_count": {
             "title": "To Confirm Count",
             "type": "integer"
@@ -9009,6 +9014,7 @@
           "has_manual_groups",
           "has_unconfirmed_metadata",
           "open_review_reasons",
+          "summaries_pending",
           "to_confirm_count",
           "lead_doc_id",
           "documents",
@@ -9230,6 +9236,10 @@
             ],
             "title": "Sub Group Id"
           },
+          "summary_pending": {
+            "title": "Summary Pending",
+            "type": "boolean"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -9245,6 +9255,7 @@
           "pipeline_state",
           "needs_review",
           "review_reasons",
+          "summary_pending",
           "page_count",
           "is_proof",
           "sub_group_id"

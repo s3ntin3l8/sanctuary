@@ -230,7 +230,7 @@ class MetadataUpdate(BaseModel):
 
 
 class SummaryAction(BaseModel):
-    action: Literal["approve", "reject"]
+    action: Literal["approve", "unapprove", "reject"]
 
 
 class ReactionUpdate(BaseModel):

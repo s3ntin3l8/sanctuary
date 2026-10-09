@@ -516,6 +516,8 @@ def summary_action(
 
     if body.action == "approve":
         doc.ai_summary_approved_at = datetime.now(UTC)
+    elif body.action == "unapprove":
+        doc.ai_summary_approved_at = None
     else:
         doc.ai_summary = None
         doc.ai_summary_approved_at = None

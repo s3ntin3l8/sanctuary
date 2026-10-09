@@ -5348,7 +5348,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "approve" | "reject";
+            action: "approve" | "unapprove" | "reject";
         };
         /** SummaryBullet */
         SummaryBullet: {
@@ -5494,6 +5494,8 @@ export interface components {
             /** Subject */
             subject: string | null;
             suggestion: components["schemas"]["TriageCaseSuggestion"] | null;
+            /** Summaries Pending */
+            summaries_pending: number;
             /** To Confirm Count */
             to_confirm_count: number;
             /** Total Pages */
@@ -5564,6 +5566,8 @@ export interface components {
             significance_tier: components["schemas"]["SignificanceTier"] | null;
             /** Sub Group Id */
             sub_group_id: number | null;
+            /** Summary Pending */
+            summary_pending: boolean;
             /** Title */
             title: string;
         };

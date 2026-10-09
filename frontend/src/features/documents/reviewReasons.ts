@@ -20,3 +20,16 @@ export function reviewReasonLabel(reason: string): string {
 export function actionableReasons(reasons: string[]): string[] {
   return reasons.filter((r) => !IGNORABLE.has(r))
 }
+
+/** What is still open on a bundle, as short phrases (review reasons + summaries awaiting approval). */
+export function bundleOpenParts(b: {
+  open_review_reasons: string[]
+  summaries_pending: number
+}): string[] {
+  return [
+    ...b.open_review_reasons.map(reviewReasonLabel),
+    ...(b.summaries_pending > 0
+      ? [`${b.summaries_pending} ${b.summaries_pending === 1 ? 'summary' : 'summaries'} to approve`]
+      : []),
+  ]
+}

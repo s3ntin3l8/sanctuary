@@ -30,6 +30,7 @@ class TriageDocument(BaseModel):
     pipeline_state: PipelineState
     needs_review: bool
     review_reasons: list[str]
+    summary_pending: bool
     page_count: int
     is_proof: bool
     sub_group_id: int | None
@@ -93,6 +94,7 @@ class TriageBundle(BaseModel):
     has_manual_groups: bool
     has_unconfirmed_metadata: bool
     open_review_reasons: list[str]
+    summaries_pending: int
     to_confirm_count: int
     lead_doc_id: int | None
     documents: list[TriageDocument]

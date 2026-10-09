@@ -678,14 +678,27 @@ function Summary({ review }: { review: Review }) {
       : (s.enrich_status ?? 'pending')
   return (
     <Section
+      id="review-summary"
       title="AI summary"
       icon="smart_toy"
       accent
       className="bg-linear-160 from-aibg to-transparent"
       meta={
-        <Badge tone={s.bullets.length ? 'success' : 'neutral'} pill>
-          {state}
-        </Badge>
+        <>
+          <Badge tone={s.bullets.length ? 'success' : 'neutral'} pill>
+            {state}
+          </Badge>
+          {s.approved_at && (
+            <button
+              type="button"
+              disabled={act.isPending}
+              onClick={() => act.mutate('unapprove', { onError: (e) => toast(e.message, 'error') })}
+              className="text-[10px] text-muted hover:underline"
+            >
+              Undo
+            </button>
+          )}
+        </>
       }
     >
       {s.bullets.length === 0 ? (

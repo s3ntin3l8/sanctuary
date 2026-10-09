@@ -56,6 +56,7 @@ from app.services.triage_bundles import (
     get_slicing_queue,
     get_triage_bundles,
     get_triage_filter_options,
+    summary_awaits_approval,
 )
 from app.services.triage_confirmation import (
     confirm_bundle,
@@ -180,6 +181,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
         has_manual_groups=bool(bundle.sub_groups),
         has_unconfirmed_metadata=bundle.has_unconfirmed_metadata,
         open_review_reasons=bundle.open_review_reasons,
+        summaries_pending=bundle.summaries_pending,
         to_confirm_count=bundle.to_confirm_count,
         lead_doc_id=lead.id
         if lead
@@ -195,6 +197,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
                 pipeline_state=d.pipeline_state,
                 needs_review=bool(d.needs_review),
                 review_reasons=list(d.review_reasons or []),
+                summary_pending=summary_awaits_approval(d),
                 page_count=d.page_count or 0,
                 is_proof=d.id in bundle.proof_doc_ids,
                 sub_group_id=d.sub_group_id,
