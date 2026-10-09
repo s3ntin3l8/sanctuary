@@ -91,8 +91,7 @@ export function CaseCardTile({
       {wide && (
         <div className="flex min-w-0 flex-col gap-1.5 border-l border-line2 pl-6">
           <div className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
-            Coming up{' '}
-            <span className="font-mono normal-case">· {card.open_action_count} open in total</span>
+            Coming up
           </div>
           {rest.length === 0 ? (
             <div className="text-[11px] text-muted2">
@@ -116,6 +115,11 @@ export function CaseCardTile({
                 </div>
               )
             })
+          )}
+          {rest.length > UPCOMING_LIMIT && (
+            <div className="font-mono text-[10px] text-muted">
+              +{rest.length - UPCOMING_LIMIT} more
+            </div>
           )}
         </div>
       )}
