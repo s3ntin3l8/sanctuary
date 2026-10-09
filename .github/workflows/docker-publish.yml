@@ -10,7 +10,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    uses: s3ntin3l8/.github/.github/workflows/docker-publish.yml@ci/dockerhub-login
+    uses: s3ntin3l8/.github/.github/workflows/docker-publish.yml@main
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

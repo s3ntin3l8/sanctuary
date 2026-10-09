@@ -9,7 +9,7 @@ jobs:
   ci:
     permissions:
       contents: read
-    uses: s3ntin3l8/.github/.github/workflows/ci-python.yml@ci/dockerhub-login
+    uses: s3ntin3l8/.github/.github/workflows/ci-python.yml@main
     with:
       python-version: "3.12"
       coverage-source: "app"
@@ -115,7 +115,7 @@ jobs:
         run: npm --prefix frontend ci && npm --prefix frontend run build
       - name: Log in to Docker Hub
         # Avoids the anonymous pull rate limit; anonymous when the secrets are unset.
-        uses: s3ntin3l8/.github/.github/actions/dockerhub-login@ci/dockerhub-login
+        uses: s3ntin3l8/.github/.github/actions/dockerhub-login@3b9d7cfd58090eb37898f24d654a0788f944e090 # main @ 2026-10-10
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_TOKEN }}
