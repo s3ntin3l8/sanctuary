@@ -66,6 +66,7 @@ export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
                   {d.thread_open && <span className="text-warning">open</span>}
                   {d.is_new && <span className="text-info">new</span>}
                   {d.needs_review && <span className="text-warning">review</span>}
+                  {d.summary_pending && <span className="text-info">summary</span>}
                 </span>
               </button>
             </li>

@@ -4,18 +4,14 @@ import { documentReviewOptions } from '../../api/triage'
 import type { Schemas } from '../../api/client'
 import type { TriageBundle } from '../../api/triage'
 import { Button } from '../../ui/Button'
-import { actionableReasons, reviewReasonLabel } from '../documents/reviewReasons'
+import { openReasons, reviewReasonLabel } from '../documents/reviewReasons'
 import { reviewItems } from './ReviewChecklist'
 
 type Doc = TriageBundle['documents'][number]
 
-/** Reasons worth listing while confirming; the modal itself assigns the case. */
-const modalReasons = (d: Doc) =>
-  actionableReasons(d.review_reasons).filter((r) => r !== 'missing_case_id')
-
 /** The bundle's documents that still have something open, per the triage feed. */
 export function docsWithOpenItems(bundle: TriageBundle): Doc[] {
-  return bundle.documents.filter((d) => modalReasons(d).length > 0 || d.summary_pending)
+  return bundle.documents.filter((d) => openReasons(d).length > 0 || d.summary_pending)
 }
 
 /**
@@ -32,18 +28,26 @@ export function OpenItems({
   const docs = docsWithOpenItems(bundle)
   // One batched lookup for the whole bundle (the open document is already cached).
   const reviews = useQueries({ queries: docs.map((d) => documentReviewOptions(d.id)) })
-  if (docs.length === 0) return null
+  // The feed can say "open" while the live review has nothing to show (a stale
+  // reason); such documents drop out, and so does the box when none are left.
+  const rows = docs
+    .map((doc, i) => ({ doc, labels: openLabels(doc, reviews[i]?.data) }))
+    .filter((r) => r.labels.length > 0)
+  if (rows.length === 0) return null
   return (
     <div role="note" className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-[11px]">
       <p className="font-semibold text-warning">Still open in this bundle</p>
       <ul className="mt-1.5 space-y-1.5 text-ink2">
-        {docs.map((d, i) => (
-          <DocOpenItems
-            key={d.id}
-            doc={d}
-            review={reviews[i]?.data}
-            onReview={() => onReview(d.id)}
-          />
+        {rows.map(({ doc, labels }) => (
+          <li key={doc.id} className="flex items-start gap-2">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold">{doc.title}</span>
+              <span className="block text-muted">{labels.join(' · ')}</span>
+            </span>
+            <Button variant="secondary" size="sm" onClick={() => onReview(doc.id)}>
+              Review
+            </Button>
+          </li>
         ))}
       </ul>
       <p className="mt-1.5 text-muted">You can still confirm; fix them later from the case.</p>
@@ -51,35 +55,18 @@ export function OpenItems({
   )
 }
 
-function DocOpenItems({
-  doc,
-  review,
-  onReview,
-}: {
-  doc: Doc
-  review: Schemas['DocumentReview'] | undefined
-  onReview: () => void
-}) {
-  // Until the full review loads, fall back to what the feed already knows.
-  // The "assign a case" row is dropped on purpose: this dialog assigns the case.
-  const labels = review
-    ? reviewItems(review)
-        .filter((i) => i.key !== 'case')
-        .map((i) => i.label)
-    : [
-        ...modalReasons(doc).map(reviewReasonLabel),
-        ...(doc.summary_pending ? ['AI summary to approve'] : []),
-      ]
-  if (review && labels.length === 0) return null
-  return (
-    <li className="flex items-start gap-2">
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-semibold">{doc.title}</span>
-        <span className="block text-muted">{labels.join(' · ')}</span>
-      </span>
-      <Button variant="secondary" size="sm" onClick={onReview}>
-        Review
-      </Button>
-    </li>
-  )
+/**
+ * Until the full review loads, fall back to what the feed already knows. The
+ * "assign a case" row is dropped on purpose: the confirm dialog assigns the case.
+ */
+function openLabels(doc: Doc, review: Schemas['DocumentReview'] | undefined): string[] {
+  if (review) {
+    return reviewItems(review)
+      .filter((i) => i.key !== 'case')
+      .map((i) => i.label)
+  }
+  return [
+    ...openReasons(doc).map(reviewReasonLabel),
+    ...(doc.summary_pending ? ['AI summary to approve'] : []),
+  ]
 }

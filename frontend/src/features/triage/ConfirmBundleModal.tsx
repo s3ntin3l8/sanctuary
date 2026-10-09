@@ -66,13 +66,20 @@ function BatchConfirmDialog({
 }) {
   const batchConfirm = useBatchConfirm()
   const toast = useToast()
-  const caseOf = (b: TriageBundle) => b.suggestion?.case_id ?? b.confirmed_case_id
+  // Mirrors the server: a suggestion whose case doesn't exist yet is skipped, not created.
+  const caseOf = (b: TriageBundle) =>
+    b.suggestion ? (b.suggestion.exists ? b.suggestion.case_id : null) : b.confirmed_case_id
+  const skipped = bundles.filter((b) => !caseOf(b))
   return (
     <Modal
       open
       onClose={onClose}
       title={`Confirm ${bundles.length} bundles`}
-      subtitle="Each goes to its suggested case."
+      subtitle={
+        skipped.length > 0
+          ? `Each goes to its suggested case; ${skipped.length} will be skipped.`
+          : 'Each goes to its suggested case.'
+      }
       icon="drive_file_move"
       width={520}
     >
@@ -88,7 +95,9 @@ function BatchConfirmDialog({
               {caseOf(b) ? (
                 <span className="font-mono text-tealink">→ {caseOf(b)}</span>
               ) : (
-                <Badge tone="neutral">no suggestion · skipped</Badge>
+                <Badge tone="neutral">
+                  {b.suggestion ? 'case not created yet' : 'no suggestion'} · skipped
+                </Badge>
               )}
             </li>
           )
@@ -113,11 +122,10 @@ function BatchConfirmDialog({
               bundles.map((b) => b.key),
               {
                 onSuccess: (r) => {
-                  toast(`${r.confirmed} confirmed, ${r.skipped} skipped (no suggestion)`)
+                  toast(`${r.confirmed} confirmed, ${r.skipped} skipped`)
                   onDone()
                   onClose()
                 },
-                onError: (e) => toast(e.message, 'error'),
               },
             )
           }
@@ -143,7 +151,9 @@ function Dialog({
   const suggestedProc = target.mode === 'single' ? target.bundle.proceeding : null
   const [useSuggested, setUseSuggested] = useState(!!suggestion)
   const [newCase, setNewCase] = useState(false)
-  const [caseId, setCaseId] = useState(suggestion?.case_id ?? '')
+  // A bundle already routed (assign_case) has no suggestion but knows its case.
+  const routedCase = target.mode === 'single' ? target.bundle.confirmed_case_id : null
+  const [caseId, setCaseId] = useState(suggestion?.case_id ?? routedCase ?? '')
   const pending = confirm.isPending || assign.isPending
   const error = confirm.error ?? assign.error
   const title =
