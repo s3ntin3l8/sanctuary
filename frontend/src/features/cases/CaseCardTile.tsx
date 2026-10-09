@@ -92,7 +92,7 @@ export function CaseCardTile({
             Upcoming <span className="font-mono normal-case">{card.open_action_count} open</span>
           </div>
           {upcoming.length === 0 ? (
-            <div className="text-[11px] text-muted2">Nothing due in the next 30 days</div>
+            <div className="text-[11px] text-muted2">None due in the next 30 days</div>
           ) : (
             upcoming.slice(0, UPCOMING_LIMIT).map((item) => {
               const soon = item.due_date ? daysUntil(item.due_date) <= 7 : false
