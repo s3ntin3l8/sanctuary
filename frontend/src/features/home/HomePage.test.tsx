@@ -15,7 +15,8 @@ test('renders greeting, KPIs and every panel from the home view', async () => {
   renderAt('/', <HomePage />)
 
   expect(await screen.findByRole('heading', { name: 'Good morning, Katharina.' })).toBeVisible()
-  expect(screen.getAllByText('File counter-statement')).toHaveLength(2) // deadline + case card
+  expect(screen.getAllByText('File counter-statement')).toHaveLength(2) // deadline + the lone case card's upcoming list
+  expect(screen.getByText(/^Upcoming/)).toBeVisible()
   expect(screen.getByText('Klageerwiderung')).toBeVisible()
   expect(screen.getByText(/AI suggested/)).toBeVisible()
   expect(screen.getByText('1 processing · 0 queued')).toBeVisible()
@@ -96,7 +97,7 @@ test('j / k move focus across the panels in order, Enter follows the link, ? lis
   expect(document.activeElement).toHaveTextContent('File counter-statement')
   await user.keyboard('j')
   // Second: the triage bundle.
-  expect(document.activeElement).toHaveAttribute('href', '/triage')
+  expect(document.activeElement).toHaveAttribute('href', '/triage?bundle=batch-42')
   await user.keyboard('k')
   expect(document.activeElement).toHaveTextContent('File counter-statement')
   // Wraps backwards to the last row (the last activity entry).
