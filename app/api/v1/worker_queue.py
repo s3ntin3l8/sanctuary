@@ -62,12 +62,13 @@ def _slicing_item(batch: IngestBatch) -> tuple[bool, QueueItem]:
     preparing = meta.get("status", "preparing") == "preparing"
     progress = meta.get("progress") or {}
     label = f"Scan #{batch.id}" + (f" — {batch.subject[:40]}" if batch.subject else "")
-    note = "Ready — review cuts"
     if preparing:
         done, total = progress.get("done"), progress.get("total")
         note = f"Preparing ({done}/{total})" if done and total else "Preparing"
     elif meta.get("status") == "failed":
         note = "Preparation failed — open to retry"
+    else:
+        note = "Ready — review cuts"
     return preparing, QueueItem(
         kind="slicing",
         stage=None,
