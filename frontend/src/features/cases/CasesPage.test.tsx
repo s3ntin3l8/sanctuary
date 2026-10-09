@@ -78,3 +78,15 @@ test('new case modal submits and shows server errors', async () => {
   await user.click(within(dialog).getByRole('button', { name: 'Create case' }))
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('already exists')
 })
+
+test('a row with documents to review opens the filtered Review tab', async () => {
+  stubApi({
+    'GET /api/v1/cases': {
+      body: { ...directory, cases: [{ ...caseCard, to_review_count: 2 }] },
+    },
+  })
+  renderAt('/cases', <CasesPage />)
+  const link = (await screen.findByText('Weber ./. Weber')).closest('a')
+  expect(link).toHaveAttribute('href', '/cases/ADV-024-A?view=review&open=1')
+  expect(within(link as HTMLElement).getByTitle('documents to review')).toHaveTextContent('2')
+})

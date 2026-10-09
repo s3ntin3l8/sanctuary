@@ -13,6 +13,10 @@ const ACTION_ICONS: Record<string, string> = {
   filing_required: 'flag',
 }
 
+/** Where a case card leads: open review work goes straight to the filtered Review tab. */
+export const caseHref = (card: Pick<CaseCard, 'id' | 'to_review_count'>) =>
+  `/cases/${card.id}${card.to_review_count > 0 ? '?view=review&open=1' : ''}`
+
 export function SignificanceDot({ tier }: { tier: CaseCard['max_significance'] }) {
   const color =
     tier === 'critical'
@@ -48,8 +52,7 @@ export function CaseCardTile({
   const rest = (upcoming ?? []).filter((i) => i.id !== action?.id)
   return (
     <Link
-      // Open work goes straight to the documents that need it.
-      to={`/cases/${card.id}${card.to_review_count > 0 ? '?view=review&open=1' : ''}`}
+      to={caseHref(card)}
       {...(navRow ? { [ROW_ATTR]: '' } : {})}
       className={`rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40 focus-visible:border-accent focus-visible:outline-none ${wide ? 'grid grid-cols-2 gap-6' : 'flex flex-col gap-2'}`}
     >
