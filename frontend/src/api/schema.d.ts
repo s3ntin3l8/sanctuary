@@ -5006,6 +5006,11 @@ export interface components {
         ProposedCut: {
             /** Confidence */
             confidence: ("high" | "medium" | "low") | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "letter" | "attachment";
             /** Notes */
             notes: string | null;
             /** Page */
@@ -5284,12 +5289,23 @@ export interface components {
             enabled: boolean;
         };
         /**
-         * SlicingConfirm
-         * @description Split after each listed page (1 ≤ cut < page_count).
+         * SliceCut
+         * @description Split after ``page`` (1 ≤ page < page_count); ``kind`` says what the next
+         *     part is: a new letter, or an attachment of the letter before it.
          */
+        SliceCut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "letter" | "attachment";
+            /** Page */
+            page: number;
+        };
+        /** SlicingConfirm */
         SlicingConfirm: {
             /** Cuts */
-            cuts?: number[];
+            cuts?: components["schemas"]["SliceCut"][];
         };
         /** SlicingConfirmed */
         SlicingConfirmed: {

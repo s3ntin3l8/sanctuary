@@ -281,6 +281,7 @@ def _combine_proposed_cuts(
     heuristic_candidates: list[tuple[int, str, str]],
     ai_results: dict[int, dict],
     page_count: int,
+    marker_pages: frozenset[int] = frozenset(),
 ) -> list[dict]:
     """Merge heuristic candidates with AI judgments into proposed_cuts.
 
@@ -290,6 +291,11 @@ def _combine_proposed_cuts(
     per-candidate failure default in `_ai_cut_judgment`. Otherwise a total AI
     outage would propose every heuristic candidate as a cut, while a partial
     outage suppresses them — the two failure modes must fail the same way.
+
+    Each cut also carries a ``kind``: ``letter`` (an independent letter) or
+    ``attachment`` (travels with the preceding letter). Anything but an explicit
+    ``letter`` from the AI is an attachment, as is every page in ``marker_pages``
+    (an Anlage/Annex marker was seen there).
     """
     proposed_cuts = []
     for cut_page, _prev_tail, _curr_head in heuristic_candidates:
@@ -304,11 +310,18 @@ def _combine_proposed_cuts(
             else str(ai_raw).strip().lower() in ("true", "1", "yes")
         )
         ai_confidence = ai.get("confidence", "medium")
+        kind = (
+            "letter"
+            if str(ai.get("kind", "")).strip().lower() == "letter"
+            and cut_page not in marker_pages
+            else "attachment"
+        )
         if ai_agrees:
             proposed_cuts.append(
                 {
                     "page": cut_page,
                     "confidence": ai_confidence,
+                    "kind": kind,
                     "notes": ai.get("notes", ""),
                 }
             )
@@ -385,6 +398,7 @@ def prepare(batch_id: int) -> None:
 
         # Heuristic pass: find candidate cuts (between pages i and i+1; cut position = i+1)
         heuristic_candidates = []
+        marker_pages: set[int] = set()
         for i in range(page_count - 1):
             score, signals = _boundary_heuristic_score(
                 prev_tail=page_data[i]["text_tail"],
@@ -394,6 +408,8 @@ def prepare(batch_id: int) -> None:
                 prev_head=page_data[i]["text_head"],
             )
             if score >= _HEURISTIC_THRESHOLD:
+                if "enclosure_marker" in signals:
+                    marker_pages.add(i + 2)
                 heuristic_candidates.append(
                     (i + 2, page_data[i]["text_tail"], page_data[i + 1]["text_head"])
                 )
@@ -442,7 +458,7 @@ def prepare(batch_id: int) -> None:
 
         # Combine heuristic + AI into proposed_cuts
         proposed_cuts = _combine_proposed_cuts(
-            heuristic_candidates, ai_results, page_count
+            heuristic_candidates, ai_results, page_count, frozenset(marker_pages)
         )
 
         meta = dict(batch.meta or {})

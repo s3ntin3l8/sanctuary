@@ -8,34 +8,46 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.core.paths import resolve_storage_path, to_storage_path
-from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchStatus
+from app.models.database import BatchSubGroup, Document, IngestBatch
+from app.models.enums import (
+    DocumentRole,
+    IngestBatchStatus,
+    RelationshipConfidence,
+    RelationshipType,
+)
+from app.repositories.document_relationship import insert_edge_if_absent
+from app.schemas.slicing import SliceCut
 
 
 class SlicingFailed(RuntimeError):
     """A slice could not be written; everything written so far was removed."""
 
 
-def confirm_slices(
-    db: Session, batch: IngestBatch, cut_positions: list[int]
-) -> list[int]:
-    """Split the batch's source PDF after each page in ``cut_positions``.
+def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> list[int]:
+    """Split the batch's source PDF after each page in ``cuts``.
 
-    Creates one ``_TRIAGE`` document per slice (the first one wired as the
-    cover letter of the rest), flips the batch to PROCESSING and returns the
-    new document ids. The caller dispatches processing and must hold the
-    batch row lock. Raises ``ValueError`` when the batch cannot be sliced and
-    :class:`SlicingFailed` when writing fails (slice files are cleaned up).
+    Creates one ``_TRIAGE`` document per slice and groups them into bundles: a
+    ``letter`` cut opens a new bundle, an ``attachment`` cut adds the next part
+    to the current one (the first part always opens the first bundle). A bundle
+    of several parts gets its first part as cover letter and the rest as
+    enclosures. Each bundle becomes a ``BatchSubGroup``, so the structure is the
+    user's and batch analysis leaves roles alone. Flips the batch to PROCESSING
+    and returns the new document ids. The caller dispatches processing and must
+    hold the batch row lock. Raises ``ValueError`` when the batch cannot be
+    sliced and :class:`SlicingFailed` when writing fails (slice files are
+    cleaned up).
     """
-    from app.services.ingestion.cover_letter_wiring import wire_cover_letter
-
     if batch.status != IngestBatchStatus.AWAITING_SLICING:
         raise ValueError("Batch is not awaiting slicing")
     slicing_meta = (batch.meta or {}).get("slicing", {})
     page_count = slicing_meta.get("page_count", 0)
     if not page_count:
         raise ValueError("Batch slicing metadata missing")
-    cut_positions = sorted({c for c in cut_positions if 1 <= c < page_count})
+    kinds: dict[int, str] = {}
+    for cut in cuts:
+        if 1 <= cut.page < page_count:
+            kinds.setdefault(cut.page, cut.kind)
+    cut_positions = sorted(kinds)
     if not batch.raw_source_path:
         raise ValueError("Source PDF no longer available")
     pdf_path = resolve_storage_path(batch.raw_source_path)
@@ -53,7 +65,6 @@ def confirm_slices(
     import pypdfium2 as pdfium
 
     docs_to_process: list[Document] = []
-    first_doc_id: int | None = None
     written_slice_paths: list[Path] = []
 
     try:
@@ -92,15 +103,15 @@ def confirm_slices(
             _pipeline_init(doc, batched=True, db=db)
             docs_to_process.append(doc)
 
-            if slice_idx == 0:
-                first_doc_id = doc.id
-
         src_pdf.close()
 
-        # Wire cover letter + enclosures
-        if first_doc_id and len(docs_to_process) > 1:
-            child_ids = [d.id for d in docs_to_process[1:]]
-            wire_cover_letter(db, first_doc_id, child_ids, court_relay=True)
+        # slice i > 0 starts after the cut at boundaries[i]
+        bundles: list[list[Document]] = []
+        for slice_idx, doc in enumerate(docs_to_process):
+            if slice_idx == 0 or kinds[boundaries[slice_idx]] == "letter":
+                bundles.append([])
+            bundles[-1].append(doc)
+        _wire_bundles(db, batch.id, bundles)
 
         batch.status = IngestBatchStatus.PROCESSING
         db.commit()
@@ -119,3 +130,31 @@ def confirm_slices(
         raise SlicingFailed(f"Slicing failed: {exc}") from exc
 
     return [d.id for d in docs_to_process]
+
+
+def _wire_bundles(db: Session, batch_id: int, bundles: list[list[Document]]) -> None:
+    """Roles, parent links, ENCLOSES edges and one sub-group per bundle."""
+    grouped = sum(len(members) for members in bundles) > 1
+    for order, members in enumerate(bundles):
+        lead, attachments = members[0], members[1:]
+        lead.role = (
+            DocumentRole.COVER_LETTER if attachments else DocumentRole.STANDALONE
+        )
+        for att in attachments:
+            att.role = DocumentRole.ENCLOSURE
+            att.parent_id = lead.id
+            insert_edge_if_absent(
+                db,
+                from_document_id=lead.id,
+                to_document_id=att.id,
+                relationship_type=RelationshipType.ENCLOSES,
+                confidence=RelationshipConfidence.USER_CREATED,
+                notes="scan slicing: attachment",
+            )
+        if grouped:
+            group = BatchSubGroup(batch_id=batch_id, label=None, sort_order=order)
+            db.add(group)
+            db.flush()
+            for pos, doc in enumerate(members):
+                doc.sub_group_id = group.id
+                doc.sub_group_sort_order = pos

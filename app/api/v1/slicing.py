@@ -84,7 +84,11 @@ def _view(batch: IngestBatch) -> SlicingView:
         ],
         proposed_cuts=[
             ProposedCut(
-                page=c["page"], confidence=c.get("confidence"), notes=c.get("notes")
+                page=c["page"],
+                confidence=c.get("confidence"),
+                # Persisted in batch.meta, so a proposal written before kinds existed has none.
+                kind=c.get("kind", "attachment"),
+                notes=c.get("notes"),
             )
             for c in meta.get("proposed_cuts", [])
             if isinstance(c, dict) and isinstance(c.get("page"), int)

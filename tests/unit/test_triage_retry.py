@@ -309,3 +309,52 @@ def test_reset_batch_for_retry_partial_does_not_clear_metadata_phase_queued_at(
     assert result != -1
     assert batch.metadata_phase_queued_at is not None
     assert batch.metadata_phase_queued_at.replace(tzinfo=None) == queued_at
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("full", [False, True])
+def test_reset_batch_for_retry_keeps_user_structure(db_session, full):
+    """A batch with sub-groups (triage grouping or slicer bundles) keeps its
+    roles and parent links on retry; only the AI-derived fields are cleared."""
+    from app.models.database import BatchSubGroup
+    from app.models.enums import DocumentRole
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.SCAN, status=IngestBatchStatus.PROCESSING
+    )
+    db_session.add(batch)
+    db_session.flush()
+    cover = _make_doc(db_session, batch_id=batch.id)
+    att = _make_doc(db_session, batch_id=batch.id)
+    cover.role, cover.court_relay = DocumentRole.COVER_LETTER, True
+    att.role, att.parent_id = DocumentRole.ENCLOSURE, cover.id
+    db_session.add(BatchSubGroup(batch_id=batch.id, sort_order=0))
+    db_session.commit()
+    db_session.refresh(batch)
+
+    assert reset_batch_for_retry(batch, db_session, full=full) != -1
+
+    assert cover.role == DocumentRole.COVER_LETTER and cover.court_relay is False
+    assert att.role == DocumentRole.ENCLOSURE and att.parent_id == cover.id
+
+
+@pytest.mark.unit
+def test_reset_batch_for_retry_without_sub_groups_resets_roles(db_session):
+    from app.models.enums import DocumentRole
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+    )
+    db_session.add(batch)
+    db_session.flush()
+    cover = _make_doc(db_session, batch_id=batch.id)
+    att = _make_doc(db_session, batch_id=batch.id)
+    cover.role = DocumentRole.COVER_LETTER
+    att.role, att.parent_id = DocumentRole.ENCLOSURE, cover.id
+    db_session.commit()
+    db_session.refresh(batch)
+
+    assert reset_batch_for_retry(batch, db_session, full=False) != -1
+
+    assert cover.role == DocumentRole.STANDALONE
+    assert att.role == DocumentRole.STANDALONE and att.parent_id is None

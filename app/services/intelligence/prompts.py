@@ -100,10 +100,16 @@ Response shape:
 {
   "is_new_document": true|false,
   "confidence": "high"|"medium"|"low",
+  "kind": "letter"|"attachment",
   "notes": "one sentence reason"
 }
 
-A new document starts when: letterhead changes, a new Aktenzeichen or docket number appears, page numbering resets, a new salutation/greeting begins, or an explicit enclosure marker ("Anlage", "Annex") appears."""
+A new document starts when: letterhead changes, a new Aktenzeichen or docket number appears, page numbering resets, a new salutation/greeting begins, or an explicit enclosure marker ("Anlage", "Annex") appears.
+
+`kind` says what the new document is relative to the pages before it:
+- "letter": an independent letter with its own letterhead, addressee and salutation (e.g. a court Verfügung or a lawyer's cover letter).
+- "attachment": something that travels with the preceding letter — an Anlage/Annex, exhibit, a Schriftsatz forwarded by the court, a copy, a form or a certificate.
+Use "attachment" when unsure. Only meaningful when is_new_document is true."""
 
 # ---------------------------------------------------------------------------
 # Batch analysis

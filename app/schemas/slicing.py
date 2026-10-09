@@ -14,9 +14,13 @@ class SlicingPage(BaseModel):
     has_thumbnail: bool
 
 
+CutKind = Literal["letter", "attachment"]
+
+
 class ProposedCut(BaseModel):
     page: int
     confidence: Literal["high", "medium", "low"] | None
+    kind: CutKind
     notes: str | None
 
 
@@ -30,10 +34,16 @@ class SlicingView(BaseModel):
     error: str | None
 
 
-class SlicingConfirm(BaseModel):
-    """Split after each listed page (1 ≤ cut < page_count)."""
+class SliceCut(BaseModel):
+    """Split after ``page`` (1 ≤ page < page_count); ``kind`` says what the next
+    part is: a new letter, or an attachment of the letter before it."""
 
-    cuts: list[int] = Field(default_factory=list)
+    page: int
+    kind: CutKind
+
+
+class SlicingConfirm(BaseModel):
+    cuts: list[SliceCut] = Field(default_factory=list)
 
 
 class SlicingConfirmed(BaseModel):
