@@ -572,7 +572,10 @@ function BundleRow({
               </span>
             )}
             {!b.pipeline.failed_error && b.open_review_reasons.length > 0 && (
-              <span className="truncate text-warning">
+              <span
+                className="truncate text-warning"
+                title={b.open_review_reasons.map(reviewReasonLabel).join(' · ')}
+              >
                 {b.open_review_reasons.length <= 2
                   ? b.open_review_reasons.map(reviewReasonLabel).join(' · ')
                   : `${b.open_review_reasons.length} open items`}

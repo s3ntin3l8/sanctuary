@@ -319,3 +319,46 @@ def test_review_relationships_carry_the_other_partys_originator(
 
     (rel,) = client.get(f"/api/v1/documents/{src.id}/review").json()["relationships"]
     assert rel["originator_type"] == "court"
+
+
+def test_confirming_an_existing_evidence_row_stamps_it_user_confirmed(
+    db_session, sample_case
+):
+    owner = _owner(db_session)
+    doc = _doc(db_session, sample_case.id, owner, confirmed_at=datetime.now(UTC))
+    claim = _claim_asserted_in_case(db_session, sample_case, owner)
+    prop = _proposal(db_session, claim, doc)
+    db_session.add(
+        ClaimEvidence(
+            claim_id=claim.id,
+            document_id=doc.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
+    )
+    db_session.commit()
+
+    assert (
+        client.post(f"/api/v1/claims/proposals/evidence/{prop.id}/confirm").status_code
+        == 204
+    )
+    ev = db_session.query(ClaimEvidence).filter_by(document_id=doc.id).one()
+    db_session.refresh(ev)
+    assert ev.confidence == RelationshipConfidence.USER_CONFIRMED
+
+
+def test_dismissing_the_target_claim_clears_the_documents_contest_flag(
+    db_session, sample_case
+):
+    owner = _owner(db_session)
+    doc = _doc(db_session, sample_case.id, owner, confirmed_at=datetime.now(UTC))
+    claim = _claim_asserted_in_case(db_session, sample_case, owner)
+    _proposal(db_session, claim, doc)
+    refresh_review_reasons(doc, db_session)
+    assert "contests_existing_claim" in doc.review_reasons
+
+    assert client.delete(f"/api/v1/claims/{claim.id}").status_code == 204
+
+    db_session.refresh(doc)
+    assert "contests_existing_claim" not in doc.review_reasons
+    assert doc.needs_review is False

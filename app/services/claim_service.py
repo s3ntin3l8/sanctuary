@@ -483,12 +483,19 @@ class ClaimService:
 
         now = now_utc()
         claim.dismissed_at = now
-        self._db.query(ClaimEvidenceProposal).filter(
+        pending = self._db.query(ClaimEvidenceProposal).filter(
             ClaimEvidenceProposal.target_claim_id == claim_id,
             ClaimEvidenceProposal.status == ProposalStatus.PENDING,
-        ).update(
+        )
+        source_ids = {p.source_document_id for p in pending.all()}
+        pending.update(
             {"status": ProposalStatus.DISMISSED, "resolved_at": now},
             synchronize_session=False,
         )
         self._db.flush()
+        # Those proposals may have been what held their documents in review.
+        from app.services.ingestion.service import refresh_review_reasons
+
+        for doc in self._db.query(Document).filter(Document.id.in_(source_ids)):
+            refresh_review_reasons(doc, self._db, commit=False)
         return claim

@@ -143,6 +143,9 @@ def test_delete_and_revert_full_cascade(
     assert refreshed is not None
     assert refreshed.case_id == "_TRIAGE"
     assert refreshed.needs_review is True
+    assert refreshed.confirmed_at is None
+    # Recomputed, not just flagged: the doc is back to needing a case and a confirm.
+    assert {"missing_case_id", "pending_confirmation"} <= set(refreshed.review_reasons)
     assert refreshed.proceeding_id is None
 
     # IngestBatch reverted

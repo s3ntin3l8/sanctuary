@@ -42,6 +42,7 @@ from app.services.fees.calculator import (
     default_allocation,
     lawyer_fees,
 )
+from app.services.ingestion.service import apply_review_reasons
 
 logger = logging.getLogger(__name__)
 
@@ -1246,8 +1247,8 @@ class CaseService:
         for doc in docs:
             doc.case_id = "_TRIAGE"
             doc.proceeding_id = None
-            doc.needs_review = True
             doc.confirmed_at = None
+            apply_review_reasons(doc)
 
         # Revert any IngestBatches whose case_id pointed at this case.
         if batch_ids:
