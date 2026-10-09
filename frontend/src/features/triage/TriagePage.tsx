@@ -90,6 +90,8 @@ export function TriagePage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [expanded, bundles])
+  const visible = bundles.filter((b) => status === 'all' || b.status === status)
+  const rowVisible = visible.some((b) => b.key === expanded)
   // Deep links (Home → ?bundle=) land on the bundle once the feed has loaded.
   const scrolledTo = useRef<string | null>(null)
   useEffect(() => {
@@ -102,8 +104,7 @@ export function TriagePage() {
     if (!row) return
     scrolledTo.current = expanded
     row.scrollIntoView({ block: 'nearest' })
-  }, [expanded, bundles])
-  const visible = bundles.filter((b) => status === 'all' || b.status === status)
+  }, [expanded, rowVisible])
   const counts = useMemo(() => {
     const c: Record<Status, number> = {
       all: bundles.length,

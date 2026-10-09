@@ -36,11 +36,16 @@ test('lists bundles with their state and filters by status chip', async () => {
 
 test('a ?bundle= deep link opens that bundle and scrolls it into view', async () => {
   const scrollIntoView = vi.fn()
+  const original = Element.prototype.scrollIntoView
   Element.prototype.scrollIntoView = scrollIntoView
-  stub()
-  renderAt('/triage?bundle=batch-42', <TriagePage />)
-  expect(await screen.findByText('Bundle contents · 3')).toBeVisible()
-  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+  try {
+    stub()
+    renderAt('/triage?bundle=batch-42', <TriagePage />)
+    expect(await screen.findByText('Bundle contents · 3')).toBeVisible()
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+  } finally {
+    Element.prototype.scrollIntoView = original
+  }
 })
 
 test('confirm uses the AI suggestion and posts the routing', async () => {
