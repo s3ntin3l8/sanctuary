@@ -16,7 +16,7 @@ test('renders greeting, KPIs and every panel from the home view', async () => {
 
   expect(await screen.findByRole('heading', { name: 'Good morning, Katharina.' })).toBeVisible()
   expect(screen.getAllByText('File counter-statement')).toHaveLength(2) // deadline + the lone case card's upcoming list
-  expect(screen.getByText(/^Due in 30 days/)).toBeVisible()
+  expect(screen.getByText(/^Coming up/)).toBeVisible()
   expect(screen.getByText('Klageerwiderung')).toBeVisible()
   expect(screen.getByText(/AI suggested/)).toBeVisible()
   expect(screen.getByText('1 processing · 0 queued')).toBeVisible()
@@ -101,7 +101,7 @@ test('j / k move focus across the panels in order, Enter follows the link, ? lis
   await user.keyboard('j')
   // Third: the lone case card.
   expect(document.activeElement).toHaveAttribute('href', '/cases/ADV-024-A')
-  expect(document.activeElement).toHaveTextContent('Due in 30 days')
+  expect(document.activeElement).toHaveTextContent('Coming up')
   await user.keyboard('kk')
   expect(document.activeElement).toHaveTextContent('File counter-statement')
   // Wraps backwards to the last row (the last activity entry).

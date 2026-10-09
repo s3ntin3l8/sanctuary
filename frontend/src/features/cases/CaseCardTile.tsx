@@ -45,9 +45,7 @@ export function CaseCardTile({
   const urgent = action?.due_date ? daysUntil(action.due_date) <= 7 : false
   const wide = upcoming !== undefined
   // The next action is already shown on the left; list the rest here.
-  const rest = (upcoming ?? []).filter(
-    (i) => !(i.title === action?.title && i.due_date === action?.due_date),
-  )
+  const rest = (upcoming ?? []).filter((i) => i.id !== action?.id)
   return (
     <Link
       to={`/cases/${card.id}`}
@@ -93,12 +91,12 @@ export function CaseCardTile({
       {wide && (
         <div className="flex min-w-0 flex-col gap-1.5 border-l border-line2 pl-6">
           <div className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
-            Due in 30 days{' '}
+            Coming up{' '}
             <span className="font-mono normal-case">· {card.open_action_count} open in total</span>
           </div>
           {rest.length === 0 ? (
             <div className="text-[11px] text-muted2">
-              {action ? 'Nothing else due in the next 30 days' : 'None due in the next 30 days'}
+              {action ? 'Nothing else coming up' : 'Nothing coming up'}
             </div>
           ) : (
             rest.slice(0, UPCOMING_LIMIT).map((item) => {

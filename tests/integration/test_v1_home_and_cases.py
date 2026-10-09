@@ -154,6 +154,7 @@ def test_home_lists_deadlines_bundles_and_cases(db_session, sample_case):
 
     (bundle,) = body["triage_bundles"]
     assert bundle["title"] == "Klageerwiderung"
+    assert bundle["key"] == f"batch-{bundle['id']}"  # what Triage's ?bundle= matches
     assert bundle["doc_count"] == 1
     assert bundle["case_id"] is None
     assert bundle["suggested_case_id"] == sample_case.id
@@ -174,6 +175,7 @@ def test_home_lists_deadlines_bundles_and_cases(db_session, sample_case):
     assert card["doc_count"] == 1
     assert card["open_action_count"] == 1
     assert card["next_action"]["title"] == "File counter-statement"
+    assert card["next_action"]["id"] == item["id"]  # lets Home dedupe by id
 
 
 def test_review_all_persists_last_home_visit(db_session):

@@ -237,7 +237,8 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
             return (
               <li key={b.id}>
                 <Link
-                  to={`/triage?bundle=batch-${b.id}`}
+                  to={`/triage?bundle=${b.key}`}
+                  aria-label={`Open ${b.title} in triage`}
                   {...ROW}
                   className={`grid grid-cols-[52px_52px_1fr_auto] items-center gap-3 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
                 >
@@ -294,7 +295,7 @@ function CaseGrid({ cards, items }: { cards: Home['active_cases']; items: Home['
     return <CaseCardTile card={card} navRow upcoming={items.filter((i) => i.case_id === card.id)} />
   }
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-4">
       {cards.map((c) => (
         <CaseCardTile key={c.id} card={c} navRow />
       ))}

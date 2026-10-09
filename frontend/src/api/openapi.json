@@ -5838,6 +5838,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
           "pipeline": {
             "$ref": "#/components/schemas/PipelineCounts"
           },
@@ -5885,6 +5889,7 @@
         },
         "required": [
           "id",
+          "key",
           "status",
           "received_at",
           "sender_email",
@@ -6633,12 +6638,17 @@
             ],
             "title": "Due Date"
           },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
           "title": {
             "title": "Title",
             "type": "string"
           }
         },
         "required": [
+          "id",
           "title",
           "due_date",
           "action_type"

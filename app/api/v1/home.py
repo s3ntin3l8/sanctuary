@@ -46,6 +46,7 @@ def _triage_bundle(batch: IngestBatch) -> HomeTriageBundle:
     summary = batch.pipeline_summary
     return HomeTriageBundle(
         id=batch.id,
+        key=batch.key,
         status=batch.status,
         received_at=batch.received_at,
         sender_email=batch.sender_email,

@@ -31,6 +31,7 @@ class PipelineCounts(BaseModel):
 
 class HomeTriageBundle(BaseModel):
     id: int
+    key: str  # the Triage bundle key; deep-link with ?bundle=<key>
     status: IngestBatchStatus
     received_at: datetime | None
     sender_email: str | None

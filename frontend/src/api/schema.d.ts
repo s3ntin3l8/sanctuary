@@ -4508,6 +4508,8 @@ export interface components {
             doc_count: number;
             /** Id */
             id: number;
+            /** Key */
+            key: string;
             pipeline: components["schemas"]["PipelineCounts"];
             /** Received At */
             received_at: string | null;
@@ -4739,6 +4741,8 @@ export interface components {
             action_type: components["schemas"]["ActionItemType"];
             /** Due Date */
             due_date: string | null;
+            /** Id */
+            id: number;
             /** Title */
             title: string;
         };

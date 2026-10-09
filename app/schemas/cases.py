@@ -15,6 +15,7 @@ from app.models.enums import (
 
 
 class NextAction(BaseModel):
+    id: int
     title: str
     due_date: datetime | None
     action_type: ActionItemType
