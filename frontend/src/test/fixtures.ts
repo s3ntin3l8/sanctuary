@@ -21,6 +21,7 @@ export const caseCard: Schemas['CaseCard'] = {
   exposure_eur: 18450,
   doc_count: 12,
   open_action_count: 1,
+  to_review_count: 0,
   new_docs: 2,
   days_since_activity: 3,
   is_dormant: false,

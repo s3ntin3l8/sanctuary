@@ -135,3 +135,20 @@ test('draft banner ratifies the case', async () => {
     expect(fetch.mock.calls.some(([r]) => r.url.endsWith('/confirm-draft'))).toBe(true),
   )
 })
+
+test('?open=1 starts the Review tab filtered to documents that need review', async () => {
+  stub({
+    'GET /api/v1/cases/ADV-024-A': {
+      body: {
+        ...caseDetail,
+        documents: caseDetail.documents.map((d, i) => ({ ...d, needs_review: i === 0 })),
+      },
+    },
+  })
+  page('/cases/ADV-024-A?view=review&open=1')
+  const spine = await screen.findByRole('complementary', { name: 'Case spine' })
+  expect(within(spine).getByRole('button', { name: 'Show all documents' })).toBeVisible()
+  expect(
+    within(spine).getAllByRole('button', { name: /Klageerwiderung|Antragsschrift/ }),
+  ).toHaveLength(1)
+})

@@ -121,6 +121,16 @@ class DocumentRepository(BaseRepository[Document]):
         )
         return {k: v for k, v in results if k is not None}
 
+    def bulk_count_needs_review_by_case(self, case_ids: list[str]) -> dict[str, int]:
+        """Documents still needing review per case (bulk, one query)."""
+        results = (
+            self.db.query(Document.case_id, func.count(Document.id))
+            .filter(Document.case_id.in_(case_ids), Document.needs_review.is_(True))
+            .group_by(Document.case_id)
+            .all()
+        )
+        return {k: v for k, v in results if k is not None}
+
     def count_pending_review(self) -> int:
         """Count documents needing review."""
         return self.db.query(Document).filter(Document.needs_review.is_(True)).count()

@@ -1198,6 +1198,10 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "to_review_count": {
+            "title": "To Review Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -1216,6 +1220,7 @@
           "exposure_eur",
           "doc_count",
           "open_action_count",
+          "to_review_count",
           "new_docs",
           "days_since_activity",
           "is_dormant",

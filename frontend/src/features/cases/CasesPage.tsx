@@ -7,7 +7,7 @@ import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'
 import { Icon } from '../../ui/Icon'
-import { SignificanceDot } from './CaseCardTile'
+import { caseHref, SignificanceDot } from './CaseCardTile'
 import { CreateCaseModal } from './CreateCaseModal'
 
 type Filter = 'active' | 'dormant' | 'closed' | 'all'
@@ -156,10 +156,7 @@ function CaseRow({ card }: { card: CaseCard }) {
   const urgent = due ? daysUntil(due) <= 7 : false
   return (
     <li>
-      <Link
-        to={`/cases/${card.id}`}
-        className={`${GRID} px-3 py-2.5 text-[12px] hover:bg-accent/5`}
-      >
+      <Link to={caseHref(card)} className={`${GRID} px-3 py-2.5 text-[12px] hover:bg-accent/5`}>
         <SignificanceDot tier={card.max_significance} />
         <span className="truncate font-mono text-[11px] font-semibold text-tealink">{card.id}</span>
         <span className="min-w-0">
@@ -192,6 +189,12 @@ function CaseRow({ card }: { card: CaseCard }) {
         <span className="text-right font-mono text-muted">
           {card.doc_count}
           {card.new_docs > 0 && <span className="text-tealink"> +{card.new_docs}</span>}
+          {card.to_review_count > 0 && (
+            <span className="text-warning" title="documents to review">
+              {' '}
+              ⚑{card.to_review_count}
+            </span>
+          )}
         </span>
         <Icon name="chevron_right" size={16} className="text-muted" />
       </Link>

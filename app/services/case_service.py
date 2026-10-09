@@ -1140,12 +1140,16 @@ class CaseService:
         action_counts = self.action_repo.bulk_count_open_by_case(
             [c.id for c in all_cases]
         )
+        review_counts = self.doc_repo.bulk_count_needs_review_by_case(
+            [c.id for c in all_cases]
+        )
 
         return {
             "cases": enriched_cases,
             "stats_by_status": stats_by_status,
             "doc_counts": doc_counts,
             "deadline_counts": action_counts,
+            "review_counts": review_counts,
             "total": len(all_cases),
         }
 
