@@ -144,8 +144,12 @@ async def upload(
                         )
                     )
                 else:
+                    slicing = scan.status == IngestBatchStatus.AWAITING_SLICING
+                    # A batch awaiting slicing has no documents yet.
                     doc_id = (
-                        db.query(Document.id)
+                        None
+                        if slicing
+                        else db.query(Document.id)
                         .filter(Document.ingest_batch_id == scan.id)
                         .scalar()
                     )
@@ -155,7 +159,7 @@ async def upload(
                             status="queued",
                             doc_id=doc_id,
                             batch_id=scan.id,
-                            slicing=scan.status == IngestBatchStatus.AWAITING_SLICING,
+                            slicing=slicing,
                         )
                     )
             continue

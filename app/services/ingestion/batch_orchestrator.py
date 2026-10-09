@@ -515,7 +515,7 @@ def ingest_scanned_file(
     """
     owner_id = _resolve_owner_id(db, owner_id)
     batch_repo = IngestBatchRepository(db)
-    name = display_name or pdf_path.name
+    name = (display_name or pdf_path.name)[:255]
 
     existing = batch_repo.get_by_source_hash(source_hash, owner_id)
     if existing:
@@ -525,7 +525,7 @@ def ingest_scanned_file(
     batch = batch_repo.create_batch(
         source_type=IngestBatchSourceType.SCAN,
         owner_id=owner_id,
-        subject=name[:255],
+        subject=name,
         raw_source_path=to_storage_path(pdf_path),
     )
     batch.source_hash = source_hash

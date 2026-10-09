@@ -387,8 +387,7 @@ def _pdf_bytes(pages: int, tag: str) -> bytes:
 
     pdf = pdfium.PdfDocument.new()
     for i in range(pages):
-        pdf.new_page(200 + i, 300)
-    pdf.new_page(100, 100 + len(tag))  # distinct bytes per tag => distinct hash
+        pdf.new_page(200 + i + len(tag), 300)  # tag length => distinct hash
     buf = io.BytesIO()
     pdf.save(buf)
     return buf.getvalue()
@@ -438,6 +437,25 @@ def test_upload_split_scans_queues_multipage_for_slicing(
     ).json()
     assert dup["results"][0]["status"] == "duplicate"
     assert len(list((tmp_path / "processed").glob("*/*"))) == 1
+
+
+def test_upload_split_scans_single_page_becomes_a_document(
+    db_session, monkeypatch, tmp_path
+):
+    from app.models.database import Document
+
+    _scan_dirs(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "app.services.ingestion.batch_orchestrator.dispatch_task", lambda *a, **k: None
+    )
+    result = client.post(
+        "/api/v1/upload",
+        files=[("files", ("letter.pdf", _pdf_bytes(1, "single"), "application/pdf"))],
+        data={"split_scans": "true"},
+    ).json()["results"][0]
+    assert result["status"] == "queued" and result["slicing"] is False
+    doc = db_session.get(Document, result["doc_id"])
+    assert doc.ingest_batch_id == result["batch_id"] and doc.title == "letter.pdf"
 
 
 def test_upload_split_scans_rejects_case_target_and_non_pdf(
