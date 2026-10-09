@@ -647,7 +647,7 @@ function MetadataModal({
           placeholder="—"
           readOnly
           tabIndex={-1}
-          title="Comes from the proceeding."
+          hint="Comes from the proceeding."
           className="cursor-default font-mono text-muted focus:border-line"
           onChange={() => undefined}
         />

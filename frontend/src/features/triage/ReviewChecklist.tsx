@@ -12,8 +12,8 @@ type Review = Schemas['DocumentReview']
 type Item = {
   key: string
   label: string
-  /** Section the row scrolls to. */
-  target: string
+  /** Section the row scrolls to; rows that expand in place have none. */
+  target?: string
   detail?: React.ReactNode
 }
 
@@ -76,7 +76,6 @@ export function reviewItems(review: Review): Item[] {
     items.push({
       key: 'contradiction',
       label: 'AI flagged a contradiction',
-      target: 'review-summary',
     })
   }
   return items
@@ -156,7 +155,7 @@ function ChecklistRow({ item, review }: { item: Item; review: Review }) {
         ) : (
           <button
             type="button"
-            onClick={() => jumpTo(item.target)}
+            onClick={() => item.target && jumpTo(item.target)}
             className="text-[10.5px] text-tealink hover:underline"
           >
             Go to →

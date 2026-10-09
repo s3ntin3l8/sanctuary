@@ -40,6 +40,7 @@ export function RoutingCards({
   const caseId = review.case?.id ?? null
   const suggested = bundle.suggestion?.case_id ?? null
   const confidence = bundle.sub_groups[0]?.case_confidence ?? null
+  const reserveSub = review.case !== null || review.proceeding !== null
   const procOptions = proceedings.filter((p) => p.case_id === caseId)
 
   function route(nextCase: string, nextProceeding: number | null) {
@@ -79,6 +80,7 @@ export function RoutingCards({
           disabled={confirm.isPending}
           onClick={() => setOpen(open === 'case' ? null : 'case')}
           sub={review.case?.title}
+          reserveSub={reserveSub}
         >
           {review.case ? (
             <span className="font-mono text-[13px] font-semibold">{review.case.id}</span>
@@ -145,6 +147,7 @@ export function RoutingCards({
           disabled={confirm.isPending || caseId === null}
           onClick={() => setOpen(open === 'proceeding' ? null : 'proceeding')}
           sub={review.proceeding?.court_name}
+          reserveSub={reserveSub}
         >
           {review.proceeding ? (
             <>
@@ -191,6 +194,7 @@ function PickerCard({
   disabled,
   onClick,
   sub,
+  reserveSub,
   children,
 }: {
   label: string
@@ -199,6 +203,8 @@ function PickerCard({
   disabled: boolean
   onClick: () => void
   sub?: string
+  /** Keep the subtitle row so a sibling card with one stays the same height. */
+  reserveSub: boolean
   children: ReactNode
 }) {
   return (
@@ -215,7 +221,7 @@ function PickerCard({
         {children}
         <Icon name="edit" size={14} className="ml-auto text-muted2" />
       </div>
-      <div className="mt-1 h-[15px] truncate text-[10px] text-muted">{sub}</div>
+      {reserveSub && <div className="mt-1 h-[15px] truncate text-[10px] text-muted">{sub}</div>}
     </button>
   )
 }
