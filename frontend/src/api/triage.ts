@@ -274,6 +274,7 @@ export function useActionStatus(docId: number) {
 
 export function useRelationshipDecision(docId: number) {
   const patch = useDocPatch(docId)
+  const queryClient = useQueryClient()
   return useMutation<unknown, ApiError, { relId: number; decision: 'confirm' | 'reject' }>({
     mutationFn: async ({ relId, decision }) => {
       const p = { params: { path: { rel_id: relId } } }
@@ -283,7 +284,7 @@ export function useRelationshipDecision(docId: number) {
           : api.DELETE('/api/v1/relationships/{rel_id}', p),
       )
     },
-    onSuccess: (_, { relId, decision }) =>
+    onSuccess: (_, { relId, decision }) => {
       patch((prev) => ({
         ...prev,
         relationships:
@@ -292,7 +293,30 @@ export function useRelationshipDecision(docId: number) {
             : prev.relationships.map((r) =>
                 r.id === relId ? { ...r, confidence: 'user_confirmed' } : r,
               ),
-      })),
+      }))
+      // The decision can clear review reasons, here and on the bundle row.
+      queryClient.invalidateQueries({ queryKey: ['document', docId] })
+      queryClient.invalidateQueries({ queryKey: KEY })
+    },
+  })
+}
+
+/** Confirm or dismiss an AI-proposed claim link (CONTESTS / REFUTES / ...) from the review pane. */
+export function useEvidenceDecision(docId: number) {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, ApiError, { proposalId: number; decision: 'confirm' | 'dismiss' }>({
+    mutationFn: ({ proposalId, decision }) => {
+      const p = { params: { path: { proposal_id: proposalId } } }
+      return unwrap(
+        decision === 'confirm'
+          ? api.POST('/api/v1/claims/proposals/evidence/{proposal_id}/confirm', p)
+          : api.POST('/api/v1/claims/proposals/evidence/{proposal_id}/dismiss', p),
+      )
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['document', docId] })
+      queryClient.invalidateQueries({ queryKey: KEY })
+    },
   })
 }
 

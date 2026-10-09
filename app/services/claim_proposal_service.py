@@ -34,6 +34,7 @@ from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
     ProposalStatus,
+    RelationshipConfidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,7 @@ def confirm_evidence(proposal_id: int, db: Session) -> ClaimEvidenceProposal | N
                 document_id=prop.source_document_id,
                 role=prop.proposed_role,
                 excerpt=prop.excerpt,
+                confidence=RelationshipConfidence.USER_CONFIRMED,
             )
         )
 

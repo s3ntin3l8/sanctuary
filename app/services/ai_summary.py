@@ -394,8 +394,11 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     new_meta = dict(doc.meta or {})
     contradictions = summary_data.get("contradictions", [])
     if contradictions:
-        new_meta["ai_contradiction"] = True
         new_meta["contradiction_notes"] = contradictions
+        # The user dismissed exactly these notes; only different ones re-raise it.
+        new_meta["ai_contradiction"] = (
+            new_meta.get("contradiction_acknowledged") != contradictions
+        )
     else:
         new_meta["ai_contradiction"] = False
 

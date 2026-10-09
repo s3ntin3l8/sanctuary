@@ -426,6 +426,8 @@ export const documentReview: Schemas['DocumentReview'] = {
       first_made_at: '2026-06-14T00:00:00Z',
     },
   ],
+  evidence_proposals: [],
+  contradiction_notes: [],
   claims_status: 'ran',
   actions: [
     {

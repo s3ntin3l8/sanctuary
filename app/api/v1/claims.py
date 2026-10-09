@@ -216,6 +216,15 @@ def dismiss_merge(
     db.commit()
 
 
+def _refresh_source_review(document_id: int, db: Session) -> None:
+    """Resolving a CONTESTS/REFUTES proposal may clear the document's review flag."""
+    from app.services.ingestion.service import refresh_review_reasons
+
+    source = db.get(Document, document_id)
+    if source:
+        refresh_review_reasons(source, db)
+
+
 @router.post(
     "/claims/proposals/evidence/{proposal_id}/confirm",
     status_code=204,
@@ -229,6 +238,7 @@ def confirm_evidence(
 ):
     proposal_svc.confirm_evidence(proposal.id, db)
     db.commit()
+    _refresh_source_review(proposal.source_document_id, db)
 
 
 @router.post(
@@ -244,6 +254,7 @@ def dismiss_evidence(
 ):
     proposal_svc.dismiss_evidence(proposal.id, db)
     db.commit()
+    _refresh_source_review(proposal.source_document_id, db)
 
 
 @router.post(

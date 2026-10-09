@@ -36,6 +36,7 @@ from app.models.enums import (
 from app.repositories.case import CaseRepository
 from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
+from app.schemas.case_detail import EvidenceProposalView
 from app.schemas.document_review import (
     ActionStatusUpdate,
     ActionView,
@@ -288,6 +289,25 @@ def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
             )
             for c in ctx["grounds"]
         ],
+        "evidence_proposals": [
+            EvidenceProposalView(
+                proposal_id=p.id,
+                proposed_role=p.proposed_role,
+                excerpt=p.excerpt,
+                target_claim_id=p.target_claim_id,
+                target_claim_text=ctx["proposal_targets"][p.target_claim_id].claim_text,
+                target_claim_status=ctx["proposal_targets"][p.target_claim_id].status,
+                source_document_id=doc.id,
+                source_document_title=doc.title,
+            )
+            for p in ctx["evidence_proposals_for_doc"]
+            if p.target_claim_id in ctx["proposal_targets"]
+        ],
+        "contradiction_notes": (
+            [str(n) for n in (doc.meta or {}).get("contradiction_notes") or []]
+            if (doc.meta or {}).get("ai_contradiction")
+            else []
+        ),
         "claims_status": ctx["claims_status"],
         "actions": [
             ActionView(
@@ -447,6 +467,28 @@ def update_metadata(
         raise ApiError(404, "not_found", "Document not found.")
     db.refresh(updated)
     return review_view(db, user, updated)
+
+
+@router.post(
+    "/documents/{doc_id}/contradiction/acknowledge", response_model=DocumentReview
+)
+def acknowledge_contradiction(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    doc: Document = Depends(require_document_access(edit=True)),
+):
+    """Dismiss the AI's contradiction flag. A re-enrich that reports the same
+    notes leaves it dismissed; different notes raise it again."""
+    from app.services.ingestion.service import refresh_review_reasons
+
+    meta = dict(doc.meta or {})
+    meta["ai_contradiction"] = False
+    meta["contradiction_acknowledged"] = meta.get("contradiction_notes") or []
+    doc.meta = meta
+    refresh_review_reasons(doc, db, commit=False)
+    db.commit()
+    db.refresh(doc)
+    return review_view(db, user, doc)
 
 
 @router.post("/documents/{doc_id}/summary", response_model=SummaryView)

@@ -689,16 +689,17 @@ def test_detect_relationships_soft_time_limit_fails_without_retry(
 def test_extract_claims_refreshes_review_reasons_on_success(
     db_session, sample_document
 ):
-    """After claims are extracted with adversarial evidence, review_reasons is refreshed
-    so the triage card shows contests_existing_claim before the user confirms."""
+    """After claims are extracted with a pending CONTESTS proposal, review_reasons is
+    refreshed so the triage card shows contests_existing_claim before the user decides."""
     from datetime import UTC, datetime
 
-    from app.models.database import Claim, ClaimEvidence
+    from app.models.database import Claim, ClaimEvidence, ClaimEvidenceProposal
     from app.models.enums import (
         ClaimEvidenceRole,
         ClaimStatus,
         ClaimType,
         PipelineStage,
+        ProposalConfidence,
         RelationshipConfidence,
         StageStatus,
     )
@@ -730,11 +731,11 @@ def test_extract_claims_refreshes_review_reasons_on_success(
                 role=ClaimEvidenceRole.ASSERTS,
                 confidence=RelationshipConfidence.AI_DETECTED,
             ),
-            ClaimEvidence(
-                claim_id=claim.id,
-                document_id=sample_document.id,
-                role=ClaimEvidenceRole.CONTESTS,
-                confidence=RelationshipConfidence.AI_DETECTED,
+            ClaimEvidenceProposal(
+                target_claim_id=claim.id,
+                source_document_id=sample_document.id,
+                proposed_role=ClaimEvidenceRole.CONTESTS,
+                confidence=ProposalConfidence.HIGH,
             ),
         ]
     )

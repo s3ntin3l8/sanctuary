@@ -174,6 +174,9 @@ class Document(Base):
     review_reasons: Mapped[list[Any] | None] = mapped_column(
         JSON, default=list, nullable=True
     )  # e.g. ["missing_case_id", "missing_sender"]
+    # Set by the explicit "Confirm bundle" action; clears `pending_confirmation`
+    # for good (a later relationship decision or re-enrich must not undo it).
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Pipeline tracking
     pipeline_state: Mapped[PipelineState] = mapped_column(

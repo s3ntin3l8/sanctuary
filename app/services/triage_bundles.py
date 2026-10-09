@@ -260,7 +260,7 @@ def _build_bundles(
                 ),
                 Document.case_id == "_TRIAGE",
                 and_(
-                    Document.needs_review.is_(True),
+                    Document.confirmed_at.is_(None),
                     or_(
                         IngestBatch.id.is_(None),
                         IngestBatch.status != IngestBatchStatus.COMPLETED,

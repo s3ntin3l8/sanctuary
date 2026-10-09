@@ -7,6 +7,7 @@ import {
   useDocumentReview,
   useDraftDecision,
   useReact,
+  useEvidenceDecision,
   useRelationshipDecision,
   useSetTitle,
   useStageRetry,
@@ -880,6 +881,60 @@ const CLAIM_TONE: Record<string, Tone> = {
   established: 'success',
 }
 
+const ROLE_LABEL: Record<string, string> = {
+  contests: 'contests',
+  refutes: 'refutes',
+  supports: 'supports',
+  asserts: 'asserts',
+  cites_as_proof: 'cites as proof',
+}
+
+/** AI-proposed links from this document to claims in the case, awaiting a decision. */
+function ClaimLinks({ review }: { review: Review }) {
+  const decide = useEvidenceDecision(review.id)
+  const toast = useToast()
+  const act = (proposalId: number, decision: 'confirm' | 'dismiss') =>
+    decide.mutate({ proposalId, decision }, { onError: (e) => toast(e.message, 'error') })
+  return (
+    <div className="mb-3 border-b border-line2 pb-2">
+      <div className="mb-1 text-[10px] font-bold tracking-[.1em] text-muted uppercase">
+        Claim links to confirm
+      </div>
+      <ul className="space-y-1.5">
+        {review.evidence_proposals.map((p) => (
+          <li key={p.proposal_id} className="flex items-start gap-2 text-[11.5px] text-ink2">
+            <Badge tone={p.proposed_role === 'supports' ? 'neutral' : 'warning'}>
+              {ROLE_LABEL[p.proposed_role] ?? p.proposed_role}
+            </Badge>
+            <span className="min-w-0 flex-1 leading-relaxed">
+              {p.target_claim_text}
+              {p.excerpt && (
+                <span className="block text-[10.5px] text-muted italic">“{p.excerpt}”</span>
+              )}
+            </span>
+            <button
+              type="button"
+              aria-label="Confirm claim link"
+              onClick={() => act(p.proposal_id, 'confirm')}
+              className="text-success"
+            >
+              <Icon name="check" size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss claim link"
+              onClick={() => act(p.proposal_id, 'dismiss')}
+              className="text-danger"
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function Grounds({ review }: { review: Review }) {
   return (
     <Section
@@ -891,6 +946,7 @@ function Grounds({ review }: { review: Review }) {
           : review.claims_status.replace('_', ' ')
       }
     >
+      {review.evidence_proposals.length > 0 && <ClaimLinks review={review} />}
       {review.grounds.length === 0 ? (
         <p className="text-muted">
           {review.claims_status === 'pending_triage'

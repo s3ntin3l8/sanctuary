@@ -113,17 +113,17 @@ def create_manual_upload_batch(
     return batch.id
 
 
-def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
+def compute_review_reasons(doc: Document) -> list[str]:
     """Compute reasons why document needs review.
 
-    A document remains in triage if it has any review reasons.
     'pending_confirmation' is the master flag that ensures human eyes
-    always see the document at least once.
+    always see the document at least once; it holds until the user confirms
+    (`doc.confirmed_at`).
     """
     reasons = []
 
     # 1. Mandatory Human Confirmation
-    if not confirmed:
+    if doc.confirmed_at is None:
         reasons.append("pending_confirmation")
 
     # 2. Structural Missing Data
@@ -163,8 +163,12 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
     try:
         from sqlalchemy import inspect
 
-        from app.models.database import ClaimEvidence, DocumentRelationship
-        from app.models.enums import ClaimEvidenceRole, RelationshipConfidence
+        from app.models.database import ClaimEvidenceProposal, DocumentRelationship
+        from app.models.enums import (
+            ClaimEvidenceRole,
+            ProposalStatus,
+            RelationshipConfidence,
+        )
 
         db = inspect(doc).session
         if db:
@@ -180,14 +184,16 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
             if unconfirmed:
                 reasons.append("unresolved_relationship")
 
+            # The extractor only *proposes* evidence links; the flag holds
+            # until the user confirms or dismisses each CONTESTS/REFUTES one.
             contested = (
-                db.query(ClaimEvidence)
+                db.query(ClaimEvidenceProposal)
                 .filter(
-                    ClaimEvidence.document_id == doc.id,
-                    ClaimEvidence.role.in_(
+                    ClaimEvidenceProposal.source_document_id == doc.id,
+                    ClaimEvidenceProposal.proposed_role.in_(
                         [ClaimEvidenceRole.CONTESTS, ClaimEvidenceRole.REFUTES]
                     ),
-                    ClaimEvidence.confidence == RelationshipConfidence.AI_DETECTED,
+                    ClaimEvidenceProposal.status == ProposalStatus.PENDING,
                 )
                 .first()
             )
@@ -201,6 +207,17 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
         reasons.append("contradiction_detected")
 
     return list(dict.fromkeys(reasons))
+
+
+def apply_review_reasons(doc: Document) -> None:
+    """Recompute `review_reasons` and derive `needs_review` from them.
+
+    The single writer for both fields. `missing_parent` is informational (the
+    enclosure is still usable), so it alone doesn't hold a document in review.
+    """
+    reasons = compute_review_reasons(doc)
+    doc.review_reasons = reasons
+    doc.needs_review = bool(set(reasons) - {"missing_parent"})
 
 
 def refresh_review_reasons(doc: Document, db, *, commit: bool = True) -> None:
@@ -217,9 +234,7 @@ def refresh_review_reasons(doc: Document, db, *, commit: bool = True) -> None:
         db.query(Document).filter(
             Document.id == doc.id
         ).with_for_update().populate_existing().one()
-    reasons = compute_review_reasons(doc, confirmed=False)
-    doc.review_reasons = reasons
-    doc.needs_review = len(reasons) > 0
+    apply_review_reasons(doc)
     if commit:
         db.commit()
 
@@ -460,9 +475,7 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
         ).model_dump(),
     }
 
-    reasons = compute_review_reasons(doc, confirmed=False)
-    doc.review_reasons = reasons
-    doc.needs_review = len(reasons) > 0
+    apply_review_reasons(doc)
 
 
 def _create_document(
@@ -498,9 +511,7 @@ def _create_document(
     db.flush()
     _pipeline_init(new_doc, batched=ingest_batch_id is not None, db=db)
 
-    reasons = compute_review_reasons(new_doc, confirmed=False)
-    new_doc.review_reasons = reasons
-    new_doc.needs_review = len(reasons) > 0
+    apply_review_reasons(new_doc)
 
     return new_doc
 
