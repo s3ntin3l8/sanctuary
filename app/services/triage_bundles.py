@@ -390,7 +390,13 @@ def get_triage_bundles(
         ordered = sorted(
             bundles.values(),
             key=lambda b: (
-                0 if (b.open_review_reasons or b.to_confirm_count > 0) else 1,
+                0
+                if (
+                    b.open_review_reasons
+                    or b.to_confirm_count > 0
+                    or b.summaries_pending > 0
+                )
+                else 1,
                 -(b.received_at.timestamp() if b.received_at else 0),
             ),
             reverse=(direction == "asc"),

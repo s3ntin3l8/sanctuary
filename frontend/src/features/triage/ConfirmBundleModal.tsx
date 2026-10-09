@@ -67,7 +67,6 @@ function BatchConfirmDialog({
   const batchConfirm = useBatchConfirm()
   const toast = useToast()
   const caseOf = (b: TriageBundle) => b.suggestion?.case_id ?? b.confirmed_case_id
-  const skipped = bundles.filter((b) => !caseOf(b)).length
   return (
     <Modal
       open
@@ -97,7 +96,6 @@ function BatchConfirmDialog({
       </ul>
       <p className="mt-2 text-[10.5px] text-muted">
         Open items stay open — you can still fix them from the case.
-        {skipped > 0 && ` ${skipped} without a suggested case will be skipped.`}
       </p>
       {batchConfirm.error && (
         <p role="alert" className="mt-2 text-[11px] text-danger">

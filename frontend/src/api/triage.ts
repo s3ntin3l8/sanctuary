@@ -192,16 +192,21 @@ export function useGroupOp() {
 
 // --- Document review ---------------------------------------------------------
 
-export function useDocumentReview(docId: number | null) {
-  return useQuery<S['DocumentReview'], ApiError>({
+/** Shared by `useDocumentReview` and batched `useQueries` so both hit the same cache entry. */
+export function documentReviewOptions(docId: number | null) {
+  return {
     queryKey: ['document', docId],
     queryFn: () => unwrap(api.GET('/api/v1/documents/{doc_id}/review', docPath(docId ?? 0))),
     enabled: docId !== null,
-    refetchInterval: (query) =>
+    refetchInterval: (query: { state: { data?: S['DocumentReview'] } }) =>
       ['pending', 'running', 'partial'].includes(query.state.data?.pipeline.state ?? '')
         ? 4_000
         : false,
-  })
+  }
+}
+
+export function useDocumentReview(docId: number | null) {
+  return useQuery<S['DocumentReview'], ApiError>(documentReviewOptions(docId))
 }
 
 /**

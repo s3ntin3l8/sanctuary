@@ -1,4 +1,7 @@
-import { useDocumentReview } from '../../api/triage'
+import { useQueries } from '@tanstack/react-query'
+
+import { documentReviewOptions } from '../../api/triage'
+import type { Schemas } from '../../api/client'
 import type { TriageBundle } from '../../api/triage'
 import { Button } from '../../ui/Button'
 import { actionableReasons, reviewReasonLabel } from '../documents/reviewReasons'
@@ -27,13 +30,20 @@ export function OpenItems({
   onReview: (docId: number) => void
 }) {
   const docs = docsWithOpenItems(bundle)
+  // One batched lookup for the whole bundle (the open document is already cached).
+  const reviews = useQueries({ queries: docs.map((d) => documentReviewOptions(d.id)) })
   if (docs.length === 0) return null
   return (
     <div role="note" className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-[11px]">
       <p className="font-semibold text-warning">Still open in this bundle</p>
       <ul className="mt-1.5 space-y-1.5 text-ink2">
-        {docs.map((d) => (
-          <DocOpenItems key={d.id} doc={d} onReview={() => onReview(d.id)} />
+        {docs.map((d, i) => (
+          <DocOpenItems
+            key={d.id}
+            doc={d}
+            review={reviews[i]?.data}
+            onReview={() => onReview(d.id)}
+          />
         ))}
       </ul>
       <p className="mt-1.5 text-muted">You can still confirm; fix them later from the case.</p>
@@ -41,9 +51,17 @@ export function OpenItems({
   )
 }
 
-function DocOpenItems({ doc, onReview }: { doc: Doc; onReview: () => void }) {
-  const review = useDocumentReview(doc.id).data
+function DocOpenItems({
+  doc,
+  review,
+  onReview,
+}: {
+  doc: Doc
+  review: Schemas['DocumentReview'] | undefined
+  onReview: () => void
+}) {
   // Until the full review loads, fall back to what the feed already knows.
+  // The "assign a case" row is dropped on purpose: this dialog assigns the case.
   const labels = review
     ? reviewItems(review)
         .filter((i) => i.key !== 'case')

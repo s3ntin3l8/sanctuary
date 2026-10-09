@@ -49,6 +49,18 @@ def test_approve_unapprove_roundtrip(db_session, sample_case):
     assert r.json()["bullets"]  # the summary itself is kept
 
 
+def test_approving_a_missing_or_errored_summary_is_rejected(db_session, sample_case):
+    for summary in (None, {"error": "timeout"}):
+        doc = _doc(db_session, sample_case.id, ai_summary=summary)
+        r = client.post(
+            f"/api/v1/documents/{doc.id}/summary", json={"action": "approve"}
+        )
+        assert r.status_code == 409
+        assert r.json()["code"] == "no_summary"
+        db_session.refresh(doc)
+        assert doc.ai_summary_approved_at is None
+
+
 def _bundle(db, docs):
     batch = IngestBatch(
         owner_id=_owner(db),
