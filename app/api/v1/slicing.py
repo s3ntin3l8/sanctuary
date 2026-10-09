@@ -128,7 +128,11 @@ def page_image(request: Request, page: int, batch: IngestBatch = Depends(owned_b
     png = render_page_png(pdf_path, page)
     if png is None:
         raise ApiError(404, "not_found", f"Page {page} not found.")
-    return Response(content=png, media_type="image/png")
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=600"},
+    )
 
 
 @router.post("/{batch_id}/confirm", response_model=SlicingConfirmed)

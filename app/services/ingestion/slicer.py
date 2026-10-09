@@ -336,7 +336,7 @@ _VIEWER_DPI = 150
 
 
 def render_page_png(pdf_path, page: int, dpi: int = _VIEWER_DPI) -> bytes | None:
-    """Render one 1-based page of a PDF as PNG bytes; None when out of range."""
+    """Render one 1-based page of a PDF as PNG bytes (150 DPI by default); None when out of range."""
     import io
 
     pdf_doc = pdfium.PdfDocument(str(pdf_path))

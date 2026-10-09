@@ -88,8 +88,9 @@ export function SlicingPage() {
 
   function setKind(after: number, kind: Kind) {
     setCuts((prev) => {
+      // Choosing a kind on a gap that isn't cut yet cuts it.
       const next = new Map(prev ?? activeCuts)
-      if (next.has(after)) next.set(after, kind)
+      next.set(after, kind)
       return next
     })
   }

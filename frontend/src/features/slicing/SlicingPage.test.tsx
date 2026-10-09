@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
@@ -105,4 +105,14 @@ test('the page viewer flips with arrow keys, sets cuts, and Esc only closes it',
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(navigation.leaveTo).not.toHaveBeenCalled()
   expect(screen.getByText(/3 pages · 3 documents/)).toBeVisible()
+})
+
+test('choosing a kind in the viewer on an uncut gap creates the cut', async () => {
+  renderPage()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Open page 2' }))
+  await user.keyboard('l')
+  expect(
+    within(screen.getByRole('dialog')).getByRole('button', { name: 'New letter' }),
+  ).toHaveAttribute('aria-pressed', 'true')
 })
