@@ -59,7 +59,6 @@ test('confirm uses the AI suggestion and posts the routing', async () => {
     'POST /api/v1/triage/confirm': {
       body: {
         bundle: null,
-        next_doc_id: null,
         case: { id: 'ADV-024-A', title: 'Weber ./. Weber', action: 'assigned' },
       },
     },
@@ -167,7 +166,6 @@ test('the case card re-routes the bundle from an inline picker', async () => {
     'POST /api/v1/triage/confirm': {
       body: {
         bundle: null,
-        next_doc_id: null,
         case: { id: 'ADV-019-C', title: 'Brandt GmbH ./. Keller', action: 'assigned' },
       },
     },
@@ -199,7 +197,6 @@ test('the proceeding picker lists only the assigned case’s proceedings', async
     'POST /api/v1/triage/confirm': {
       body: {
         bundle: null,
-        next_doc_id: null,
         case: { id: 'ADV-024-A', title: 'Weber ./. Weber', action: 'assigned' },
       },
     },

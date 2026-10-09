@@ -198,7 +198,6 @@ def test_assign_keeps_bundle_in_triage_then_confirm_removes_it(db_session, sampl
         )
     assert resp.status_code == 200, resp.text
     assert resp.json()["bundle"] is None
-    assert resp.json()["next_doc_id"] is None
     db_session.expire_all()
     assert db_session.get(IngestBatch, batch.id).status == IngestBatchStatus.COMPLETED
     assert all(db_session.get(Document, d.id).case_id == sample_case.id for d in docs)

@@ -16,8 +16,15 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.constants import SIG_ORDER as _SIG_ORDER
-from app.models.database import BatchSubGroup, Document, IngestBatch
-from app.models.enums import DocumentRole
+from app.models.database import (
+    BatchSubGroup,
+    Document,
+    DocumentRelationship,
+    IngestBatch,
+)
+from app.models.enums import DocumentRole, RelationshipType
+from app.repositories.document_relationship import insert_edge_if_absent
+from app.services.ingestion.service import apply_review_reasons
 
 
 def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGroup]:
@@ -112,18 +119,38 @@ def set_cover_letter(db: Session, doc_id: int, batch_id: int) -> Document:
         raise ValueError(f"Document {doc_id} not in batch {batch_id}")
 
     if doc.sub_group_id is not None:
-        db.query(Document).filter(
-            Document.sub_group_id == doc.sub_group_id,
-            Document.role == DocumentRole.COVER_LETTER,
-        ).update({"role": DocumentRole.ENCLOSURE})
+        group = Document.sub_group_id == doc.sub_group_id
     else:
-        db.query(Document).filter(
-            Document.ingest_batch_id == batch_id,
-            Document.sub_group_id.is_(None),
-            Document.role == DocumentRole.COVER_LETTER,
-        ).update({"role": DocumentRole.ENCLOSURE})
+        group = (Document.ingest_batch_id == batch_id) & Document.sub_group_id.is_(None)
+    members = db.query(Document).filter(group).all()
+    member_ids = {m.id for m in members}
 
+    for m in members:
+        if m.role == DocumentRole.COVER_LETTER and m.id != doc.id:
+            m.role = DocumentRole.ENCLOSURE
     doc.role = DocumentRole.COVER_LETTER
+    doc.parent_id = None
+
+    # The cover→enclosure structure follows the cover: enclosures point at the
+    # new cover, and the old cover's ENCLOSES edges give way to the new one's.
+    db.query(DocumentRelationship).filter(
+        DocumentRelationship.relationship_type == RelationshipType.ENCLOSES,
+        DocumentRelationship.from_document_id.in_(member_ids),
+        DocumentRelationship.to_document_id.in_(member_ids),
+    ).delete(synchronize_session=False)
+    for m in members:
+        if m.id != doc.id:
+            m.parent_id = doc.id
+            insert_edge_if_absent(
+                db,
+                from_document_id=doc.id,
+                to_document_id=m.id,
+                relationship_type=RelationshipType.ENCLOSES,
+                notes="user-chosen cover letter",
+            )
+    db.flush()
+    for m in members:
+        apply_review_reasons(m)
     db.flush()
     return doc
 

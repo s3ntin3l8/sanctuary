@@ -270,6 +270,9 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
 
         if full:
             clear_extraction_stamp(doc)
+            # Re-analysing starts the bundle over: it is back in the inbox and
+            # needs confirming again.
+            doc.confirmed_at = None
 
         doc.role = DocumentRole.STANDALONE
         doc.parent_id = None

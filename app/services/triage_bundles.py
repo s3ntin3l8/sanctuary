@@ -36,6 +36,14 @@ from app.models.enums import (
 from app.services.pipeline_status import stages_dict
 from app.services.triage_confirmation import _sanitize_case_title
 
+IGNORABLE_REVIEW_REASONS = frozenset({"pending_confirmation", "missing_parent"})
+
+
+def actionable_review_reasons(reasons: list | None) -> list[str]:
+    """Review reasons a human must act on: not the confirm click itself
+    (`pending_confirmation`) and not informational ones (`missing_parent`)."""
+    return sorted(set(reasons or []) - IGNORABLE_REVIEW_REASONS)
+
 
 def summary_awaits_approval(doc: Document) -> bool:
     """A real AI summary exists and the user hasn't approved it yet.
@@ -91,9 +99,8 @@ class BundleView:
         Excludes `pending_confirmation` (the confirm click itself) and
         `missing_parent` (informational).
         """
-        ignorable = {"pending_confirmation", "missing_parent"}
-        return sorted(
-            {r for d in self.documents for r in (d.review_reasons or [])} - ignorable
+        return actionable_review_reasons(
+            [r for d in self.documents for r in (d.review_reasons or [])]
         )
 
     @property

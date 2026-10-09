@@ -171,16 +171,20 @@ def compute_review_reasons(doc: Document) -> list[str]:
             ClaimEvidenceRole,
             ProposalStatus,
             RelationshipConfidence,
+            RelationshipType,
         )
 
         db = inspect(doc).session
         if db:
+            # ENCLOSES edges come from the bundle layout (cover letter and its
+            # enclosures), not from an AI judgement the user could confirm.
             unconfirmed = (
                 db.query(DocumentRelationship)
                 .filter(
                     DocumentRelationship.from_document_id == doc.id,
                     DocumentRelationship.confidence
                     == RelationshipConfidence.AI_DETECTED,
+                    DocumentRelationship.relationship_type != RelationshipType.ENCLOSES,
                 )
                 .first()
             )
