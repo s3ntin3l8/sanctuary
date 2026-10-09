@@ -91,7 +91,7 @@ export function HomePage() {
         <div className="space-y-4 px-6 py-4">
           <BriefingCard />
 
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-5 gap-4">
             <Kpi label="Deadlines" value={data.today_items.length} icon="timer" />
             <Kpi label="Triage" value={data.triage_bundles.length} icon="inbox" />
             <Kpi label="Processing" value={processing} icon="sync" />
@@ -99,8 +99,8 @@ export function HomePage() {
             <Kpi label="Exposure" value={formatEurCompact(exposure)} icon="payments" />
           </div>
 
-          <div className="grid grid-cols-[1.6fr_1fr] items-start gap-4">
-            <div className="space-y-4">
+          <div className="grid grid-cols-5 items-start gap-4">
+            <div className="col-span-3 space-y-4">
               {data.caught_up ? (
                 <div className="rounded-xl border border-line bg-card px-6 py-10 text-center">
                   <Icon name="check_circle" size={28} className="text-accent" />
@@ -122,11 +122,7 @@ export function HomePage() {
                   icon="pending"
                   meta={pluralize(data.draft_cases.length, 'draft')}
                 >
-                  <div className="grid grid-cols-2 gap-3">
-                    {data.draft_cases.map((c) => (
-                      <CaseCardTile key={c.id} card={c} navRow />
-                    ))}
-                  </div>
+                  <CaseGrid cards={data.draft_cases} items={data.today_items} />
                 </Panel>
               )}
 
@@ -135,23 +131,19 @@ export function HomePage() {
                 icon="folder_open"
                 meta={pluralize(data.active_cases.length, 'case')}
                 action={
-                  <a href="/cases" className="text-[11px] text-tealink hover:underline">
+                  <Link to="/cases" className="text-[11px] text-tealink hover:underline">
                     View all
-                  </a>
+                  </Link>
                 }
               >
                 {data.active_cases.length === 0 ? (
                   <p className="py-4 text-center text-[12px] text-muted">No active cases yet.</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {data.active_cases.map((c) => (
-                      <CaseCardTile key={c.id} card={c} navRow />
-                    ))}
-                  </div>
+                  <CaseGrid cards={data.active_cases} items={data.today_items} />
                 )}
               </Panel>
             </div>
-            <div className="space-y-4">
+            <div className="col-span-2 space-y-4">
               <DeltaPanel home={data} />
               <SignalsPanel signals={data.signals} />
               <ActivityPanel events={data.activity} row={ROW} />
@@ -230,9 +222,9 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
       icon="inbox"
       meta={pluralize(bundles.length, 'bundle')}
       action={
-        <a href="/triage" className="text-[11px] text-tealink hover:underline">
+        <Link to="/triage" className="text-[11px] text-tealink hover:underline">
           Open triage
-        </a>
+        </Link>
       }
     >
       {bundles.length === 0 ? (
@@ -244,8 +236,9 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
             const busy = p.running + p.pending > 0
             return (
               <li key={b.id}>
-                <a
-                  href="/triage"
+                <Link
+                  to={`/triage?bundle=${b.key}`}
+                  aria-label={`Open ${b.title} in triage`}
                   {...ROW}
                   className={`grid grid-cols-[52px_52px_1fr_auto] items-center gap-3 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
                 >
@@ -285,13 +278,28 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
                   ) : (
                     <Badge tone="success">ready</Badge>
                   )}
-                </a>
+                </Link>
               </li>
             )
           })}
         </ul>
       )}
     </Panel>
+  )
+}
+
+/** Two-column card grid; a lone card goes full width with its upcoming actions. */
+function CaseGrid({ cards, items }: { cards: Home['active_cases']; items: Home['today_items'] }) {
+  const [card] = cards
+  if (card && cards.length === 1) {
+    return <CaseCardTile card={card} navRow upcoming={items.filter((i) => i.case_id === card.id)} />
+  }
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {cards.map((c) => (
+        <CaseCardTile key={c.id} card={c} navRow />
+      ))}
+    </div>
   )
 }
 
@@ -353,8 +361,8 @@ function SignalsPanel({ signals }: { signals: Home['signals'] }) {
       <ul className="divide-y divide-line2">
         {signals.map((s) => (
           <li key={s.id}>
-            <a
-              href={s.link}
+            <Link
+              to={s.link}
               {...ROW}
               className={`flex items-start gap-2 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
             >
@@ -368,7 +376,7 @@ function SignalsPanel({ signals }: { signals: Home['signals'] }) {
                 <span className="block text-[11px] text-muted">{s.detail}</span>
               </span>
               <Badge>{s.action}</Badge>
-            </a>
+            </Link>
           </li>
         ))}
       </ul>

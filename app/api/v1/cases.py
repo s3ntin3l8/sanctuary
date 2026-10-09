@@ -67,6 +67,7 @@ def case_cards(
                 proceeding_name=c["proceeding_name"],
                 matter_type=proceeding["matter_type"] if proceeding else "",
                 next_action=NextAction(
+                    id=action.id,
                     title=action.title,
                     due_date=action.due_date,
                     action_type=action.action_type,

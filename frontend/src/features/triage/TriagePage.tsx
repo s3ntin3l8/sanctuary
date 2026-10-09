@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
 import { reviewReasonLabel } from '../documents/reviewReasons'
@@ -91,6 +91,20 @@ export function TriagePage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [expanded, bundles])
   const visible = bundles.filter((b) => status === 'all' || b.status === status)
+  const rowVisible = visible.some((b) => b.key === expanded)
+  // Deep links (Home → ?bundle=) land on the bundle once the feed has loaded.
+  const scrolledTo = useRef<string | null>(null)
+  useEffect(() => {
+    if (!expanded) {
+      scrolledTo.current = null
+      return
+    }
+    if (scrolledTo.current === expanded) return
+    const row = document.querySelector(`[data-bundle-key="${CSS.escape(expanded)}"]`)
+    if (!row) return
+    scrolledTo.current = expanded
+    row.scrollIntoView({ block: 'nearest' })
+  }, [expanded, rowVisible])
   const counts = useMemo(() => {
     const c: Record<Status, number> = {
       all: bundles.length,

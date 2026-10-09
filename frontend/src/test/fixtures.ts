@@ -13,6 +13,7 @@ export const caseCard: Schemas['CaseCard'] = {
   proceeding_name: 'AG Hamburg',
   matter_type: 'Sorgerecht',
   next_action: {
+    id: 1,
     title: 'File counter-statement',
     due_date: '2026-06-18T00:00:00Z',
     action_type: 'deadline',
@@ -57,6 +58,7 @@ export const homeView: Schemas['HomeView'] = {
   triage_bundles: [
     {
       id: 42,
+      key: 'batch-42',
       status: 'pending',
       received_at: '2026-06-21T09:12:00Z',
       sender_email: 'kanzlei-vogt@ra-vogt.de',
