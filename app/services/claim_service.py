@@ -487,7 +487,12 @@ class ClaimService:
             ClaimEvidenceProposal.target_claim_id == claim_id,
             ClaimEvidenceProposal.status == ProposalStatus.PENDING,
         )
-        source_ids = {p.source_document_id for p in pending.all()}
+        source_ids = {
+            doc_id
+            for (doc_id,) in pending.with_entities(
+                ClaimEvidenceProposal.source_document_id
+            ).distinct()
+        }
         pending.update(
             {"status": ProposalStatus.DISMISSED, "resolved_at": now},
             synchronize_session=False,

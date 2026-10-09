@@ -345,6 +345,7 @@ def test_confirming_an_existing_evidence_row_stamps_it_user_confirmed(
     ev = db_session.query(ClaimEvidence).filter_by(document_id=doc.id).one()
     db_session.refresh(ev)
     assert ev.confidence == RelationshipConfidence.USER_CONFIRMED
+    assert ev.excerpt == "but actually"  # the confirmed proposal's excerpt
 
 
 def test_dismissing_the_target_claim_clears_the_documents_contest_flag(
