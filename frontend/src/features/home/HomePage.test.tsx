@@ -136,5 +136,8 @@ test('the lone case card lists the next few items and counts the rest', async ()
   renderAt('/', <HomePage />)
   expect(await screen.findByText('Coming up')).toBeVisible()
   // The next action stays on the left; three of the five others are listed, two are counted.
+  expect(screen.getByText('Frist 2')).toBeVisible()
+  expect(screen.getByText('Frist 4')).toBeVisible()
+  expect(screen.queryByText('Frist 5')).not.toBeInTheDocument()
   expect(screen.getByText('+2 more')).toBeVisible()
 })
