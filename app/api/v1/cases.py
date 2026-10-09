@@ -34,12 +34,13 @@ def case_cards(
     editable: set[str] | None,
     doc_counts: dict[str, int] | None = None,
     action_counts: dict[str, int] | None = None,
+    review_counts: dict[str, int] | None = None,
 ) -> list[CaseCard]:
     """Turn ``CaseService.enrich_case_for_card`` dicts into API cards.
 
     ``editable`` is `access_service.editable_case_ids` for the caller (None
     = unrestricted). Pass the count dicts when the caller already has them
-    (the directory service computes both) to avoid repeating the two bulk
+    (the directory service computes all three) to avoid repeating the bulk
     queries.
     """
     ids = [c["id"] for c in enriched]
@@ -47,7 +48,8 @@ def case_cards(
         doc_counts = service.doc_repo.bulk_count_by_case(ids)
     if action_counts is None:
         action_counts = service.action_repo.bulk_count_open_by_case(ids)
-    review_counts = service.doc_repo.bulk_count_needs_review_by_case(ids)
+    if review_counts is None:
+        review_counts = service.doc_repo.bulk_count_needs_review_by_case(ids)
     cards = []
     for c in enriched:
         action = c["next_action"]
@@ -102,6 +104,7 @@ def cases_directory(
             editable=access_service.editable_case_ids(db, user),
             doc_counts=data["doc_counts"],
             action_counts=data["deadline_counts"],
+            review_counts=data["review_counts"],
         ),
         counts_by_status=data["stats_by_status"],
         total=data["total"],

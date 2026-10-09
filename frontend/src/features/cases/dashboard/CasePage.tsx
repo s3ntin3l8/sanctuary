@@ -75,7 +75,8 @@ export function CasePage() {
   if (!detail) return <QueryState error={query.error} pending={query.isPending} />
   return (
     <Dashboard
-      key={caseId}
+      // The filter flag only seeds the Review tab, so a different link means a fresh tab.
+      key={`${caseId}:${params.get('open') === '1'}`}
       detail={detail}
       view={VIEWS.some(([v]) => v === view) ? view : 'graph'}
       openOnly={params.get('open') === '1'}
