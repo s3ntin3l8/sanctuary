@@ -232,6 +232,25 @@
     0 0 0 2px var(--accent),
     0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent);
 }
+.reader .reader-figure {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 100%;
+  margin: 0.2em 0;
+  padding: 0.15em 0.6em;
+  border: 1px dashed var(--line2);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.85em;
+  font-style: italic;
+}
+.reader .reader-figure-icon {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-size: 1.2em;
+  line-height: 1;
+}
 .reader .hud-claim-chip {
   font-size: 0.75em;
   margin-left: 2px;

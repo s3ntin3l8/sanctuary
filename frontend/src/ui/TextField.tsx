@@ -1,8 +1,10 @@
 import { type InputHTMLAttributes, useId } from 'react'
 
+import { inputClass } from './Field'
+
 type Props = InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }
 
-export function TextField({ label, hint, id, ...rest }: Props) {
+export function TextField({ label, hint, id, className, ...rest }: Props) {
   const generatedId = useId()
   const inputId = id ?? generatedId
   const hintId = `${inputId}-hint`
@@ -17,7 +19,7 @@ export function TextField({ label, hint, id, ...rest }: Props) {
       <input
         id={inputId}
         aria-describedby={hint ? hintId : undefined}
-        className="mt-1 w-full rounded-[9px] border border-line bg-panel2 px-3 py-2 text-[13px] text-ink placeholder:text-muted2 focus:border-accent focus:outline-none"
+        className={`mt-1 ${inputClass}${className ? ` ${className}` : ''}`}
         {...rest}
       />
       {hint && (

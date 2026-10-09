@@ -204,6 +204,7 @@ test('email-header relationships get a badge, not confirm/reject controls', asyn
             id: 501,
             doc_id: 1500,
             title: 'Antragsschrift',
+            originator_type: 'opposing',
             rel_type: 'replies_to',
             confidence: 'ai_detected',
             direction: 'out',
@@ -212,6 +213,7 @@ test('email-header relationships get a badge, not confirm/reject controls', asyn
             id: 502,
             doc_id: 1501,
             title: 'Beschluss',
+            originator_type: 'court',
             rel_type: 'replies_to',
             confidence: 'email_header',
             direction: 'out',
@@ -262,4 +264,55 @@ test('pending claim links can be confirmed from the Grounds card', async () => {
       ),
     ).toBe(true),
   )
+})
+
+test('the checklist lists what is left to review on the open document', async () => {
+  stub()
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  const list = await screen.findByRole('region', { name: 'To review' })
+  expect(within(list).getByText(/Check metadata:.*sender.*issued/)).toBeVisible()
+  expect(within(list).getByText('1 relationship to confirm')).toBeVisible()
+  expect(within(list).getByText('1 claim link to confirm')).toBeVisible()
+})
+
+const clearReview = {
+  ...documentReview,
+  review_reasons: [],
+  metadata: documentReview.metadata.map((f) => ({ ...f, confidence: 'high' as const })),
+  relationships: [],
+  evidence_proposals: [],
+}
+
+function withSiblingReasons(reasons: string[]) {
+  const [bundle, ...rest] = triageView.bundles
+  if (!bundle) throw new Error('fixture has no bundle')
+  const documents = bundle.documents.map((d) =>
+    d.id === 2210 ? { ...d, review_reasons: reasons } : { ...d, review_reasons: [] },
+  )
+  return { ...triageView, bundles: [{ ...bundle, documents }, ...rest] }
+}
+
+test('the checklist is green when this document and its bundle are clear', async () => {
+  stub({
+    'GET /api/v1/triage': { body: withSiblingReasons([]) },
+    'GET /api/v1/documents/2211/review': { body: clearReview },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  expect(await screen.findByText(/Ready to confirm/)).toBeVisible()
+})
+
+test('a clear document is not "ready" while a sibling still has open items', async () => {
+  stub({
+    'GET /api/v1/triage': { body: withSiblingReasons(['unresolved_relationship']) },
+    'GET /api/v1/documents/2211/review': { body: clearReview },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  expect(await screen.findByText(/This document is clear, but 1 other document/)).toBeVisible()
+  expect(screen.queryByText(/Ready to confirm/)).not.toBeInTheDocument()
 })

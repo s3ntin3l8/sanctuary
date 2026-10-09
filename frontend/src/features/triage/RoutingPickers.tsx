@@ -40,6 +40,7 @@ export function RoutingCards({
   const caseId = review.case?.id ?? null
   const suggested = bundle.suggestion?.case_id ?? null
   const confidence = bundle.sub_groups[0]?.case_confidence ?? null
+  const reserveSub = review.case !== null || review.proceeding !== null
   const procOptions = proceedings.filter((p) => p.case_id === caseId)
 
   function route(nextCase: string, nextProceeding: number | null) {
@@ -72,37 +73,31 @@ export function RoutingCards({
   return (
     <div className="grid grid-cols-2 gap-2.5">
       <div className="relative">
-        <button
-          type="button"
-          aria-label="Change case"
-          aria-expanded={open === 'case'}
+        <PickerCard
+          label="Case"
+          ariaLabel="Change case"
+          expanded={open === 'case'}
           disabled={confirm.isPending}
           onClick={() => setOpen(open === 'case' ? null : 'case')}
-          className="block w-full rounded-[9px] border border-line bg-card px-[11px] py-[9px] text-left hover:bg-accent/7 disabled:opacity-60"
+          sub={review.case?.title}
+          reserveSub={reserveSub}
         >
-          <div className={CARD_LABEL}>Case</div>
-          <div className="flex items-center gap-[7px]">
-            {review.case ? (
-              <span className="font-mono text-[13px] font-semibold">{review.case.id}</span>
-            ) : (
-              <span className="text-[11px] text-muted">Unassigned · in triage</span>
-            )}
-            {review.case?.is_draft && (
-              <Badge tone="warning" pill>
-                draft
-              </Badge>
-            )}
-            {confidence && (
-              <Badge tone={CONFIDENCE_TONE[confidence] ?? 'neutral'} pill>
-                {confidence}
-              </Badge>
-            )}
-            <Icon name="edit" size={14} className="ml-auto text-muted2" />
-          </div>
-          {review.case && (
-            <div className="mt-1 truncate text-[10px] text-muted">{review.case.title}</div>
+          {review.case ? (
+            <span className="font-mono text-[13px] font-semibold">{review.case.id}</span>
+          ) : (
+            <span className="text-[11px] text-muted">Unassigned · in triage</span>
           )}
-        </button>
+          {review.case?.is_draft && (
+            <Badge tone="warning" pill>
+              draft
+            </Badge>
+          )}
+          {confidence && (
+            <Badge tone={CONFIDENCE_TONE[confidence] ?? 'neutral'} pill>
+              {confidence}
+            </Badge>
+          )}
+        </PickerCard>
         {open === 'case' && (
           <Popover onClose={() => setOpen(null)}>
             {suggestedCase && (
@@ -145,35 +140,30 @@ export function RoutingCards({
         )}
       </div>
       <div className="relative">
-        <button
-          type="button"
-          aria-label="Change proceeding"
-          aria-expanded={open === 'proceeding'}
+        <PickerCard
+          label="Proceeding"
+          ariaLabel="Change proceeding"
+          expanded={open === 'proceeding'}
           disabled={confirm.isPending || caseId === null}
           onClick={() => setOpen(open === 'proceeding' ? null : 'proceeding')}
-          className="block w-full rounded-[9px] border border-line bg-card px-[11px] py-[9px] text-left hover:bg-accent/7 disabled:opacity-60"
+          sub={review.proceeding?.court_name}
+          reserveSub={reserveSub}
         >
-          <div className={CARD_LABEL}>Proceeding</div>
           {review.proceeding ? (
             <>
-              <div className="flex items-center gap-[7px]">
-                <span className="font-mono text-[12px]">{review.proceeding.az_court ?? '—'}</span>
-                <Badge tone="accent" pill>
-                  {review.proceeding.court_level.toUpperCase()}
-                </Badge>
-                <Icon name="expand_more" size={15} className="ml-auto text-muted2" />
-              </div>
-              <div className="mt-1 truncate text-[10px] text-muted">
-                {review.proceeding.court_name}
-              </div>
+              <span className="font-mono text-[13px] font-semibold">
+                {review.proceeding.az_court ?? '—'}
+              </span>
+              <Badge tone="accent" pill>
+                {review.proceeding.court_level.toUpperCase()}
+              </Badge>
             </>
           ) : (
-            <div className="flex items-center gap-[7px] text-[11px] text-muted">
+            <span className="text-[11px] text-muted">
               {review.az_court ? `AZ ${review.az_court} · no proceeding yet` : 'No proceeding'}
-              <Icon name="expand_more" size={15} className="ml-auto text-muted2" />
-            </div>
+            </span>
           )}
-        </button>
+        </PickerCard>
         {open === 'proceeding' && caseId && (
           <Popover onClose={() => setOpen(null)}>
             {procOptions.map((p) => (
@@ -193,6 +183,46 @@ export function RoutingCards({
         )}
       </div>
     </div>
+  )
+}
+
+/** The card both pickers share, so the two stay visually identical. */
+function PickerCard({
+  label,
+  ariaLabel,
+  expanded,
+  disabled,
+  onClick,
+  sub,
+  reserveSub,
+  children,
+}: {
+  label: string
+  ariaLabel: string
+  expanded: boolean
+  disabled: boolean
+  onClick: () => void
+  sub?: string
+  /** Keep the subtitle row so a sibling card with one stays the same height. */
+  reserveSub: boolean
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-expanded={expanded}
+      disabled={disabled}
+      onClick={onClick}
+      className="block w-full rounded-[9px] border border-line bg-card px-[11px] py-[9px] text-left hover:bg-accent/7 disabled:opacity-60"
+    >
+      <div className={CARD_LABEL}>{label}</div>
+      <div className="flex items-center gap-[7px]">
+        {children}
+        <Icon name="edit" size={14} className="ml-auto text-muted2" />
+      </div>
+      {reserveSub && <div className="mt-1 h-[15px] truncate text-[10px] text-muted">{sub}</div>}
+    </button>
   )
 }
 

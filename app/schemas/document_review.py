@@ -97,6 +97,7 @@ class RelationshipView(BaseModel):
     id: int
     doc_id: int
     title: str
+    originator_type: OriginatorType
     rel_type: RelationshipType
     confidence: RelationshipConfidence
     direction: Literal["out", "in"]

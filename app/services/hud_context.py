@@ -115,10 +115,17 @@ def _build_relationships(
         r.from_document_id for r in rels_in
     }
     titles: dict[int, str] = {}
+    originators: dict[int, _OriginatorType] = {}
     if related_ids:
         visible = access_service.visible_case_ids(db, viewer)
         for row in (
-            db.query(Document.id, Document.title, Document.owner_id, Document.case_id)
+            db.query(
+                Document.id,
+                Document.title,
+                Document.owner_id,
+                Document.case_id,
+                Document.originator_type,
+            )
             .filter(Document.id.in_(related_ids))
             .all()
         ):
@@ -126,6 +133,7 @@ def _build_relationships(
                 viewer, visible, owner_id=row[2], case_id=row[3]
             ):
                 titles[row[0]] = row[1] or "Untitled"
+                originators[row[0]] = row[4]
 
     def _flatten(rels, *, side: str) -> list[dict]:
         out = []
@@ -141,6 +149,7 @@ def _build_relationships(
                 {
                     "id": other_id,
                     "title": titles.get(other_id, "Untitled"),
+                    "originator_type": originators.get(other_id),
                     "rel_type": rel_type,
                     "confidence": confidence,
                     "rel_obj": rel,

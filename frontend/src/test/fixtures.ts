@@ -221,7 +221,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
   action_dates: [{ title: 'File counter-statement', due_date: '2026-06-18T00:00:00Z' }],
   has_manual_groups: false,
   has_unconfirmed_metadata: true,
-  unresolved_review_count: 1,
+  open_review_reasons: ['unresolved_relationship'],
   to_confirm_count: 2,
   lead_doc_id: 2211,
   documents: [
@@ -411,6 +411,7 @@ export const documentReview: Schemas['DocumentReview'] = {
       id: 501,
       doc_id: 1500,
       title: 'Antragsschrift',
+      originator_type: 'court',
       rel_type: 'replies_to',
       confidence: 'ai_detected',
       direction: 'out',
@@ -426,7 +427,18 @@ export const documentReview: Schemas['DocumentReview'] = {
       first_made_at: '2026-06-14T00:00:00Z',
     },
   ],
-  evidence_proposals: [],
+  evidence_proposals: [
+    {
+      proposal_id: 31,
+      proposed_role: 'contests',
+      excerpt: 'Der Umgang wurde nie verweigert.',
+      target_claim_id: 9,
+      target_claim_text: 'Umgang wurde nie gewährt',
+      target_claim_status: 'asserted',
+      source_document_id: 2211,
+      source_document_title: 'Klageerwiderung.pdf',
+    },
+  ],
   contradiction_notes: [],
   claims_status: 'ran',
   actions: [

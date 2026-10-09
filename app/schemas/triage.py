@@ -92,7 +92,7 @@ class TriageBundle(BaseModel):
     action_dates: list[TriageActionDate]
     has_manual_groups: bool
     has_unconfirmed_metadata: bool
-    unresolved_review_count: int
+    open_review_reasons: list[str]
     to_confirm_count: int
     lead_doc_id: int | None
     documents: list[TriageDocument]

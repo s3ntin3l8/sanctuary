@@ -194,3 +194,17 @@ def test_render_highlighted_offsets_with_paragraph_break():
     # Both paragraphs are present (paragraph wrapping survived).
     assert "<p>" in result
     assert result.count("<p>") >= 2
+
+
+@pytest.mark.unit
+def test_render_highlighted_images_become_caption_chips():
+    result = _rh("Kopf\n\n![Logo of <b>Kanzlei</b> 'H.F']()\n\nText")
+    assert "<img" not in result
+    assert 'class="reader-figure"' in result
+    assert "Logo of &lt;b&gt;Kanzlei&lt;/b&gt;" in result
+    assert "<b>" not in result
+
+
+@pytest.mark.unit
+def test_render_highlighted_image_without_alt_gets_a_label():
+    assert "Abbildung" in _rh("![]()")

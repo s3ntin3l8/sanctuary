@@ -5124,6 +5124,7 @@ export interface components {
             doc_id: number;
             /** Id */
             id: number;
+            originator_type: components["schemas"]["OriginatorType"];
             rel_type: components["schemas"]["RelationshipType"];
             /** Title */
             title: string;
@@ -5460,6 +5461,8 @@ export interface components {
             key: string;
             /** Lead Doc Id */
             lead_doc_id: number | null;
+            /** Open Review Reasons */
+            open_review_reasons: string[];
             /** Originator Types */
             originator_types: components["schemas"]["OriginatorType"][];
             pipeline: components["schemas"]["BundlePipeline"];
@@ -5491,8 +5494,6 @@ export interface components {
             to_confirm_count: number;
             /** Total Pages */
             total_pages: number;
-            /** Unresolved Review Count */
-            unresolved_review_count: number;
         };
         /** TriageCaseSuggestion */
         TriageCaseSuggestion: {

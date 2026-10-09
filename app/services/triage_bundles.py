@@ -69,17 +69,15 @@ class BundleView:
         return sum(d.page_count or 0 for d in self.documents)
 
     @property
-    def unresolved_review_count(self) -> int:
-        """Docs with real review issues (low confidence, missing fields, etc.).
+    def open_review_reasons(self) -> list[str]:
+        """Review reasons a human must act on, across the bundle (sorted).
 
-        Excludes docs whose only outstanding reason is `pending_confirmation`
-        — those just need a human ratification click, not metadata fixes.
+        Excludes `pending_confirmation` (the confirm click itself) and
+        `missing_parent` (informational).
         """
         ignorable = {"pending_confirmation", "missing_parent"}
-        return sum(
-            1
-            for d in self.documents
-            if d.review_reasons and (set(d.review_reasons) - ignorable)
+        return sorted(
+            {r for d in self.documents for r in (d.review_reasons or [])} - ignorable
         )
 
     @property
@@ -372,7 +370,7 @@ def get_triage_bundles(
         ordered = sorted(
             bundles.values(),
             key=lambda b: (
-                0 if (b.unresolved_review_count > 0 or b.to_confirm_count > 0) else 1,
+                0 if (b.open_review_reasons or b.to_confirm_count > 0) else 1,
                 -(b.received_at.timestamp() if b.received_at else 0),
             ),
             reverse=(direction == "asc"),
