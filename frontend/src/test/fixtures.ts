@@ -556,6 +556,7 @@ export const caseDetail: Schemas['CaseDetail'] = {
       role: 'standalone',
       thread_open: true,
       needs_review: false,
+      summary_pending: false,
       is_new: true,
     },
     {
@@ -569,6 +570,7 @@ export const caseDetail: Schemas['CaseDetail'] = {
       role: 'standalone',
       thread_open: false,
       needs_review: false,
+      summary_pending: false,
       is_new: false,
     },
   ],

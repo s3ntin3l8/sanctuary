@@ -3183,6 +3183,11 @@ export interface components {
             /** Role */
             role: string;
             significance_tier: components["schemas"]["SignificanceTier"] | null;
+            /**
+             * Summary Pending
+             * @default false
+             */
+            summary_pending: boolean;
             /** Thread Open */
             thread_open: boolean;
             /** Title */

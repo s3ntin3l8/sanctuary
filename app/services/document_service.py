@@ -33,6 +33,7 @@ class DocumentService:
             ActionItem,
             Claim,
             ClaimEvidence,
+            ClaimEvidenceProposal,
             Conversation,
             DocumentChunk,
             DocumentPin,
@@ -62,6 +63,23 @@ class DocumentService:
         self.db.query(ClaimEvidence).filter(ClaimEvidence.document_id == doc_id).delete(
             synchronize_session=False
         )
+        # Docs on the other end of a deleted edge lose its review reason too.
+        peer_ids = {
+            pid
+            for row in self.db.query(
+                DocumentRelationship.from_document_id,
+                DocumentRelationship.to_document_id,
+            )
+            .filter(
+                or_(
+                    DocumentRelationship.from_document_id == doc_id,
+                    DocumentRelationship.to_document_id == doc_id,
+                )
+            )
+            .all()
+            for pid in row
+            if pid != doc_id
+        }
         self.db.query(DocumentRelationship).filter(
             or_(
                 DocumentRelationship.from_document_id == doc_id,
@@ -106,6 +124,15 @@ class DocumentService:
         )
         rootless_ids = [c[0] for c in rootless]
         if rootless_ids:
+            # Their pending proposals cascade away with them; the documents
+            # that raised those proposals must drop the matching reason.
+            peer_ids.update(
+                pid
+                for (pid,) in self.db.query(ClaimEvidenceProposal.source_document_id)
+                .filter(ClaimEvidenceProposal.target_claim_id.in_(rootless_ids))
+                .all()
+                if pid != doc_id
+            )
             self.db.query(Claim).filter(Claim.id.in_(rootless_ids)).delete(
                 synchronize_session=False
             )
@@ -148,5 +175,15 @@ class DocumentService:
                 target_id=str(doc_id),
             )
             self.db.commit()
+            self._refresh_peers(peer_ids)
             return True
         return False
+
+    def _refresh_peers(self, doc_ids: set[int]) -> None:
+        """Recompute review reasons for documents whose edges/proposals vanished."""
+        from app.services.ingestion.service import refresh_review_reasons
+
+        for peer in self.db.query(Document).filter(Document.id.in_(doc_ids)).all():
+            refresh_review_reasons(peer, self.db, commit=False)
+        if doc_ids:
+            self.db.commit()

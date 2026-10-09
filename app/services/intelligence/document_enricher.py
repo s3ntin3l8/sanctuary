@@ -164,8 +164,13 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     reconcile_ai_fields(doc, result)
 
     # title — only overwrite when AI returns a clean, non-empty title
+    user_set = {
+        key
+        for key, val in (doc.extraction_confidence or {}).items()
+        if val == "user_set"
+    }
     ai_title = (result.get("title") or "").strip()
-    if ai_title and len(ai_title) <= 255:
+    if ai_title and len(ai_title) <= 255 and "title" not in user_set:
         doc.title = ai_title
         doc.extraction_confidence = {
             **(doc.extraction_confidence or {}),
@@ -187,12 +192,12 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
 
     # significance_tier
     tier_raw = (result.get("significance_tier") or "").lower()
-    if tier_raw in VALID_SIGNIFICANCE_TIERS:
+    if tier_raw in VALID_SIGNIFICANCE_TIERS and "significance_tier" not in user_set:
         doc.significance_tier = SignificanceTier(tier_raw)
 
     # document_type
     dtype_raw = (result.get("document_type") or "").lower()
-    if dtype_raw in VALID_DOCUMENT_TYPES:
+    if dtype_raw in VALID_DOCUMENT_TYPES and "document_type" not in user_set:
         doc.document_type = DocumentType(dtype_raw)
 
     # thread_open — derived from document_type, not AI-set
@@ -310,11 +315,14 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                 required_action=None if _is_placeholder(req_action) else req_action,
                 financial_impact=None if _is_placeholder(fin_impact) else fin_impact,
             )
-            doc.ai_summary = validated_summary.model_dump()
+            new_summary = validated_summary.model_dump()
+            # An identical rewrite (the re-enrich right after confirm) keeps the
+            # approval; only changed text needs a fresh look. A failed
+            # validation keeps the old summary and its approval too.
+            if new_summary != doc.ai_summary:
+                doc.ai_summary_approved_at = None
+            doc.ai_summary = new_summary
             doc.ai_summary_created_at = datetime.now(UTC)
-            # Only when new text is actually written: a failed validation keeps the
-            # old summary, so its approval stays with it.
-            doc.ai_summary_approved_at = None
         except Exception as e:
             logger.warning("Doc %d: invalid ai_summary skipped: %s", doc.id, e)
 
