@@ -850,11 +850,13 @@ const DECISION_TONE = {
 /** ✓ / ✕ control for AI proposals: tinted on hover, presses in when clicked. */
 function DecisionButton({
   tone,
+  icon,
   label,
   disabled,
   onClick,
 }: {
   tone: keyof typeof DECISION_TONE
+  icon: string
   label: string
   disabled: boolean
   onClick: () => void
@@ -867,7 +869,7 @@ function DecisionButton({
       onClick={onClick}
       className={`rounded-md p-0.5 transition-[background-color,transform] duration-150 hover:scale-110 focus-visible:outline-2 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:bg-transparent ${DECISION_TONE[tone]}`}
     >
-      <Icon name={tone === 'success' ? 'check' : 'close'} size={14} />
+      <Icon name={icon} size={14} />
     </button>
   )
 }
@@ -921,6 +923,7 @@ function Relationships({ review }: { review: Review }) {
               <>
                 <DecisionButton
                   tone="success"
+                  icon="check"
                   label="Confirm relationship"
                   disabled={decide.isPending}
                   onClick={() =>
@@ -932,6 +935,7 @@ function Relationships({ review }: { review: Review }) {
                 />
                 <DecisionButton
                   tone="danger"
+                  icon="close"
                   label="Reject relationship"
                   disabled={decide.isPending}
                   onClick={() =>
@@ -993,12 +997,14 @@ function ClaimLinks({ review }: { review: Review }) {
             </span>
             <DecisionButton
               tone="success"
+              icon="check"
               label="Confirm claim link"
               disabled={decide.isPending}
               onClick={() => act(p.proposal_id, 'confirm')}
             />
             <DecisionButton
               tone="danger"
+              icon="close"
               label="Dismiss claim link"
               disabled={decide.isPending}
               onClick={() => act(p.proposal_id, 'dismiss')}

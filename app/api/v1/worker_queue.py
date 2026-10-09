@@ -61,7 +61,7 @@ def _slicing_item(batch: IngestBatch) -> tuple[bool, QueueItem]:
     meta = (batch.meta or {}).get("slicing", {})
     preparing = meta.get("status", "preparing") == "preparing"
     progress = meta.get("progress") or {}
-    label = f"Scan #{batch.id} — {(batch.subject or '')[:40]}".rstrip(" —")
+    label = f"Scan #{batch.id}" + (f" — {batch.subject[:40]}" if batch.subject else "")
     note = "Ready — review cuts"
     if preparing:
         done, total = progress.get("done"), progress.get("total")

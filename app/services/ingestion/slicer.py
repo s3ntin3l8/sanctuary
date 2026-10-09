@@ -67,7 +67,7 @@ def _ocr_page_text(image: Image.Image) -> str:
         ocr = _get_ocr()
         arr = np.array(image.convert("RGB"))
         # rapidocr 3.x returns an output object; ``txts`` is None on a blank page.
-        return " ".join(ocr(arr).txts or ())
+        return " ".join(t for t in ocr(arr).txts or () if t and t.strip())
     except Exception as exc:
         logger.warning("OCR failed for page: %s", exc)
         return ""

@@ -188,7 +188,9 @@ function QueueSection({
             className="flex items-center gap-2 py-1.5 text-[12px]"
           >
             <span className="font-mono text-[10px] text-muted">
-              {item.kind === 'doc' ? `D#${item.doc_id}` : `B#${item.batch_id}`}
+              {item.kind === 'doc'
+                ? `D#${item.doc_id}`
+                : `${item.kind === 'slicing' ? 'S' : 'B'}#${item.batch_id}`}
             </span>
             <span className="min-w-0 flex-1 truncate">
               {item.label}

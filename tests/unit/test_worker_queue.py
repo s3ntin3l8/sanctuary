@@ -400,3 +400,16 @@ def test_scans_awaiting_slicing_appear_in_the_queue(app_client, db_session):
     (waiting,) = body["queued"]
     assert (waiting["kind"], waiting["batch_id"]) == ("slicing", ready.id)
     assert waiting["note"] == "Ready — review cuts"
+
+
+@pytest.mark.unit
+def test_failed_slicing_prep_is_queued_with_a_retry_note(app_client, db_session):
+    """A failed preparation waits on the user (retry), so it is queued, not executing."""
+    _scan_batch(db_session, {"status": "failed", "error": "boom"})
+
+    body = app_client.get("/api/v1/worker-queue").json()
+
+    assert body["executing"] == []
+    (item,) = body["queued"]
+    assert item["note"] == "Preparation failed — open to retry"
+    assert item["label"] == "Scan #" + str(item["batch_id"]) + " — stack.pdf"

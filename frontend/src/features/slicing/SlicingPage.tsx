@@ -108,11 +108,16 @@ export function SlicingPage() {
               <Button variant="secondary" onClick={() => setCuts(new Map())}>
                 Single document
               </Button>
-              <Button variant="secondary" onClick={() => setCuts(null)}>
+              <Button
+                variant="secondary"
+                title="Discard your edits and go back to the saved proposal"
+                onClick={() => setCuts(null)}
+              >
                 Reset to proposal
               </Button>
               <Button
                 variant="secondary"
+                title="Read the pages again and compute a fresh proposal on the server"
                 disabled={retry.isPending}
                 onClick={() =>
                   retry.mutate(undefined, { onError: (e) => toast(e.message, 'error') })
