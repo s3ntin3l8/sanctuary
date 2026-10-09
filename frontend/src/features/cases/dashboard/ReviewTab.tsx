@@ -37,6 +37,7 @@ export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
             <button
               type="button"
               aria-pressed={onlyOpen}
+              aria-label={onlyOpen ? 'Show all documents' : 'Show only documents to review'}
               onClick={() => setOnlyOpen((v) => !v)}
               className="ml-2 align-middle"
             >

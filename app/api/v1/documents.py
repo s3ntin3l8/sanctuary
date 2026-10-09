@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -79,6 +80,7 @@ from app.services.pipeline_status import (
 )
 from app.services.triage_retry import dispatch_pipeline_retry, rearm_batch_barriers
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["documents"])
 
 METADATA_FIELDS = (
@@ -301,7 +303,7 @@ def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
                 source_document_title=doc.title,
             )
             for p in ctx["evidence_proposals_for_doc"]
-            if p.target_claim_id in ctx["proposal_targets"]
+            if _target_known(p, ctx["proposal_targets"])
         ],
         "contradiction_notes": (
             [str(n) for n in (doc.meta or {}).get("contradiction_notes") or []]
@@ -342,6 +344,17 @@ def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
         "proceedings": [_proceeding_ref(p) for p in proc_q.all()],
     }
     return fields, ctx
+
+
+def _target_known(proposal, targets: dict) -> bool:
+    known = proposal.target_claim_id in targets
+    if not known:
+        logger.debug(
+            "skipping evidence proposal %s: target claim %s missing",
+            proposal.id,
+            proposal.target_claim_id,
+        )
+    return known
 
 
 # --- Review view and metadata ------------------------------------------------

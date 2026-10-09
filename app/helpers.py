@@ -39,7 +39,7 @@ def triage_inbox_count(db: Session, owner_id: int | None = None) -> int:
     batch_q = awaiting_triage_batches(db, owner_id)
     loose_q = db.query(Document).filter(
         Document.ingest_batch_id.is_(None),
-        or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True)),
+        or_(Document.case_id == "_TRIAGE", Document.confirmed_at.is_(None)),
     )
     if owner_id is not None:
         loose_q = loose_q.filter(Document.owner_id == owner_id)

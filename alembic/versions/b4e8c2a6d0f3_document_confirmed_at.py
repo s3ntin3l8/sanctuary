@@ -11,6 +11,10 @@ Also: ClaimEvidence rows written by confirm_evidence defaulted to AI_DETECTED,
 which made `contests_existing_claim` fire *after* the user confirmed the link.
 They are user-confirmed by construction; fix the existing rows.
 
+Downgrade only drops `confirmed_at`: the claim_evidence provenance fix is not
+reverted (the old AI_DETECTED value was the bug), and the backfilled timestamps
+are the ingest date, not the moment of confirmation (it was never recorded).
+
 Revision ID: b4e8c2a6d0f3
 Revises: a7c3e9d1b5f2
 Create Date: 2026-10-09 09:00:00.000000
