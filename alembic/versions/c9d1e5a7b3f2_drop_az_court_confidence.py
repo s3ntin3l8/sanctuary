@@ -31,6 +31,8 @@ TRACKED = ("internal_id", "sender", "issued_date", "originator_type")
 
 def upgrade() -> None:
     conn = op.get_bind()
+    # low_confidence is derived only from extraction_confidence, so a row without
+    # one cannot carry the reason.
     rows = conn.execute(
         sa.text(
             "SELECT id, extraction_confidence, review_reasons FROM documents "

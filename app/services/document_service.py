@@ -64,9 +64,9 @@ class DocumentService:
             synchronize_session=False
         )
         # Docs on the other end of a deleted edge lose its review reason too.
-        peer_ids = {
-            pid
-            for row in self.db.query(
+        peer_ids: set[int] = set()
+        for from_id, to_id in (
+            self.db.query(
                 DocumentRelationship.from_document_id,
                 DocumentRelationship.to_document_id,
             )
@@ -77,9 +77,8 @@ class DocumentService:
                 )
             )
             .all()
-            for pid in row
-            if pid != doc_id
-        }
+        ):
+            peer_ids.update(i for i in (from_id, to_id) if i != doc_id)
         self.db.query(DocumentRelationship).filter(
             or_(
                 DocumentRelationship.from_document_id == doc_id,

@@ -526,14 +526,15 @@ def _route_document(
         raise ApiError(404, "not_found", "Document not found.")
     # Filing into a draft case makes it real, as confirm_bundle does.
     target = db.get(Case, case_id) if case_id != "_TRIAGE" else None
-    if target is not None and target.is_draft:
+    promoted = target is not None and target.is_draft
+    if target is not None and promoted:
         target.is_draft = False
     if proceeding_id is not None:
         doc.proceeding_id = proceeding_id
         proc = db.get(Proceeding, proceeding_id)
         if proc and proc.is_draft:
             proc.is_draft = False
-    if proceeding_id is not None or (target is not None):
+    if proceeding_id is not None or promoted:
         db.commit()
         db.refresh(doc)
     if (not pre_case or pre_case == "_TRIAGE") and case_id != "_TRIAGE":
