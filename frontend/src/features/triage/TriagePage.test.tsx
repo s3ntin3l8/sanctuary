@@ -42,6 +42,7 @@ test('lists bundles with their state and filters by status chip', async () => {
   expect(screen.getAllByRole('listitem')).toHaveLength(1)
   // scans awaiting slicing belong to the unfiltered inbox only
   expect(screen.queryByRole('link', { name: /Slice/ })).not.toBeInTheDocument()
+  expect(screen.getByText(/1 scan awaiting slicing/)).toBeVisible()
 })
 
 test('a ?bundle= deep link opens that bundle and scrolls it into view', async () => {

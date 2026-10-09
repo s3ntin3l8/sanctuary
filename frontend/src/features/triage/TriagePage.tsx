@@ -292,6 +292,19 @@ export function TriagePage() {
           />
           <span className="text-right">Actions</span>
         </div>
+        {status !== 'all' && (query.data?.slicing_queue.length ?? 0) > 0 && (
+          <p className="border border-t-0 border-line px-3 py-1.5 text-[11px] text-muted">
+            <Icon name="content_cut" size={12} />{' '}
+            {pluralize(query.data?.slicing_queue.length ?? 0, 'scan')} awaiting slicing —{' '}
+            <button
+              type="button"
+              onClick={() => setStatus('all')}
+              className="text-tealink hover:underline"
+            >
+              show in All
+            </button>
+          </p>
+        )}
         {!query.data && (
           <div className="border border-t-0 border-line px-3">
             <QueryState error={query.error} pending={query.isPending} />
@@ -542,7 +555,9 @@ function SlicingRow({ item: s }: { item: Schemas['SlicingQueueItem'] }) {
                   : total > 0
                     ? `Reading page ${done} of ${total}…`
                     : 'Preparing…'
-                : `${pluralize(s.proposed_cut_count ?? 0, 'cut')} proposed — review before processing`}
+                : s.proposed_cut_count
+                  ? `${pluralize(s.proposed_cut_count, 'cut')} proposed — review before processing`
+                  : 'Ready — no cuts proposed, confirm or add cuts'}
           </span>
         </span>
         <span>
@@ -550,10 +565,7 @@ function SlicingRow({ item: s }: { item: Schemas['SlicingQueueItem'] }) {
         </span>
         <span />
         <span className="text-right">
-          <Link
-            to={`/ingest/slice/${s.batch_id}`}
-            className={buttonClass(preparing ? 'secondary' : 'primary')}
-          >
+          <Link to={`/ingest/slice/${s.batch_id}`} className={buttonClass('primary')}>
             <Icon name="content_cut" size={14} /> Slice
           </Link>
         </span>

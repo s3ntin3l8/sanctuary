@@ -88,3 +88,16 @@ def test_slicing_queue_item_carries_progress_and_cut_count(db_session, tmp_path)
         },
     )
     assert _slicing_queue_item(ready).proposed_cut_count == 1
+
+
+@pytest.mark.unit
+def test_page_endpoint_404s_on_unreadable_pdf(db_session, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    pdf = tmp_path / "broken.pdf"
+    pdf.write_bytes(b"not a pdf")
+    batch = _batch(db_session, pdf)
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.get(f"/api/v1/slicing/{batch.id}/page/1").status_code == 404

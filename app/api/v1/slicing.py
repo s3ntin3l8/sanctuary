@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pypdfium2 as pdfium
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
@@ -125,7 +126,10 @@ def page_image(request: Request, page: int, batch: IngestBatch = Depends(owned_b
     pdf_path = resolve_storage_path(batch.raw_source_path)
     if not pdf_path.is_file():
         raise ApiError(404, "not_found", "Source PDF not found.")
-    png = render_page_png(pdf_path, page)
+    try:
+        png = render_page_png(pdf_path, page)
+    except pdfium.PdfiumError as exc:
+        raise ApiError(404, "not_found", "Source PDF could not be read.") from exc
     if png is None:
         raise ApiError(404, "not_found", f"Page {page} not found.")
     return Response(
