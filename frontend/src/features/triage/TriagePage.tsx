@@ -23,6 +23,7 @@ import { Icon } from '../../ui/Icon'
 import { GmailImportStatus, useGmailRunBanner } from '../import/GmailImportStatus'
 import { NewMailNotice, useNewMailToReview } from '../import/NewMailBanner'
 import { BundleStateBar } from '../../ui/PipelineBar'
+import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 import { DocumentReview, ORIGINATOR_COLOR } from '../documents/DocumentReview'
@@ -116,6 +117,8 @@ export function TriagePage() {
   // Selected bundles that are still in the feed (a filed one drops out by itself).
   const picked = useMemo(() => bundles.filter((b) => selected.has(b.key)), [bundles, selected])
   const visible = bundles.filter((b) => status === 'all' || b.status === status)
+  // Scans waiting for a split decision are not bundles yet; they sit above the inbox.
+  const slicingRows = status === 'all' ? (query.data?.slicing_queue ?? []) : []
   const rowVisible = visible.some((b) => b.key === expanded)
   // Deep links (Home → ?bundle=) land on the bundle once the feed has loaded.
   const scrolledTo = useRef<string | null>(null)
@@ -212,22 +215,6 @@ export function TriagePage() {
             {STATUS_LABEL[s]}
           </Chip>
         ))}
-        {query.data && query.data.slicing_queue.length > 0 && (
-          <span className="ml-auto flex items-center gap-2 text-[11px] text-muted">
-            <Icon name="content_cut" size={14} />{' '}
-            {pluralize(query.data.slicing_queue.length, 'scan')} awaiting slicing:
-            {query.data.slicing_queue.map((s) => (
-              <a
-                key={s.batch_id}
-                href={`/ingest/slice/${s.batch_id}`}
-                className="font-mono text-tealink hover:underline"
-              >
-                #{s.batch_id}
-                {s.status !== 'ready' && ` (${s.status})`}
-              </a>
-            ))}
-          </span>
-        )}
       </div>
 
       {picked.length > 0 && (
@@ -310,7 +297,7 @@ export function TriagePage() {
             <QueryState error={query.error} pending={query.isPending} />
           </div>
         )}
-        {query.data && visible.length === 0 && (
+        {query.data && visible.length === 0 && slicingRows.length === 0 && (
           <p className="border border-t-0 border-line px-3 py-8 text-center text-[12px] text-muted">
             {bundles.length === 0
               ? 'Inbox empty — nothing awaits triage.'
@@ -318,6 +305,9 @@ export function TriagePage() {
           </p>
         )}
         <ul className="divide-y divide-line2 border border-t-0 border-line">
+          {slicingRows.map((s) => (
+            <SlicingRow key={`slice-${s.batch_id}`} item={s} />
+          ))}
           {visible.map((b) => (
             <BundleRow
               key={b.key}
@@ -511,6 +501,65 @@ const STATUS_STRIPE: Record<TriageBundle['status'], string> = {
   processing: 'border-l-warning',
   needs_classification: 'border-l-info',
   needs_review: 'border-l-accent',
+}
+
+function SlicingRow({ item: s }: { item: Schemas['SlicingQueueItem'] }) {
+  const preparing = s.status === 'preparing'
+  const failed = s.status === 'failed'
+  const done = s.progress_done ?? 0
+  const total = s.progress_total ?? s.page_count ?? 0
+  return (
+    <li className={`border-l-2 ${failed ? 'border-l-danger' : 'border-l-accent'}`}>
+      <div className={`${GRID} px-3 py-2.5 text-[12px]`}>
+        <span />
+        <span>
+          <span className="flex items-center gap-1 font-mono text-[11px] text-tealink">
+            <Icon name="scanner" size={12} className="text-muted" /> ib-
+            {String(s.batch_id).padStart(4, '0')}
+          </span>
+          {s.received_at && (
+            <span className="block font-mono text-[10px] text-muted">
+              {formatShortDate(s.received_at)} · scan
+            </span>
+          )}
+        </span>
+        <span className="text-[11px]">
+          {s.page_count ? `${s.page_count} pp` : ''}
+          {preparing && total > 0 && (
+            <span className="mt-1 block">
+              <Progress value={done} max={total} label="Preparing scan" />
+            </span>
+          )}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-semibold">{s.subject ?? 'Scanned stack'}</span>
+          <span className={`block text-[10.5px] ${failed ? 'text-danger' : 'text-muted'}`}>
+            {failed
+              ? 'Preparation failed — open to retry'
+              : preparing
+                ? s.progress_phase === 'ai'
+                  ? 'Asking the model where letters end…'
+                  : total > 0
+                    ? `Reading page ${done} of ${total}…`
+                    : 'Preparing…'
+                : `${pluralize(s.proposed_cut_count ?? 0, 'cut')} proposed — review before processing`}
+          </span>
+        </span>
+        <span>
+          <Badge tone={failed ? 'danger' : 'warning'}>awaiting slicing</Badge>
+        </span>
+        <span />
+        <span className="text-right">
+          <Link
+            to={`/ingest/slice/${s.batch_id}`}
+            className={buttonClass(preparing ? 'secondary' : 'primary')}
+          >
+            <Icon name="content_cut" size={14} /> Slice
+          </Link>
+        </span>
+      </div>
+    </li>
+  )
 }
 
 function BundleRow({

@@ -33,11 +33,15 @@ test('lists bundles with their state and filters by status chip', async () => {
   const user = userEvent.setup()
   expect(await screen.findByText('Klageerwiderung')).toBeVisible()
   expect(screen.getByText('2 pending')).toBeVisible()
-  expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  // two bundles plus the scan awaiting slicing, which links to its cutting page
+  expect(screen.getAllByRole('listitem')).toHaveLength(3)
+  expect(screen.getByRole('link', { name: /Slice/ })).toHaveAttribute('href', '/ingest/slice/77')
+  expect(screen.getByText(/1 cut proposed/)).toBeVisible()
   expect(screen.getByText('Docling conversion failed — file too large.')).toBeVisible()
   await user.click(screen.getByRole('button', { name: /^Stuck/ }))
   expect(screen.getAllByRole('listitem')).toHaveLength(1)
-  expect(screen.getByRole('link', { name: '#77' })).toHaveAttribute('href', '/ingest/slice/77')
+  // scans awaiting slicing belong to the unfiltered inbox only
+  expect(screen.queryByRole('link', { name: /Slice/ })).not.toBeInTheDocument()
 })
 
 test('a ?bundle= deep link opens that bundle and scrolls it into view', async () => {

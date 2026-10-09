@@ -8359,6 +8359,66 @@
             ],
             "title": "Page Count"
           },
+          "progress_done": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Done"
+          },
+          "progress_phase": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ocr",
+                  "ai"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Phase"
+          },
+          "progress_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Total"
+          },
+          "proposed_cut_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cut Count"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -15436,6 +15496,51 @@
           }
         },
         "summary": "V1 Confirm Slicing",
+        "tags": [
+          "slicing"
+        ]
+      }
+    },
+    "/api/v1/slicing/{batch_id}/page/{page}": {
+      "get": {
+        "description": "The full-size render of one page, for the viewer (rendered on demand).",
+        "operationId": "v1_page_image_api_v1_slicing__batch_id__page__page__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Page Image",
         "tags": [
           "slicing"
         ]

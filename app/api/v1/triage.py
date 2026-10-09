@@ -326,14 +326,25 @@ def triage(
             for p in proceedings_q.all()
         ],
         slicing_queue=[
-            SlicingQueueItem(
-                batch_id=b.id,
-                subject=b.subject,
-                page_count=(b.meta or {}).get("slicing", {}).get("page_count"),
-                status=(b.meta or {}).get("slicing", {}).get("status", "preparing"),
-            )
-            for b in get_slicing_queue(db, owner_id=user.id)
+            _slicing_queue_item(b) for b in get_slicing_queue(db, owner_id=user.id)
         ],
+    )
+
+
+def _slicing_queue_item(b) -> SlicingQueueItem:
+    meta = (b.meta or {}).get("slicing", {})
+    progress = meta.get("progress") or {}
+    ready = meta.get("status") == "ready"
+    return SlicingQueueItem(
+        batch_id=b.id,
+        subject=b.subject,
+        page_count=meta.get("page_count"),
+        status=meta.get("status", "preparing"),
+        received_at=b.received_at,
+        progress_done=progress.get("done"),
+        progress_total=progress.get("total"),
+        progress_phase=progress.get("phase"),
+        proposed_cut_count=len(meta.get("proposed_cuts", [])) if ready else None,
     )
 
 

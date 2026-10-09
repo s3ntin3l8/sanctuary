@@ -134,6 +134,11 @@ class SlicingQueueItem(BaseModel):
     subject: str | None
     page_count: int | None
     status: str
+    received_at: datetime | None = None
+    progress_done: int | None = None
+    progress_total: int | None = None
+    progress_phase: Literal["ocr", "ai"] | None = None
+    proposed_cut_count: int | None = None
 
 
 class TriageView(BaseModel):

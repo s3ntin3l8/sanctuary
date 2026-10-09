@@ -66,3 +66,43 @@ test('starts from the AI proposal, lets the user toggle cuts, and confirms', asy
   })
   expect(navigation.leaveTo).toHaveBeenCalledWith('/triage')
 })
+
+function renderPage() {
+  stubApi({ 'GET /api/v1/slicing/77': { body: view } })
+  renderAt(
+    '/ingest/slice/77',
+    <Routes>
+      <Route path="/ingest/slice/:batchId" element={<SlicingPage />} />
+    </Routes>,
+  )
+}
+
+test('Clear all cuts is disabled when there is nothing to clear', async () => {
+  stubApi({ 'GET /api/v1/slicing/77': { body: { ...view, proposed_cuts: [] } } })
+  renderAt(
+    '/ingest/slice/77',
+    <Routes>
+      <Route path="/ingest/slice/:batchId" element={<SlicingPage />} />
+    </Routes>,
+  )
+  expect(await screen.findByRole('button', { name: 'Clear all cuts' })).toBeDisabled()
+})
+
+test('the page viewer flips with arrow keys, sets cuts, and Esc only closes it', async () => {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  renderPage()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Open page 1' }))
+  expect(screen.getByRole('dialog', { name: 'Page 1 of 3' })).toBeVisible()
+  await user.keyboard('{ArrowRight}')
+  expect(screen.getByRole('dialog', { name: 'Page 2 of 3' })).toBeVisible()
+  // c toggles the cut before page 2 (after page 1)
+  await user.keyboard('c')
+  expect(screen.getByText(/A new part starts on this page/)).toBeVisible()
+  await user.keyboard('{Enter}')
+  expect(screen.queryByText(/queued/)).not.toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(navigation.leaveTo).not.toHaveBeenCalled()
+  expect(screen.getByText(/3 pages · 3 documents/)).toBeVisible()
+})
