@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
+from app.core.timezone import now_utc
 from app.dependencies import get_current_admin, get_db
 from app.models.database import Document
 from app.models.enums import AuditEventType
@@ -119,9 +121,24 @@ def _embed_index(db: Session) -> EmbedIndex:
     )
 
 
+# How long a finished (done/failed) reindex stays on the settings page. The
+# stored record is only the last run's result; showing "Reindex failed" for a
+# run that ended days ago just hides whether anything is wrong now.
+_REINDEX_RESULT_VISIBLE = timedelta(hours=24)
+
+
 def _reindex_job(db: Session) -> ReindexJob | None:
     job = get_reindex_job(db)
-    return ReindexJob(**job) if job and job.get("status") else None
+    if not job or not job.get("status"):
+        return None
+    if job["status"] != "running" and job.get("ended_at"):
+        try:
+            ended = datetime.fromisoformat(job["ended_at"])
+        except ValueError:
+            return None
+        if now_utc() - ended > _REINDEX_RESULT_VISIBLE:
+            return None
+    return ReindexJob(**job)
 
 
 def _reload_providers(db: Session) -> None:
