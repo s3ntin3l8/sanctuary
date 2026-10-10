@@ -164,9 +164,24 @@ class DocumentService:
                     .count()
                 )
                 if remaining == 0:
+                    batch = self.db.get(IngestBatch, ingest_batch_id)
+                    raw_source = (
+                        resolve_storage_path(batch.raw_source_path)
+                        if batch and batch.raw_source_path
+                        else None
+                    )
                     self.db.query(IngestBatch).filter(
                         IngestBatch.id == ingest_batch_id
                     ).delete(synchronize_session=False)
+                    if raw_source and raw_source.exists():
+                        try:
+                            raw_source.unlink()
+                        except OSError as e:
+                            import logging
+
+                            logging.getLogger(__name__).error(
+                                f"Failed to delete batch raw source {raw_source}: {e}"
+                            )
             audit_service.record(
                 self.db,
                 AuditEventType.DOCUMENT_DELETED,

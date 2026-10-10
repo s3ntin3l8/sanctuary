@@ -89,6 +89,27 @@ export function useBundleAction() {
   })
 }
 
+/**
+ * Archive or delete one document of a multi-document bundle. Unlike
+ * `useBundleAction` the bundle stays in the feed; it is refetched, not removed.
+ */
+export function useDocumentAction() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, ApiError, { docId: number; action: 'dismiss' | 'delete' }>({
+    mutationFn: async ({ docId, action }) => {
+      await unwrap(
+        action === 'dismiss'
+          ? api.POST('/api/v1/triage/documents/{doc_id}/dismiss', docPath(docId))
+          : api.DELETE('/api/v1/triage/documents/{doc_id}', docPath(docId)),
+      )
+    },
+    onSuccess: () => {
+      refreshReviewState(queryClient, { documents: true })
+      queryClient.invalidateQueries({ queryKey: ['shell'] })
+    },
+  })
+}
+
 export function useRetryBundle() {
   const patch = useBundlePatch()
   return useMutation<TriageBundle, ApiError, number>({

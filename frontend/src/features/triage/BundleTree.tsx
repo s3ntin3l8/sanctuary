@@ -11,12 +11,14 @@ type Props = {
   bundle: TriageBundle
   activeDocId: number | null
   onSelect: (id: number) => void
+  /** Archive or delete one document; the caller confirms. Omitted for single-doc bundles. */
+  onDocAction?: (doc: TriageBundle['documents'][number], action: 'dismiss' | 'delete') => void
   /** Rendered under the source/received lines (the bundle-level confirm). */
   footer?: ReactNode
 }
 
 /** Bundle contents: sub-groups (cover letter + enclosures) with manual grouping controls. */
-export function BundleTree({ bundle, activeDocId, onSelect, footer }: Props) {
+export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer }: Props) {
   const op = useGroupOp()
   const toast = useToast()
   const docsById = new Map(bundle.documents.map((d) => [d.id, d]))
@@ -84,7 +86,7 @@ export function BundleTree({ bundle, activeDocId, onSelect, footer }: Props) {
                 return (
                   <li
                     key={id}
-                    className={`flex items-center gap-1 pr-2 ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
+                    className={`group/doc flex items-center gap-1 pr-2 ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
                   >
                     <button
                       type="button"
@@ -154,6 +156,28 @@ export function BundleTree({ bundle, activeDocId, onSelect, footer }: Props) {
                       >
                         <Icon name="bookmark" size={13} />
                       </button>
+                    )}
+                    {onDocAction && bundle.doc_count > 1 && (
+                      <span className="flex gap-1 opacity-0 group-focus-within/doc:opacity-100 group-hover/doc:opacity-100">
+                        <button
+                          type="button"
+                          title="Archive document"
+                          aria-label={`Archive ${d.title}`}
+                          onClick={() => onDocAction(d, 'dismiss')}
+                          className="text-muted hover:text-ink"
+                        >
+                          <Icon name="archive" size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete document"
+                          aria-label={`Delete ${d.title}`}
+                          onClick={() => onDocAction(d, 'delete')}
+                          className="text-muted hover:text-danger"
+                        >
+                          <Icon name="delete" size={13} />
+                        </button>
+                      </span>
                     )}
                   </li>
                 )

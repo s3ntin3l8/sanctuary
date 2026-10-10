@@ -23,9 +23,11 @@ from app.models.enums import ActionItemStatus, DocumentStatus, IngestBatchStatus
 logger = logging.getLogger(__name__)
 
 
-def _has_in_flight_stage(db: Session, batch_id: int) -> bool:
-    """True when any document in the batch has a stage currently RUNNING or
-    RETRYING — the actual "unsafe to delete out from under a worker"
+def _has_in_flight_stage(
+    db: Session, batch_id: int | None = None, doc_id: int | None = None
+) -> bool:
+    """True when any document in the batch (or the one document) has a stage
+    currently RUNNING or RETRYING — the actual "unsafe to delete out from under a worker"
     condition. Deliberately not IngestBatchStatus.PROCESSING: that status is
     the batch's normal resting state until a user explicitly confirms it out
     of triage (see confirm_bundle), so it stays PROCESSING long after every
@@ -37,12 +39,12 @@ def _has_in_flight_stage(db: Session, batch_id: int) -> bool:
                 """
                 SELECT 1 FROM document_pipeline_stages dps
                 JOIN documents d ON d.id = dps.document_id
-                WHERE d.ingest_batch_id = :batch_id
+                WHERE (d.ingest_batch_id = :batch_id OR d.id = :doc_id)
                   AND dps.status IN ('running', 'retrying')
                 LIMIT 1
                 """
             ),
-            {"batch_id": batch_id},
+            {"batch_id": batch_id, "doc_id": doc_id},
         ).first()
     )
 
@@ -166,6 +168,25 @@ def delete_bundle(
         return True
 
     elif doc_id:
+        if not db.get(Document, doc_id):
+            return False
+        if _has_in_flight_stage(db, doc_id=doc_id):
+            raise ValueError(
+                f"Cannot delete document {doc_id}: it is still actively "
+                "processing. Wait for processing to finish first."
+            )
+        # Hard-delete ActionItems now; delete_document would only null their
+        # source_document_id and leave them orphaned.
+        db.query(ActionItem).filter(ActionItem.source_document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        # Document.children cascades deletes through the ORM, which would take
+        # the enclosures with a deleted cover letter without their own cleanup
+        # (reactions, files, edges). Detach them so they survive as roots.
+        db.query(Document).filter(Document.parent_id == doc_id).update(
+            {"parent_id": None}, synchronize_session=False
+        )
+        db.commit()
         return DocumentService(db).delete_document(doc_id)
 
     return False

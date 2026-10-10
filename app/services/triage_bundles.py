@@ -650,7 +650,10 @@ def get_bundle_by_batch_id(db: Session, batch_id: int) -> BundleView | None:
             joinedload(Document.proceeding),
             joinedload(Document.sub_group),
         )
-        .filter(Document.ingest_batch_id == batch_id)
+        .filter(
+            Document.ingest_batch_id == batch_id,
+            Document.status != DocumentStatus.DISMISSED,
+        )
         .order_by(Document.ingest_date.desc())
         .all()
     )

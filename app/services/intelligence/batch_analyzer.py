@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Document, DocumentRelationship, IngestBatch
 from app.models.enums import (
     DocumentRole,
+    DocumentStatus,
     OriginatorType,
     RelationshipConfidence,
     RelationshipType,
@@ -745,7 +746,14 @@ def analyze(batch_id: int) -> bool:
             logger.warning(f"Batch {batch_id} not found for analysis")
             return False
 
-        docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+        docs = (
+            db.query(Document)
+            .filter(
+                Document.ingest_batch_id == batch_id,
+                Document.status != DocumentStatus.DISMISSED,
+            )
+            .all()
+        )
         if not docs:
             logger.info(f"Batch {batch_id} has no documents to analyze")
             return False
@@ -848,7 +856,12 @@ def analyze(batch_id: int) -> bool:
     db = SessionLocal()
     try:
         docs_write = (
-            db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+            db.query(Document)
+            .filter(
+                Document.ingest_batch_id == batch_id,
+                Document.status != DocumentStatus.DISMISSED,
+            )
+            .all()
         )
         has_manual = _has_manual_groups(batch_id, db)
         _apply_batch_results(
