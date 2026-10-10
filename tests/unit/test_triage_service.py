@@ -146,6 +146,24 @@ def test_compute_review_reasons_contradiction(db_session):
     assert "contradiction_detected" in reasons
 
 
+@pytest.mark.unit
+def test_compute_review_reasons_ocr_unverified(db_session):
+    """Pages the OCR cross-check could not corroborate hold the doc in review."""
+    from app.models.database import Document
+
+    doc = Document(
+        title="Test",
+        case_id="ADV-123",
+        originator_type=OriginatorType.OWN,
+        sender="me@example.com",
+        received_date=datetime.now(UTC),
+        meta={"ocr_unverified_pages": [2]},
+    )
+    assert "ocr_unverified" in compute_review_reasons(doc)
+    doc.meta = {"ocr_unverified_pages": [], "ocr_unverified_acknowledged": [2]}
+    assert "ocr_unverified" not in compute_review_reasons(doc)
+
+
 # ---------------------------------------------------------------------------
 # confirm_bundle — conditional needs_review clear
 # ---------------------------------------------------------------------------

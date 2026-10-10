@@ -9,6 +9,7 @@ const LABELS: Record<string, string> = {
   unresolved_relationship: 'relationships to confirm',
   contests_existing_claim: 'claim links to confirm',
   contradiction_detected: 'contradiction to review',
+  ocr_unverified: 'OCR text to check',
 }
 
 /** Reasons that never hold a document in review (the confirm click / enclosure without parent). */

@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import re
-import threading
 import time
 from typing import Any, NamedTuple
 
@@ -20,6 +19,7 @@ from app.models.enums import IngestBatchStatus
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.ai_run_index import record_run
+from app.services.ingestion import ocr_crosscheck
 from app.services.intelligence.prompts import SLICING_CUT_SYSTEM
 from app.services.intelligence.schemas import CutJudgment
 
@@ -52,30 +52,10 @@ _ATTACHMENT_SIGNALS = frozenset({"enclosure_marker", "transmittal_page"})
 # ---------------------------------------------------------------------------
 
 
-_ocr_instance = None
-_ocr_lock = threading.Lock()
-
-
-def _get_ocr():
-    global _ocr_instance
-    if _ocr_instance is None:
-        with _ocr_lock:
-            if _ocr_instance is None:
-                from rapidocr import RapidOCR
-
-                _ocr_instance = RapidOCR()
-    return _ocr_instance
-
-
 def _ocr_page_text(image: Image.Image) -> str:
     """Run lightweight OCR on a single page image; return raw text."""
     try:
-        import numpy as np
-
-        ocr = _get_ocr()
-        arr = np.array(image.convert("RGB"))
-        # rapidocr 3.x returns an output object; ``txts`` is None on a blank page.
-        return " ".join(t for t in ocr(arr).txts or () if t and t.strip())
+        return ocr_crosscheck.read_text(image)
     except Exception as exc:
         logger.warning("OCR failed for page: %s", exc)
         return ""

@@ -575,7 +575,17 @@ def clear_extraction_stamp(doc) -> None:
     must pass that guard, so every EXTRACT reset clears the stamp first.
     """
     meta = dict(doc.meta or {})
-    removed = [meta.pop(k, None) for k in ("extractor", "chunks", "page_failures")]
+    removed = [
+        meta.pop(k, None)
+        for k in (
+            "extractor",
+            "chunks",
+            "page_failures",
+            "ocr_unverified_pages",
+            "ocr_crosscheck_unavailable",
+            "ocr_unverified_acknowledged",
+        )
+    ]
     if any(v is not None for v in removed):
         doc.meta = meta
 

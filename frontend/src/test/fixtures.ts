@@ -377,6 +377,8 @@ export const documentReview: Schemas['DocumentReview'] = {
   ],
   pipeline: {
     ocr_page_failures: [],
+    ocr_unverified: [],
+    ocr_crosscheck_unavailable: false,
     state: 'completed',
     stages: [
       {

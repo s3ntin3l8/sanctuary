@@ -131,6 +131,75 @@ def test_review_pipeline_reports_ocr_page_failures(db_session):
     assert failures(partial) == [1, 3]
 
 
+def _chunk(page, words):
+    return {
+        "text": "",
+        "meta": {"page": page, "crosscheck": {"unsupported": words, "ratio": 0.2}},
+    }
+
+
+def test_review_lists_pages_the_ocr_crosscheck_could_not_corroborate(db_session):
+    admin = _admin(db_session)
+    doc = _doc(
+        db_session,
+        admin.id,
+        meta={
+            "ocr_unverified_pages": [3],
+            "chunks": [_chunk(1, []), _chunk(2, ["x"]), _chunk(3, ["wohnplatz"])],
+        },
+    )
+
+    body = client.get(f"/api/v1/documents/{doc.id}/review").json()
+
+    assert body["pipeline"]["ocr_unverified"] == [{"page": 3, "words": ["wohnplatz"]}]
+
+
+def test_acknowledging_the_ocr_crosscheck_clears_the_flag(db_session):
+    admin = _admin(db_session)
+    doc = _doc(
+        db_session,
+        admin.id,
+        meta={"ocr_unverified_pages": [3], "chunks": [_chunk(3, ["wohnplatz"])]},
+    )
+
+    resp = client.post(f"/api/v1/documents/{doc.id}/ocr-unverified/acknowledge")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pipeline"]["ocr_unverified"] == []
+    assert "ocr_unverified" not in body["review_reasons"]
+    db_session.refresh(doc)
+    assert doc.meta["ocr_unverified_acknowledged"] == [3]
+
+
+def test_review_says_when_the_ocr_crosscheck_could_not_run(db_session):
+    admin = _admin(db_session)
+    ran = _doc(db_session, admin.id, meta={"chunks": []})
+    skipped = _doc(db_session, admin.id, meta={"ocr_crosscheck_unavailable": True})
+
+    def unavailable(doc):
+        body = client.get(f"/api/v1/documents/{doc.id}/review").json()
+        return body["pipeline"]["ocr_crosscheck_unavailable"]
+
+    assert unavailable(ran) is False
+    assert unavailable(skipped) is True
+
+
+def test_acknowledging_a_clean_document_writes_nothing(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id, meta={"chunks": []})
+
+    assert (
+        client.post(
+            f"/api/v1/documents/{doc.id}/ocr-unverified/acknowledge"
+        ).status_code
+        == 200
+    )
+
+    db_session.refresh(doc)
+    assert "ocr_unverified_acknowledged" not in doc.meta
+
+
 def test_review_requires_access(auth_enabled, db_session):
     from app.services import auth_service
 

@@ -249,7 +249,9 @@ function Pipeline({ review }: { review: Review }) {
               key={s.key}
               title={`${s.label}: ${s.status ?? 'queued'}${s.error ? `\n${s.error}` : ''}`}
               className={`h-[5px] w-[18px] rounded-sm ${
-                s.key === 'extract' && ocrFailures.length > 0 && s.status === 'completed'
+                s.key === 'extract' &&
+                (ocrFailures.length > 0 || review.pipeline.ocr_unverified.length > 0) &&
+                s.status === 'completed'
                   ? 'bg-warning'
                   : (SEGMENT[s.status ?? ''] ?? 'bg-line3')
               }`}
@@ -294,6 +296,11 @@ function Pipeline({ review }: { review: Review }) {
           </span>
         )}
       </div>
+      {review.pipeline.ocr_crosscheck_unavailable && (
+        <p className="mt-1.5 text-[10px] text-muted" data-testid="ocr-crosscheck-unavailable">
+          The OCR cross-check did not run, so the extracted text has not been double-checked.
+        </p>
+      )}
       {ocrFailures.length > 0 && (
         <div
           role="alert"

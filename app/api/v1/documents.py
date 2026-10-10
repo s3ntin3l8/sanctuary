@@ -53,6 +53,7 @@ from app.schemas.document_review import (
     KeyPassage,
     MetadataField,
     MetadataUpdate,
+    OcrUnverifiedPage,
     PinCreate,
     PinUpdate,
     PinView,
@@ -130,11 +131,26 @@ def pipeline_view(doc: Document) -> PipelineView:
                 completed_at=rec.get("completed_at"),
             )
         )
-    failures = (doc.meta or {}).get("page_failures") or []
+    meta = doc.meta or {}
+    failures = meta.get("page_failures") or []
+    # The extractor only lists a page in ocr_unverified_pages after storing its
+    # crosscheck words on the chunk, so every page listed here has them.
+    unverified = {int(p) for p in meta.get("ocr_unverified_pages") or []}
     return PipelineView(
         state=doc.pipeline_state,
         stages=out,
         ocr_page_failures=sorted(int(p) for p in failures),
+        ocr_crosscheck_unavailable=bool(meta.get("ocr_crosscheck_unavailable")),
+        ocr_unverified=[
+            OcrUnverifiedPage(
+                page=chunk["meta"]["page"],
+                words=chunk["meta"].get("crosscheck", {}).get("unsupported", []),
+            )
+            for chunk in sorted(
+                meta.get("chunks") or [], key=lambda c: c["meta"]["page"]
+            )
+            if chunk["meta"]["page"] in unverified
+        ],
     )
 
 
@@ -482,6 +498,28 @@ def update_metadata(
         raise ApiError(404, "not_found", "Document not found.")
     db.refresh(updated)
     return review_view(db, user, updated)
+
+
+@router.post(
+    "/documents/{doc_id}/ocr-unverified/acknowledge", response_model=DocumentReview
+)
+def acknowledge_ocr_unverified(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    doc: Document = Depends(require_document_access(edit=True)),
+):
+    """Mark the pages the OCR cross-check could not corroborate as checked against
+    the scan. A re-extract runs the cross-check afresh."""
+    from app.services.ingestion.service import refresh_review_reasons
+
+    meta = dict(doc.meta or {})
+    if "ocr_unverified_pages" in meta:
+        meta["ocr_unverified_acknowledged"] = meta.pop("ocr_unverified_pages")
+        doc.meta = meta
+        refresh_review_reasons(doc, db, commit=False)
+        db.commit()
+    db.refresh(doc)
+    return review_view(db, user, doc)
 
 
 @router.post(
