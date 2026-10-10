@@ -82,6 +82,7 @@ from app.services.case_service import (
     set_case_opposing_parties,
 )
 from app.services.case_timeline_service import CaseTimelineService
+from app.services.ingestion.extractors import normalize_az_court
 from app.services.triage_bundles import (
     actionable_review_reasons,
     summary_awaits_approval,
@@ -602,6 +603,12 @@ def update_proceeding(
     proc: Proceeding = Depends(require_proceeding_access(edit=True)),
 ):
     data = body.model_dump(exclude_none=True)
+    if "az_court" in data:
+        # Matching is exact, so a hand-typed "003 F 2022/23" must be stored the way
+        # extraction writes it ("3 F 2022/23"). Numbers outside the standard shape
+        # (e.g. "1 DR II 1030/26") are kept as typed.
+        typed = data["az_court"].strip()
+        data["az_court"] = normalize_az_court(typed) or typed
     if data:
         ProceedingRepository(db).update(proc.id, **data)
         db.commit()

@@ -173,9 +173,13 @@ def compute_review_reasons(doc: Document) -> list[str]:
             RelationshipConfidence,
             RelationshipType,
         )
+        from app.services.ingestion.plausibility import issued_date_suspect
 
         db = inspect(doc).session
         if db:
+            if issued_date_suspect(doc, db):
+                reasons.append("issued_date_suspect")
+
             # ENCLOSES edges come from the bundle layout (cover letter and its
             # enclosures), not from an AI judgement the user could confirm.
             unconfirmed = (

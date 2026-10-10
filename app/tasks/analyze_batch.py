@@ -271,6 +271,26 @@ def analyze_batch_task(self, batch_id: int):
     finally:
         db.close()
 
+    # Every document's metadata and bundle wiring is final now, so the checks that
+    # compare a document with its bundle (see ingestion.plausibility) can run.
+    from app.models.database import IngestBatch
+    from app.services.ingestion.service import refresh_review_reasons
+
+    db = SessionLocal()
+    try:
+        batch = db.get(IngestBatch, batch_id)
+        for doc in batch.documents if batch else []:
+            if doc.status != DocumentStatus.DISMISSED:
+                refresh_review_reasons(doc, db, commit=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning(
+            "Batch #%d: review-reason refresh failed", batch_id, exc_info=True
+        )
+    finally:
+        db.close()
+
     logger.info(
         "Batch #%d: batch_analysis %s — enqueueing enrich for %d doc(s)",
         batch_id,

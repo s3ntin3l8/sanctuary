@@ -407,6 +407,21 @@ def test_case_and_proceeding_mutations(db_session, dash):
 
 
 @pytest.mark.integration
+def test_proceeding_az_is_stored_the_way_extraction_writes_it(db_session, dash):
+    pid = dash["p2"].id
+
+    typed = client.patch(
+        f"/api/v1/proceedings/{pid}", json={"az_court": " 003 F 2022/23 "}
+    )
+    assert typed.json()["az_court"] == "3 F 2022/23"
+    # outside the standard shape: kept as typed, not rejected
+    odd = client.patch(
+        f"/api/v1/proceedings/{pid}", json={"az_court": "1 DR II 1030/26"}
+    )
+    assert odd.status_code == 200 and odd.json()["az_court"] == "1 DR II 1030/26"
+
+
+@pytest.mark.integration
 def test_purge_needs_exact_confirmation(db_session, dash):
     assert (
         client.post(
