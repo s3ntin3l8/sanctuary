@@ -60,11 +60,18 @@ class CaseCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     court_name: str = Field(min_length=1, max_length=255)
     jurisdiction: Jurisdiction = Jurisdiction.DE
+    # The court's own file number for the first proceeding (e.g. "003 F 426/25").
+    az_court: str | None = Field(default=None, max_length=255)
 
-    @field_validator("case_id", "title", "court_name", mode="before")
+    @field_validator("case_id", "title", "court_name", "az_court", mode="before")
     @classmethod
     def _strip(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("az_court")
+    @classmethod
+    def _blank_az_is_none(cls, value: str | None) -> str | None:
+        return value or None
 
 
 class CaseCreated(BaseModel):

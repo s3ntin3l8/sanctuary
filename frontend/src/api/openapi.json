@@ -1237,6 +1237,18 @@
       },
       "CaseCreate": {
         "properties": {
+          "az_court": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
           "case_id": {
             "maxLength": 64,
             "minLength": 1,

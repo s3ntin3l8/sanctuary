@@ -6,7 +6,14 @@ import { Button } from '../../ui/Button'
 import { Modal } from '../../ui/Modal'
 import { TextField } from '../../ui/TextField'
 
-type Props = { open: boolean; onClose: () => void }
+type Props = {
+  open: boolean
+  onClose: () => void
+  /** Prefill (e.g. from an import-history reference). */
+  defaults?: { caseId?: string; azCourt?: string }
+  /** Called instead of navigating to the new case, so the caller keeps its page. */
+  onCreated?: (id: string) => void
+}
 
 const JURISDICTIONS = [
   ['de', 'Germany'],
@@ -15,7 +22,7 @@ const JURISDICTIONS = [
   ['other', 'Other'],
 ] as const
 
-export function CreateCaseModal({ open, onClose }: Props) {
+export function CreateCaseModal({ open, onClose, defaults, onCreated }: Props) {
   const create = useCreateCase()
   const navigate = useNavigate()
 
@@ -28,8 +35,12 @@ export function CreateCaseModal({ open, onClose }: Props) {
         title: String(form.get('title')),
         court_name: String(form.get('court_name')),
         jurisdiction: form.get('jurisdiction') as 'de' | 'uk' | 'us' | 'other',
+        az_court: String(form.get('az_court') ?? '').trim() || null,
       },
-      { onSuccess: (created) => navigate(`/cases/${created.id}`) },
+      {
+        onSuccess: (created) =>
+          onCreated ? onCreated(created.id) : navigate(`/cases/${created.id}`),
+      },
     )
   }
 
@@ -42,6 +53,7 @@ export function CreateCaseModal({ open, onClose }: Props) {
           required
           placeholder="ADV-024-A"
           className="font-mono"
+          defaultValue={defaults?.caseId}
           hint="Short internal identifier; it leads everywhere (URLs, chat, reports)."
         />
         <TextField label="Title" name="title" required placeholder="Weber ./. Weber" />
@@ -51,6 +63,14 @@ export function CreateCaseModal({ open, onClose }: Props) {
           required
           placeholder="Amtsgericht Hamburg"
           hint="Creates the first active proceeding; the court level is inferred."
+        />
+        <TextField
+          label="Aktenzeichen (court)"
+          name="az_court"
+          placeholder="003 F 426/25"
+          className="font-mono"
+          defaultValue={defaults?.azCourt}
+          hint="Optional. The court's own file number for the first proceeding."
         />
         <div>
           <label

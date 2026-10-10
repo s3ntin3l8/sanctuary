@@ -12,7 +12,8 @@ export function MessageRow({
 }: {
   message: IndexedMessage
   selected: boolean
-  onToggle: (gmailId: string) => void
+  /** `range` is true for a shift-click: extend from the last row clicked. */
+  onToggle: (gmailId: string, range: boolean) => void
 }) {
   return (
     <li className="grid grid-cols-[24px_88px_200px_1fr_20px_20px_20px] items-center gap-2 px-4 py-1.5">
@@ -21,7 +22,7 @@ export function MessageRow({
         aria-label={`Select ${m.subject ?? m.gmail_id}`}
         checked={selected}
         disabled={m.ingested}
-        onChange={() => onToggle(m.gmail_id)}
+        onChange={(e) => onToggle(m.gmail_id, (e.nativeEvent as MouseEvent).shiftKey === true)}
       />
       <span className="font-mono text-[11px] text-muted">{formatIsoDate(m.sent_at)}</span>
       <span className="truncate text-muted">{m.sender}</span>

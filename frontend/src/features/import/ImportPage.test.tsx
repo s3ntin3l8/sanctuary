@@ -353,3 +353,100 @@ test('import: no cache, no clear button', async () => {
   await screen.findByText(/7 messages indexed/)
   expect(screen.queryByRole('button', { name: /Clear cache/ })).not.toBeInTheDocument()
 })
+
+const many = {
+  items: ['a', 'b', 'c', 'd', 'e'].map((id, i) => ({
+    gmail_id: `m-${id}`,
+    thread_id: `t-${id}`,
+    sender: 'lawyer@example.com',
+    subject: `Mail ${id}`,
+    sent_at: `2024-01-0${i + 1}T10:00:00+00:00`,
+    has_attachments: false,
+    ingested: id === 'a',
+    cached: false,
+  })),
+  next_cursor: null,
+}
+
+test('import: select-all picks only the not-yet-imported rows and goes indeterminate', async () => {
+  stubApi({ ...base, 'GET /api/v1/gmail/messages': { body: many } })
+  renderAt('/settings/gmail/import', <ImportPage />)
+  const user = userEvent.setup()
+
+  await user.click(await screen.findByRole('button', { name: 'Expand 8372/25' }))
+  const all = (await screen.findByRole('checkbox', { name: 'Select all 4' })) as HTMLInputElement
+  await user.click(all)
+  expect(screen.getByRole('button', { name: 'Import selected (4)' })).toBeVisible()
+  expect(screen.getByRole('checkbox', { name: 'Select Mail a' })).not.toBeChecked()
+  expect(all.checked).toBe(true)
+
+  await user.click(screen.getByRole('checkbox', { name: 'Select Mail c' }))
+  expect(all.checked).toBe(false)
+  expect(all.indeterminate).toBe(true)
+  expect(screen.getByRole('button', { name: 'Import selected (3)' })).toBeVisible()
+
+  await user.click(all)
+  expect(screen.getByRole('button', { name: 'Import selected (4)' })).toBeVisible()
+  await user.click(all)
+  expect(screen.queryByRole('button', { name: /Import selected/ })).toBeNull()
+})
+
+test('import: shift-click selects the range from the last row clicked', async () => {
+  stubApi({ ...base, 'GET /api/v1/gmail/messages': { body: many } })
+  renderAt('/settings/gmail/import', <ImportPage />)
+  const user = userEvent.setup()
+
+  await user.click(await screen.findByRole('button', { name: 'Expand 8372/25' }))
+  await user.click(await screen.findByRole('checkbox', { name: 'Select Mail b' }))
+  await user.keyboard('{Shift>}')
+  await user.click(screen.getByRole('checkbox', { name: 'Select Mail e' }))
+  await user.keyboard('{/Shift}')
+
+  for (const id of ['b', 'c', 'd', 'e']) {
+    expect(screen.getByRole('checkbox', { name: `Select Mail ${id}` })).toBeChecked()
+  }
+  expect(screen.getByRole('button', { name: 'Import selected (4)' })).toBeVisible()
+})
+
+test('import: the hint offers to create the case, prefilled from the reference', async () => {
+  const fetch = stubApi({
+    ...base,
+    'GET /api/v1/gmail/groups': {
+      body: {
+        groups: [{ ...groups.groups[0], key: '8441-25', matched_case_id: null }, groups.groups[1]],
+      },
+    },
+    'POST /api/v1/cases': { status: 201, body: { id: '8441-25' } },
+  })
+  renderAt('/settings/gmail/import', <ImportPage />)
+  const user = userEvent.setup()
+
+  await user.click(await screen.findByRole('button', { name: 'Expand 8441/25' }))
+  await user.click(await screen.findByRole('button', { name: 'Create case' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByRole('textbox', { name: 'Case ID' })).toHaveValue('8441-25')
+  expect(within(dialog).getByRole('textbox', { name: /Aktenzeichen/ })).toHaveValue('')
+
+  await user.type(within(dialog).getByRole('textbox', { name: 'Title' }), 'Weber')
+  await user.type(within(dialog).getByRole('textbox', { name: 'Court' }), 'AG Hamburg')
+  await user.click(within(dialog).getByRole('button', { name: 'Create case' }))
+
+  await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/cases')).toBeDefined())
+  expect(await sent(fetch, 'POST', '/api/v1/cases')?.clone().json()).toMatchObject({
+    case_id: '8441-25',
+    az_court: null,
+  })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('import: a court-reference group prefills the Aktenzeichen, not the case id', async () => {
+  stubApi(base)
+  renderAt('/settings/gmail/import', <ImportPage />)
+  const user = userEvent.setup()
+
+  await user.click(await screen.findByRole('button', { name: 'Expand 3 F 426/25' }))
+  await user.click(await screen.findByRole('button', { name: 'Create case' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByRole('textbox', { name: 'Case ID' })).toHaveValue('')
+  expect(within(dialog).getByRole('textbox', { name: /Aktenzeichen/ })).toHaveValue('3 F 426/25')
+})
