@@ -183,6 +183,7 @@ class AiSettingsView(BaseModel):
     instances: list[AiInstance]
     roles: list[AiRole]
     extraction_engine: Literal["chandra", "docling"]
+    tesseract_available: bool
     worker_concurrency: int
     ocr_concurrency: int
     embed_index: EmbedIndex

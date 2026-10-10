@@ -247,3 +247,18 @@ test('settings pages explain a 403 instead of rendering nothing', async () => {
     'Only an administrator can open this page.',
   )
 })
+
+test('ai: warns when the tesseract binary is missing, whichever engine is selected', async () => {
+  stubApi({
+    'GET /api/v1/settings/ai': { body: { ...aiSettings, tesseract_available: false } },
+    'GET /api/v1/settings/ai/health': {
+      body: {
+        chat: { ok: true, provider: 'ollama', detail: '' },
+        embed: { ok: true, provider: 'ollama', detail: '' },
+        ocr: { ok: true, provider: 'ollama', detail: '' },
+      },
+    },
+  })
+  renderAt('/settings/ai', <AiPage />)
+  expect(await screen.findByText(/tesseract binary is not installed/)).toBeVisible()
+})

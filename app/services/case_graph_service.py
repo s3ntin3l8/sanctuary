@@ -113,7 +113,9 @@ def _lane_for(doc) -> str:
         )
         return "own"
     if originator == OriginatorType.UNKNOWN:
-        logger.warning(
+        # A normal state for a document whose extraction failed or hasn't run
+        # yet; logged per render, so a warning would flood the log.
+        logger.debug(
             "Document %s has UNKNOWN originator_type, defaulting to 'own'", doc.id
         )
     return lane

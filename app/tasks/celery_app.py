@@ -4,7 +4,11 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from celery import Celery
-from celery.signals import after_setup_logger, after_setup_task_logger
+from celery.signals import (
+    after_setup_logger,
+    after_setup_task_logger,
+    worker_process_init,
+)
 
 
 def _suppress_httpx_noise(logger, **kwargs):
@@ -167,3 +171,19 @@ celery_app.conf.update(
         **{name: {"queue": MAINTENANCE_QUEUE} for name in MAINTENANCE_TASKS},
     },
 )
+
+
+@worker_process_init.connect
+def _dispose_inherited_db_connections(**_kwargs) -> None:
+    """Give every prefork child its own DB connections.
+
+    The parent imports app.config (and may touch the engine at boot), so its
+    pooled psycopg sockets are inherited across fork(). Two children talking
+    over the same socket corrupt each other's protocol state — seen as
+    "can't change 'autocommit' now: INTRANS" and "server closed the connection
+    unexpectedly" a second apart in different children. ``close=False`` drops
+    the pool without closing sockets the parent still owns.
+    """
+    from app.config import engine
+
+    engine.dispose(close=False)

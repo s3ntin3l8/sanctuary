@@ -141,3 +141,36 @@ def test_model_gate_heartbeat_logs_and_stops_if_sentinel_already_lapsed(caplog):
             time.sleep(0.05)
 
     assert any("already expired" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.unit
+def test_model_gate_passes_wait_marker_and_fairness_args_to_the_script():
+    client, script = _mock_client(script_results=[1])
+    client.llen.return_value = 0  # qwen consults the ingest queue first
+    with patch.object(model_gate_module, "_get_client", return_value=client):
+        with model_gate("qwen", label="doc:1") as token:
+            pass
+    kwargs = script.call_args.kwargs
+    sentinel_key, wait_key = kwargs["keys"]
+    assert sentinel_key == token
+    assert wait_key.startswith(model_gate_module._WAIT_KEY_PREFIX)
+    assert wait_key.rsplit(":", 1)[1] == sentinel_key.rsplit(":", 1)[1]
+    assert kwargs["args"][:4] == [
+        "qwen",
+        model_gate_module._SENTINEL_TTL_SECONDS,
+        model_gate_module._FAIRNESS_AFTER_SECONDS,
+        model_gate_module._WAIT_KEY_TTL_SECONDS,
+    ]
+
+
+@pytest.mark.unit
+def test_model_gate_drops_its_wait_marker_when_it_gives_up():
+    """A timed-out waiter must not keep holding off other acquirers until the
+    marker's TTL lapses."""
+    client, script = _mock_client(script_side_effect=lambda **kwargs: 0)
+    with patch.object(model_gate_module, "_get_client", return_value=client):
+        with pytest.raises(TimeoutError):
+            with model_gate("chandra", timeout=0.05, label="doc:1"):
+                pass
+    wait_key = script.call_args.kwargs["keys"][1]
+    client.delete.assert_called_once_with(wait_key)

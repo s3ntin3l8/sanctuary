@@ -21,6 +21,10 @@ Design choices:
     - Atomic acquire via a Redis Lua script: SCAN existing per-call
       sentinels, reject if any are incompatible with our family, otherwise
       write our sentinel. Lua-script atomicity removes the SCAN→SET race.
+    - Fairness: a blocked acquirer leaves a wait marker; once an incompatible
+      waiter has waited ``_FAIRNESS_AFTER_SECONDS``, new acquirers of the
+      holding family are refused so the gate can drain and flip (otherwise
+      overlapping same-family calls starve the waiter for its full timeout).
     - Crash recovery is automatic: every sentinel carries a TTL well above
       ``AI_READ_TIMEOUT``, so a worker that dies without releasing is
       reclaimed when its key expires.
@@ -60,6 +64,23 @@ class ModelGateTimeout(TimeoutError):
 
 _KEY_PREFIX = "sanctuary:model_gate:"
 _CALL_KEY_PREFIX = _KEY_PREFIX + "call:"
+_WAIT_KEY_PREFIX = _KEY_PREFIX + "wait:"
+
+# Fairness: a blocked acquirer leaves a wait marker. Once an incompatible
+# waiter has been blocked this long, *new* acquirers of the family that holds
+# the gate are refused too, so the in-flight calls drain and the gate flips.
+# Without it, "same family runs in parallel" lets a steady stream of qwen
+# calls (3 ai workers) keep the gate occupied forever while a chandra OCR
+# call waits out its whole 30 min timeout.
+_FAIRNESS_AFTER_SECONDS = 120
+
+# A wait marker is refreshed on every poll (<= _BACKOFF_MAX); the TTL only
+# matters when a waiter dies without cleaning up.
+_WAIT_KEY_TTL_SECONDS = 30
+
+# _ACQUIRE_LUA's "blocked" result when only fairness (not a call in flight)
+# refuses the acquire; 0 is the ordinary conflict, 1 is acquired.
+_BLOCKED_BY_FAIRNESS = 2
 
 # Each per-call sentinel lives slightly longer than the longest plausible
 # HTTP call so a slow-but-live request never has its key prematurely
@@ -123,40 +144,91 @@ _VALID_FAMILIES = frozenset(COMPATIBILITY)
 # ---------------------------------------------------------------------------
 #
 # KEYS[1] = sentinel key for this acquire attempt
+# KEYS[2] = this acquirer's wait-marker key
 # ARGV[1] = family being acquired
 # ARGV[2] = sentinel TTL (seconds)
-# ARGV[3..N] = compatible-families list (the keys of the family's compat set)
+# ARGV[3] = fairness threshold (seconds an incompatible waiter must have waited)
+# ARGV[4] = wait-marker TTL (seconds)
+# ARGV[5..N] = compatible-families list (the keys of the family's compat set)
 #
 # Returns:
-#    1  → acquired (sentinel written)
-#    0  → blocked (an incompatible family is currently in flight)
+#    1  → acquired (sentinel written, wait marker cleared)
+#    0  → blocked (an incompatible family is in flight)
+#    2  → blocked by fairness (nothing incompatible need be in flight: an
+#         incompatible waiter older than us has waited past the threshold)
 _ACQUIRE_LUA = """
 local sentinel_key = KEYS[1]
+local wait_key = KEYS[2]
 local family = ARGV[1]
 local ttl = tonumber(ARGV[2])
+local fairness = tonumber(ARGV[3])
+local wait_ttl = tonumber(ARGV[4])
 local compat = {}
-for i = 3, #ARGV do
+for i = 5, #ARGV do
     compat[ARGV[i]] = true
 end
 
+local now = tonumber(redis.call("TIME")[1])
+local own = redis.call("GET", wait_key)
+local my_ts = nil
+if own then
+    my_ts = tonumber(string.match(own, "|(%d+)$"))
+end
+
+local blocked = false
+local reason = 0
+
 local cursor = "0"
-local match = "{prefix}*"
 repeat
-    local result = redis.call("SCAN", cursor, "MATCH", match, "COUNT", 100)
+    local result = redis.call("SCAN", cursor, "MATCH", "{wait_prefix}*", "COUNT", 100)
     cursor = result[1]
     for _, key in ipairs(result[2]) do
-        if key ~= sentinel_key then
-            local f = redis.call("GET", key)
-            if f and not compat[f] then
-                return 0
+        if key ~= wait_key then
+            local v = redis.call("GET", key)
+            if v then
+                local f, ts = string.match(v, "^(.-)|(%d+)$")
+                ts = tonumber(ts)
+                if f and ts and not compat[f] and now - ts >= fairness
+                    and (my_ts == nil or ts < my_ts) then
+                    blocked = true
+                    reason = 2
+                end
             end
         end
     end
 until cursor == "0"
 
+if not blocked then
+    cursor = "0"
+    repeat
+        local result = redis.call("SCAN", cursor, "MATCH", "{call_prefix}*", "COUNT", 100)
+        cursor = result[1]
+        for _, key in ipairs(result[2]) do
+            if key ~= sentinel_key then
+                local f = redis.call("GET", key)
+                if f and not compat[f] then
+                    blocked = true
+                end
+            end
+        end
+    until cursor == "0"
+end
+
+if blocked then
+    if own then
+        redis.call("EXPIRE", wait_key, wait_ttl)
+    else
+        redis.call("SET", wait_key, family .. "|" .. now, "EX", wait_ttl)
+    end
+    return reason
+end
+
+redis.call("DEL", wait_key)
 redis.call("SET", sentinel_key, family, "EX", ttl)
 return 1
-""".replace("{prefix}", _CALL_KEY_PREFIX)
+""".replace("{call_prefix}", _CALL_KEY_PREFIX).replace(
+    "{wait_prefix}", _WAIT_KEY_PREFIX
+)
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +345,7 @@ def model_gate(
 
     call_id = uuid.uuid4().hex
     sentinel_key = _CALL_KEY_PREFIX + call_id
+    wait_key = _WAIT_KEY_PREFIX + call_id
     acquired = False
     heartbeat_stop: threading.Event | None = None
     heartbeat_thread: threading.Thread | None = None
@@ -346,8 +419,14 @@ def model_gate(
 
             try:
                 result = script(
-                    keys=[sentinel_key],
-                    args=[family, _SENTINEL_TTL_SECONDS, *compat_list],
+                    keys=[sentinel_key, wait_key],
+                    args=[
+                        family,
+                        _SENTINEL_TTL_SECONDS,
+                        _FAIRNESS_AFTER_SECONDS,
+                        _WAIT_KEY_TTL_SECONDS,
+                        *compat_list,
+                    ],
                 )
             except (redis.RedisError, OSError) as exc:
                 _maybe_warn(exc)
@@ -388,9 +467,14 @@ def model_gate(
                 started_wait_at = now
             if not wait_logged:
                 logger.info(
-                    "model_gate: %s waiting for %s (another family holds the gate)",
+                    "model_gate: %s waiting for %s (%s)",
                     label or "<unlabeled>",
                     family,
+                    (
+                        "an incompatible waiter has priority"
+                        if int(result) == _BLOCKED_BY_FAIRNESS
+                        else "another family holds the gate"
+                    ),
                 )
                 wait_logged = True
             if now >= deadline:
@@ -405,6 +489,13 @@ def model_gate(
             heartbeat_stop.set()
         if heartbeat_thread is not None:
             heartbeat_thread.join(timeout=2.0)
+        if not acquired:
+            # Timed out / interrupted while blocked: drop our wait marker so
+            # it stops holding off other acquirers.
+            try:
+                _get_client().delete(wait_key)
+            except (redis.RedisError, OSError) as exc:
+                _maybe_warn(exc)
         if acquired:
             try:
                 _get_client().delete(sentinel_key)

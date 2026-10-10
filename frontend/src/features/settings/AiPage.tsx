@@ -67,7 +67,10 @@ export function AiPage() {
       </SettingsCard>
 
       <EmbeddingIndex settings={settings} />
-      <ExtractionEngine engine={settings.extraction_engine} />
+      <ExtractionEngine
+        engine={settings.extraction_engine}
+        tesseractAvailable={settings.tesseract_available}
+      />
       <Workers settings={settings} />
 
       <EndpointModal
@@ -465,7 +468,13 @@ function EmbeddingIndex({ settings }: { settings: Schemas['AiSettingsView'] }) {
   )
 }
 
-function ExtractionEngine({ engine }: { engine: Schemas['AiSettingsView']['extraction_engine'] }) {
+function ExtractionEngine({
+  engine,
+  tesseractAvailable,
+}: {
+  engine: Schemas['AiSettingsView']['extraction_engine']
+  tesseractAvailable: boolean
+}) {
   const set = useSetEngine()
   const [current, setCurrent] = useState(engine)
   const toast = useToast()
@@ -516,6 +525,12 @@ function ExtractionEngine({ engine }: { engine: Schemas['AiSettingsView']['extra
           </span>
         </label>
       ))}
+      {!tesseractAvailable && (
+        <p className="text-[11px] text-danger">
+          The tesseract binary is not installed on this server: the Docling engine, and the fallback
+          when Chandra fails, cannot read scanned pages.
+        </p>
+      )}
     </SettingsCard>
   )
 }

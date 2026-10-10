@@ -40,12 +40,18 @@ WORKDIR /app
 #   libmagic1              → file-type sniffing
 #   libgomp1               → OpenMP runtime for torch / onnxruntime
 #   curl                   → container healthcheck
+#   tesseract-ocr(+deu,eng)→ the "Docling + Tesseract" extraction engine and the
+#                            fallback when Chandra errors; Docling shells out to the
+#                            `tesseract` CLI with lang=deu+eng
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libmagic1 \
     libgomp1 \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-deu \
+    tesseract-ocr-eng \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

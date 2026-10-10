@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -136,6 +137,7 @@ def ai_settings(db: Session = Depends(get_db)):
         instances=[_instance(i) for i in list_instances(db)],
         roles=[_role(r, resolved[r]) for r in ROLES],
         extraction_engine=get_extraction_engine(db),  # type: ignore[arg-type]
+        tesseract_available=shutil.which("tesseract") is not None,
         worker_concurrency=get_worker_concurrency(db),
         ocr_concurrency=get_ocr_concurrency(db),
         embed_index=_embed_index(db),
