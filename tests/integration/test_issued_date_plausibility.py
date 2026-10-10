@@ -136,3 +136,19 @@ def test_batch_analysis_raises_the_reason_once_the_bundle_is_complete(
     assert "issued_date_suspect" in enclosure.review_reasons
     assert enclosure.needs_review
     assert "issued_date_suspect" not in lead.review_reasons
+
+
+@pytest.mark.integration
+def test_a_date_of_birth_far_older_than_the_bundle_is_suspect(db_session, bundle):
+    # a party's birth date picked off the parties block (1986) or a century misread
+    _, enclosure = bundle
+    for year in (1986, 2016, 2020):
+        enclosure.issued_date = _day(year, 9, 12)
+        assert issued_date_suspect(enclosure, db_session), year
+
+
+@pytest.mark.integration
+def test_a_modestly_older_enclosure_is_not_suspect(db_session, bundle):
+    _, enclosure = bundle
+    enclosure.issued_date = _day(2023, 9, 4)  # e.g. a bank letter enclosed as proof
+    assert not issued_date_suspect(enclosure, db_session)

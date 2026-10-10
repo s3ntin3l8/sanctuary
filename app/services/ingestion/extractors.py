@@ -2,6 +2,7 @@ import re
 from datetime import UTC, datetime
 from typing import TypedDict
 
+from app.core.validators import CASE_ID_PATTERN, normalize_case_id
 from app.models.enums import CaseType, ProceedingCourtLevel
 
 CASE_ID_PATTERNS = [
@@ -123,18 +124,63 @@ def _parse_date_string(date_str: str) -> datetime | None:
     return None
 
 
+# A party's date of birth in the letter's parties block ("Hansen Björn, geboren am
+# 12.09.1986") is never the date of the letter. Blanked before any date scan.
+_BIRTHDATE_RE = re.compile(
+    r"\b(?:geboren|geb\.?|born)\s+(?:am\s+|on\s+)?\d{1,2}\.\d{1,2}\.\d{2,4}",
+    re.IGNORECASE,
+)
+
+# Between an anchor word and its date: whitespace, colon and the markdown the
+# OCR engines wrap labels in ("**Datum**  \n23.09.2026", "## Datum: ...").
+_ANCHOR_GAP = r"[\s:*#_|]*"
+
+
+_GERMAN_MONTHS = (
+    "januar",
+    "februar",
+    "märz",
+    "april",
+    "mai",
+    "juni",
+    "juli",
+    "august",
+    "september",
+    "oktober",
+    "november",
+    "dezember",
+)
+
+
+def date_in_text(day: datetime, content: str) -> bool:
+    """Whether ``day`` is written anywhere in ``content`` (numeric, ISO or
+    "23. September 2026"). Used to tell a date the model read from one it made up."""
+    text = re.sub(r"\s+", " ", (content or "").lower())
+    d, m, y = day.day, day.month, day.year
+    candidates = (
+        f"{d:02d}.{m:02d}.{y}",
+        f"{d}.{m}.{y}",
+        f"{d:02d}.{m:02d}.{y % 100:02d}",
+        f"{y}-{m:02d}-{d:02d}",
+    )
+    if any(c in text for c in candidates):
+        return True
+    return re.search(rf"\b{d}\.? ?{_GERMAN_MONTHS[m - 1]} {y}\b", text) is not None
+
+
 def extract_issued_date(content: str, filename: str) -> DateExtractionResult:
     """Extract the date on the document itself (Datum:, Date: header, Bescheiddatum)."""
     value = None
     confidence = "low"
 
-    text = content[:5000] if content else ""
+    content = _BIRTHDATE_RE.sub(" ", content or "")
+    text = content[:5000]
 
     # Specific patterns — highest priority first; broad first-date scan is last resort.
     specific_patterns = [
-        r"(?:eingegangen|eingereicht|erhalten|dated|received|received on)[\s:]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-        r"Datum[\s:]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-        r"(?:vom|from)[\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
+        rf"(?:eingegangen|eingereicht|erhalten|dated|received|received on){_ANCHOR_GAP}(\d{{1,2}}\.\d{{1,2}}\.\d{{2,4}})",
+        rf"Datum{_ANCHOR_GAP}(\d{{1,2}}\.\d{{1,2}}\.\d{{2,4}})",
+        rf"(?:vom|from){_ANCHOR_GAP}(\d{{1,2}}\.\d{{1,2}}\.\d{{2,4}})",
     ]
 
     for pattern in specific_patterns:
@@ -152,7 +198,7 @@ def extract_issued_date(content: str, filename: str) -> DateExtractionResult:
     # Searched before the broad head-scan so Ladungsschreiben return the letter
     # date (footer) instead of the hearing date (top table).
     if not value:
-        tail = (content or "")[-2000:]
+        tail = content[-2000:]
         city_match = re.search(
             r"[A-ZÄÖÜ][a-zäöü]{2,},\s*(?:den\s+)?(\d{1,2}\.\d{1,2}\.\d{2,4})",
             tail,
@@ -248,7 +294,8 @@ def extract_sender(content: str) -> ExtractionResult:
     if not value:
         lh_match = _LETTERHEAD_RE.search(content[:1500] if content else "")
         if lh_match:
-            value = lh_match.group(0).strip()[:120]
+            # OCR markdown wraps letterheads in heading/bold markers.
+            value = re.sub(r"^[#*_>\s]+|[#*_\s]+$", "", lh_match.group(0))[:120]
             confidence = "medium"
 
     if not value:
@@ -399,6 +446,29 @@ _INTERNAL_ID_ANCHOR_RE = re.compile(
     r"(\d{1,6}/\d{2,4})",
     re.IGNORECASE,
 )
+
+
+# The lawyer's file number as the prompt defines it ("1234/25"): digits, a
+# separator, a two- to four-digit year, at the start of the value. Firm
+# references carry trailing department/clerk codes ("8441/25 L02 RS D4/2247-25");
+# only the leading number identifies the matter.
+_LAWYER_REF_RE = re.compile(r"^\s*(\d{1,6})\s*[/-]\s*(\d{2,4})(?!\d)")
+
+
+def normalize_internal_id(raw: object) -> str | None:
+    """Canonical Case.id candidate from an AI-extracted ``internal_id``.
+
+    ``"8441/25 L02 RS D4/2247-25"`` -> ``"8441-25"``. Returns ``None`` for
+    values that are not a recognisable file reference (a bare 12-digit number,
+    prose), so they can never create a draft case.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    match = _LAWYER_REF_RE.match(raw)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}"
+    candidate = normalize_case_id(raw)
+    return candidate if candidate and CASE_ID_PATTERN.match(candidate) else None
 
 
 def extract_internal_id(content: str) -> ExtractionResult:
