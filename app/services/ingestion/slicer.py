@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 _THUMBNAIL_LONG_EDGE = 400
 _THUMBNAIL_DPI = 120
 _TEXT_HEAD_CHARS = 500
+# A page with less OCR text than this is proposed for discarding (separator/blank).
+_BLANK_PAGE_CHARS = 20
 _TEXT_TAIL_CHARS = 500
 
 _W_PAGE_RESET = float(os.getenv("SLICE_W_PAGE_RESET", "0.30"))
@@ -425,6 +427,7 @@ def prepare(batch_id: int) -> None:
                     {
                         "text_head": text[:_TEXT_HEAD_CHARS],
                         "text_tail": text[-_TEXT_TAIL_CHARS:],
+                        "blank": len(text.strip()) < _BLANK_PAGE_CHARS,
                         "thumbnail_path": str(thumb_path),
                     }
                 )

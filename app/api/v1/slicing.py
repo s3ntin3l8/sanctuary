@@ -81,6 +81,7 @@ def _view(batch: IngestBatch) -> SlicingView:
                 text_head=(p.get("text_head") or "")[:400],
                 text_tail=(p.get("text_tail") or "")[:400],
                 has_thumbnail=_thumb_path(batch, i + 1) is not None,
+                blank=bool(p.get("blank")),
             )
             for i, p in enumerate(pages)
         ],
@@ -154,7 +155,7 @@ def confirm_slicing(
     # under the lock so the status check sees the committed value.
     db.refresh(locked)
     try:
-        doc_ids = confirm_slices(db, locked, body.cuts)
+        doc_ids = confirm_slices(db, locked, body.cuts, body.discard)
     except SlicingFailed as exc:
         raise ApiError(500, "slicing_failed", str(exc)) from exc
     except ValueError as exc:

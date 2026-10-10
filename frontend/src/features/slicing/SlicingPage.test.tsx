@@ -62,6 +62,7 @@ test('starts from the AI proposal, lets the user toggle cuts, and confirms', asy
         { page: 1, kind: 'letter' },
         { page: 2, kind: 'attachment' },
       ],
+      discard: [],
     })
   })
   expect(navigation.leaveTo).toHaveBeenCalledWith('/triage')
@@ -115,4 +116,62 @@ test('choosing a kind in the viewer on an uncut gap creates the cut', async () =
   expect(
     within(screen.getByRole('dialog')).getByRole('button', { name: 'New letter' }),
   ).toHaveAttribute('aria-pressed', 'true')
+})
+
+async function confirmedBody(fetch: ReturnType<typeof stubApi>) {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /^Confirm/ }))
+  return waitFor(async () => {
+    const r = fetch.mock.calls.map(([x]) => x).find((x) => x.method === 'POST')
+    if (!r) throw new Error('no POST yet')
+    return r.clone().json()
+  })
+}
+
+function renderConfirmable(pages: Record<string, unknown>[]) {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  const fetch = stubApi({
+    'GET /api/v1/slicing/77': { body: { ...view, pages, proposed_cuts: [] } },
+    'POST /api/v1/slicing/77/confirm': { body: { document_ids: [1] } },
+  })
+  renderAt(
+    '/ingest/slice/77',
+    <Routes>
+      <Route path="/ingest/slice/:batchId" element={<SlicingPage />} />
+    </Routes>,
+  )
+  return fetch
+}
+
+test('the card toggle discards a page and the confirm body carries it', async () => {
+  const fetch = renderConfirmable(view.pages)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Discard page 2' }))
+  expect(screen.getByRole('button', { name: 'Keep page 2' })).toBeVisible()
+  expect(screen.getByText(/1 discarded/)).toBeVisible()
+  expect(await confirmedBody(fetch)).toEqual({ cuts: [], discard: [2] })
+})
+
+test('D in the viewer toggles the open page, D in the list the page below the highlight', async () => {
+  const fetch = renderConfirmable(view.pages)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Open page 1' }))
+  await user.keyboard('d')
+  expect(within(screen.getByRole('dialog')).getByText('Discarded')).toBeVisible()
+  await user.keyboard('{Escape}')
+  await user.keyboard('d') // opening page 1 left the cursor on gap 1
+  expect(screen.getByRole('button', { name: 'Keep page 2' })).toBeVisible()
+  expect(await confirmedBody(fetch)).toEqual({ cuts: [], discard: [1, 2] })
+})
+
+test('blank pages start discarded and Reset to proposal restores that', async () => {
+  const pages = view.pages.map((p) => ({ ...p, blank: p.page === 2 }))
+  const fetch = renderConfirmable(pages)
+  const user = userEvent.setup()
+  expect(await screen.findByRole('button', { name: 'Keep page 2' })).toBeVisible()
+  expect(screen.getByText('blank?')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Keep page 2' }))
+  await user.click(screen.getByRole('button', { name: 'Discard page 1' }))
+  await user.click(screen.getByRole('button', { name: 'Reset to proposal' }))
+  expect(await confirmedBody(fetch)).toEqual({ cuts: [], discard: [2] })
 })

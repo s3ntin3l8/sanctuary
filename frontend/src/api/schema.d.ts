@@ -5326,6 +5326,8 @@ export interface components {
         SlicingConfirm: {
             /** Cuts */
             cuts?: components["schemas"]["SliceCut"][];
+            /** Discard */
+            discard?: number[];
         };
         /** SlicingConfirmed */
         SlicingConfirmed: {
@@ -5334,6 +5336,11 @@ export interface components {
         };
         /** SlicingPage */
         SlicingPage: {
+            /**
+             * Blank
+             * @default false
+             */
+            blank: boolean;
             /** Has Thumbnail */
             has_thumbnail: boolean;
             /** Page */

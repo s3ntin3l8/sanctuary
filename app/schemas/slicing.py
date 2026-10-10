@@ -12,6 +12,7 @@ class SlicingPage(BaseModel):
     text_head: str
     text_tail: str
     has_thumbnail: bool
+    blank: bool = False
 
 
 CutKind = Literal["letter", "attachment"]
@@ -47,6 +48,8 @@ class SliceCut(BaseModel):
 
 class SlicingConfirm(BaseModel):
     cuts: list[SliceCut] = Field(default_factory=list)
+    # 1-based pages to drop; they end up in no document. Out-of-range pages are ignored.
+    discard: list[int] = Field(default_factory=list)
 
 
 class SlicingConfirmed(BaseModel):
