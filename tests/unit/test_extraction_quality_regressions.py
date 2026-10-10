@@ -27,6 +27,8 @@ from app.services.ingestion.extractors import (
         ("ADV-024-A", "ADV-024-A"),  # an already-canonical Case.id survives
         ("8441-25-A", "8441-25-A"),  # ...including a numeric one with a suffix
         ("888520392705", None),  # a phone/ID number, not a file reference
+        ("Unser Zeichen: 8441/25", "8441-25"),  # a prefixed answer
+        ("Az. 9418/26 L02", "9418-26"),
         ("Aktenzeichen unbekannt", None),
         ("", None),
         (None, None),
@@ -63,6 +65,8 @@ def test_sender_letterhead_loses_markdown_heading_markers():
     assert result["value"] == "Landgericht Ingolstadt"
     result = extract_sender("> **Landgericht Ingolstadt** >\n\nAz. 22 T 342/26")
     assert result["value"] == "Landgericht Ingolstadt"
+    result = extract_sender("**Landgericht Ingolstadt** –\n\nAz. 22 T 342/26")
+    assert result["value"] == "Landgericht Ingolstadt"
 
 
 @pytest.mark.unit
@@ -75,6 +79,11 @@ def test_sender_letterhead_loses_markdown_heading_markers():
         (datetime(2026, 9, 23), "eingegangen 2026-09-23", True),
         (datetime(2025, 9, 23), "Datum 23.09.2026", False),
         (datetime(2026, 9, 23), "23. September\n2026", True),
+        # a date must stand alone: these only share digits with the real one
+        (datetime(2026, 12, 9), "Datum 29.12.2026", False),
+        (datetime(2026, 12, 9), "Datum 19.12.2026", False),
+        (datetime(2026, 12, 9), "Datum 9.12.20261", False),
+        (datetime(2026, 12, 9), "Stand: 9.12.2026.", True),
         # a birth date in the parties block is not a letter date
         (datetime(1986, 9, 12), "Hansen, geboren am 12.09.1986", False),
     ],

@@ -155,19 +155,19 @@ def date_in_text(day: datetime, content: str) -> bool:
     """Whether ``day`` is written anywhere in ``content`` (numeric, ISO or
     "23. September 2026"). Used to tell a date the model read from one it made up.
 
-    A party's date of birth does not count, as in ``extract_issued_date``.
+    Numeric forms must stand alone: ``9.12.2026`` is not found inside
+    ``29.12.2026``. A party's date of birth does not count, as in
+    ``extract_issued_date``.
     """
     d, m, y = day.day, day.month, day.year
     text = _BIRTHDATE_RE.sub(" ", content or "").lower()
-    if any(
-        c in text
-        for c in (
-            f"{d:02d}.{m:02d}.{y}",
-            f"{d}.{m}.{y}",
-            f"{d:02d}.{m:02d}.{y % 100:02d}",
-            f"{y}-{m:02d}-{d:02d}",
-        )
-    ):
+    numeric = (
+        rf"(?<![\d.]){d:02d}\.{m:02d}\.{y}(?!\d)",
+        rf"(?<![\d.]){d}\.{m}\.{y}(?!\d)",
+        rf"(?<![\d.]){d:02d}\.{m:02d}\.{y % 100:02d}(?!\d)",
+        rf"(?<!\d){y}-{m:02d}-{d:02d}(?!\d)",
+    )
+    if any(re.search(pattern, text) for pattern in numeric):
         return True
     # Only now pay for collapsing whitespace ("23. September\n2026").
     text = re.sub(r"\s+", " ", text)
@@ -301,7 +301,7 @@ def extract_sender(content: str) -> ExtractionResult:
         lh_match = _LETTERHEAD_RE.search(content[:1500] if content else "")
         if lh_match:
             # OCR markdown wraps letterheads in heading/bold markers.
-            value = re.sub(r"^[#*_>\s]+|[#*_>\s]+$", "", lh_match.group(0))[:120]
+            value = re.sub(r"^[#*_>\s]+|[#*_>\s\-–—]+$", "", lh_match.group(0))[:120]
             confidence = "medium"
 
     if not value:
@@ -458,7 +458,11 @@ _INTERNAL_ID_ANCHOR_RE = re.compile(
 # separator, a two- to four-digit year, at the start of the value. Firm
 # references carry trailing department/clerk codes ("8441/25 L02 RS D4/2247-25");
 # only the leading number identifies the matter.
-_LAWYER_REF_RE = re.compile(r"^\s*(\d{1,6})\s*[/-]\s*(\d{2,4})(?!\d)")
+_LAWYER_REF_RE = re.compile(
+    r"^\s*(?:(?:unser\s+zeichen|aktenzeichen|geschäftszeichen|az\.?|gz\.?)\s*:?\s*)?"
+    r"(\d{1,6})\s*[/-]\s*(\d{2,4})(?!\d)",
+    re.IGNORECASE,
+)
 
 
 def normalize_internal_id(raw: object) -> str | None:
