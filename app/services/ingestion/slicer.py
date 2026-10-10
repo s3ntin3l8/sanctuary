@@ -71,7 +71,9 @@ _OUTLINE_MIN_PART_CHARS = 150
 _OUTLINE_MAX_PART_CHARS = 700
 _OUTLINE_BASE_TOKENS = 150
 _OUTLINE_TOKENS_PER_PART = 70
-_OUTLINE_NUM_CTX = 8192
+# Prompt (<= _OUTLINE_BUDGET_CHARS, ~3.5k tokens) plus the largest answer
+# (_OUTLINE_BASE_TOKENS + _OUTLINE_TOKENS_PER_PART * 93, ~6.7k) must fit.
+_OUTLINE_NUM_CTX = 12288
 _OUTLINE_TIMEOUT_SECONDS = 180.0
 
 
@@ -306,6 +308,10 @@ def _cut_confidence(signals: tuple[str, ...]) -> str:
     previous page's running header with the same date and shows no start cue — a
     continuation. Everything else is ``medium``, which includes enclosure-to-
     enclosure cuts that carry no signal at all.
+
+    ``date_line_change`` is deliberately not a start cue — a date alone shifts for
+    many reasons (a typo'd header, a rollover, OCR) — so it stays ``medium`` and
+    reaches the model only as a hint.
     """
     found = set(signals)
     if found & _START_SIGNALS:
