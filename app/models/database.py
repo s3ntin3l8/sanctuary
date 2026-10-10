@@ -109,14 +109,10 @@ class Document(Base):
         Index("ix_documents_case_needs_review", "case_id", "needs_review"),
         Index("ix_documents_case_created", "case_id", "ingest_date"),
         Index("ix_documents_needs_review_created", "needs_review", "ingest_date"),
-        Index("ix_documents_proceeding", "proceeding_id"),
-        Index("ix_documents_ingest_batch", "ingest_batch_id"),
-        Index("ix_documents_significance", "significance_tier"),
         Index("ix_documents_pipeline_state", "pipeline_state"),
-        Index("ix_documents_sub_group", "sub_group_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String, nullable=False, index=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The user who ingested this document. INVARIANT: owner_id governs visibility
@@ -556,7 +552,7 @@ class Case(Base):
     __tablename__ = "cases"
 
     id: Mapped[str] = mapped_column(
-        String, primary_key=True, index=True
+        String, primary_key=True
     )  # Internal lead ID, e.g. ADV-992-K
     title: Mapped[str] = mapped_column(String, nullable=False)
     # Owning user. NULL only transiently during the ownership migration backfill;
@@ -630,12 +626,9 @@ class Proceeding(Base):
     """A court-level stage inside a case (AG, LG, OLG, BGH)."""
 
     __tablename__ = "proceedings"
-    __table_args__ = (
-        Index("ix_proceedings_case", "case_id"),
-        Index("ix_proceedings_case_status", "case_id", "status"),
-    )
+    __table_args__ = (Index("ix_proceedings_case_status", "case_id", "status"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
@@ -684,7 +677,6 @@ class IngestBatch(Base):
 
     __tablename__ = "ingest_batches"
     __table_args__ = (
-        Index("ix_ingest_batches_case", "case_id"),
         Index("ix_ingest_batches_received", "received_at"),
         # Reverse lookup for out-of-order imports: which batches name this
         # Message-ID as an ancestor (``thread_refs @> '["<id>"]'``).
@@ -702,7 +694,7 @@ class IngestBatch(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # The user who ingested this batch (upload / gmail / scan-folder). Drives the
     # per-user triage inbox. NULL only for legacy/unowned rows.
     owner_id: Mapped[int | None] = mapped_column(
@@ -806,9 +798,8 @@ class BatchSubGroup(Base):
     """
 
     __tablename__ = "batch_sub_groups"
-    __table_args__ = (Index("ix_batch_sub_groups_batch", "batch_id"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     batch_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("ingest_batches.id", ondelete="CASCADE"),
@@ -836,8 +827,6 @@ class DocumentRelationship(Base):
 
     __tablename__ = "document_relationships"
     __table_args__ = (
-        Index("ix_document_relationships_from", "from_document_id"),
-        Index("ix_document_relationships_to", "to_document_id"),
         Index(
             "ix_document_relationships_type",
             "relationship_type",
@@ -850,7 +839,7 @@ class DocumentRelationship(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     from_document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
@@ -933,13 +922,12 @@ class ActionItem(Base):
     __table_args__ = (
         Index("ix_action_items_case_due", "case_id", "due_date"),
         Index("ix_action_items_due_status", "due_date", "status"),
-        Index("ix_action_items_proceeding", "proceeding_id"),
         UniqueConstraint(
             "case_id", "due_date", "action_type", name="uq_action_items_case_due_type"
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
@@ -1016,7 +1004,7 @@ class Claim(Base):
     __tablename__ = "claims"
     __table_args__ = (Index("ix_claims_status", "status"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     claim_text: Mapped[str] = mapped_column(Text, nullable=False)
     claim_type: Mapped[ClaimType] = mapped_column(
@@ -1058,12 +1046,7 @@ class ClaimEvidence(Base):
     """Link between a claim and a document that supports, contests, or refutes it."""
 
     __tablename__ = "claim_evidence"
-    __table_args__ = (
-        Index("ix_claim_evidence_claim", "claim_id"),
-        Index("ix_claim_evidence_document", "document_id"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
@@ -1117,7 +1100,7 @@ class ClaimMergeProposal(Base):
         Index("ix_claim_merge_proposals_existing_claim", "existing_claim_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     new_claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
@@ -1169,7 +1152,7 @@ class ClaimEvidenceProposal(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     target_claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
@@ -1212,12 +1195,9 @@ class UserReaction(Base):
     """
 
     __tablename__ = "user_reactions"
-    __table_args__ = (
-        Index("ix_user_reactions_document", "document_id"),
-        Index("ix_user_reactions_reaction", "reaction"),
-    )
+    __table_args__ = (Index("ix_user_reactions_reaction", "reaction"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )
@@ -1243,12 +1223,9 @@ class DocumentPin(Base):
     """
 
     __tablename__ = "document_pins"
-    __table_args__ = (
-        Index("ix_document_pins_document", "document_id"),
-        Index("ix_document_pins_passage", "passage_id"),
-    )
+    __table_args__ = (Index("ix_document_pins_passage", "passage_id"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )
@@ -1279,7 +1256,7 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunks"
     __table_args__ = (Index("ix_document_chunks_document", "document_id"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
@@ -1307,7 +1284,7 @@ class User(Base):
         UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_users_oidc_identity"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     # URL/filesystem-safe unique slug — names this user's scan-ingest subfolder
     # (data/scans/incoming/<username>/). Generated from display_name/email.
@@ -1484,7 +1461,7 @@ class CaseShare(Base):
         Index("ix_case_shares_user", "user_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False
     )
@@ -1543,7 +1520,7 @@ class LegalCost(Base):
         Index("ix_legal_costs_case_proceeding", "case_id", "proceeding_id"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
@@ -1654,7 +1631,7 @@ class CostSignal(Base):
         Index("ix_cost_signals_proc_type", "proceeding_id", "signal_type"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
@@ -1710,7 +1687,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (Index("ix_conversations_scope", "scope_type", "scope_id"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     scope_type: Mapped[str] = mapped_column(
         String, nullable=False
     )  # "document" | "case"
@@ -1741,11 +1718,8 @@ class Conversation(Base):
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
-    __table_args__ = (
-        Index("ix_conversation_messages_conversation", "conversation_id"),
-    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -1777,7 +1751,7 @@ class Entity(Base):
     __tablename__ = "entities"
     __table_args__ = (Index("ix_entities_case_type", "case_id", "type"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
