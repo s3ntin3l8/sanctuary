@@ -172,6 +172,21 @@ def test_acknowledging_the_ocr_crosscheck_clears_the_flag(db_session):
     assert doc.meta["ocr_unverified_acknowledged"] == [3]
 
 
+def test_acknowledging_a_clean_document_writes_nothing(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id, meta={"chunks": []})
+
+    assert (
+        client.post(
+            f"/api/v1/documents/{doc.id}/ocr-unverified/acknowledge"
+        ).status_code
+        == 200
+    )
+
+    db_session.refresh(doc)
+    assert "ocr_unverified_acknowledged" not in doc.meta
+
+
 def test_review_requires_access(auth_enabled, db_session):
     from app.services import auth_service
 

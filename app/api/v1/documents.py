@@ -133,6 +133,8 @@ def pipeline_view(doc: Document) -> PipelineView:
         )
     meta = doc.meta or {}
     failures = meta.get("page_failures") or []
+    # The extractor only lists a page in ocr_unverified_pages after storing its
+    # crosscheck words on the chunk, so every page listed here has them.
     unverified = {int(p) for p in meta.get("ocr_unverified_pages") or []}
     return PipelineView(
         state=doc.pipeline_state,
@@ -510,10 +512,11 @@ def acknowledge_ocr_unverified(
     from app.services.ingestion.service import refresh_review_reasons
 
     meta = dict(doc.meta or {})
-    meta["ocr_unverified_acknowledged"] = meta.pop("ocr_unverified_pages", [])
-    doc.meta = meta
-    refresh_review_reasons(doc, db, commit=False)
-    db.commit()
+    if "ocr_unverified_pages" in meta:
+        meta["ocr_unverified_acknowledged"] = meta.pop("ocr_unverified_pages")
+        doc.meta = meta
+        refresh_review_reasons(doc, db, commit=False)
+        db.commit()
     db.refresh(doc)
     return review_view(db, user, doc)
 

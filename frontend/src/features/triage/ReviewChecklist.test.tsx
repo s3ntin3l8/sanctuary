@@ -13,7 +13,7 @@ const flagged = {
     ...documentReview.pipeline,
     ocr_unverified: [
       { page: 2, words: ['wohnplatz', 'sicherung'] },
-      { page: 5, words: ['muniba'] },
+      { page: 5, words: ['muniba', ...Array.from({ length: 10 }, (_, i) => `wort${i}`)] },
     ],
   },
 }
@@ -34,7 +34,7 @@ test('lists the pages whose OCR text could not be corroborated and lets the user
   expect(screen.getByText('OCR text to check on pages 2, 5')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Details' }))
   expect(screen.getByText('wohnplatz, sicherung')).toBeVisible()
-  expect(screen.getByText('muniba')).toBeVisible()
+  expect(screen.getByText(/^muniba, wort0.*\+3 more$/)).toBeVisible()
 
   await user.click(screen.getByRole('button', { name: 'Checked' }))
   await waitFor(() => {

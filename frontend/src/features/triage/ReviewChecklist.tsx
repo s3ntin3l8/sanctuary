@@ -28,6 +28,9 @@ const MISSING_FIELDS: Record<string, string> = {
   missing_issued_date: 'issued date',
 }
 
+/** The OCR cross-check stores up to 20 doubtful words a page; the row shows the first few. */
+const MAX_WORDS_SHOWN = 8
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /** Scroll a review section into view and flash it so the eye lands there. */
@@ -203,7 +206,8 @@ function ChecklistRow({ item, review }: { item: Item; review: Review }) {
             {review.pipeline.ocr_unverified.map((p) => (
               <li key={p.page}>
                 <span className="font-mono text-[10.5px] text-muted">p{p.page}</span>{' '}
-                {p.words.join(', ')}
+                {p.words.slice(0, MAX_WORDS_SHOWN).join(', ')}
+                {p.words.length > MAX_WORDS_SHOWN && ` +${p.words.length - MAX_WORDS_SHOWN} more`}
               </li>
             ))}
           </ul>

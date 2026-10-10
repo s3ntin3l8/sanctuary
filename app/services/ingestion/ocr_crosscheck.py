@@ -15,7 +15,10 @@ import threading
 logger = logging.getLogger(__name__)
 
 # A page is unverified when at least this share of chandra's words, and at
-# least this many words, have no counterpart in the second reading.
+# least this many words, have no counterpart in the second reading. Only words
+# of four or more characters are compared (short ones match anything by
+# chance), so a page where chandra invents only initials or two-letter
+# placeholders is not flagged.
 UNVERIFIED_RATIO = 0.05
 UNVERIFIED_MIN_TOKENS = 4
 _MAX_STORED_TOKENS = 20
@@ -29,8 +32,11 @@ _RE_SQUASH = re.compile(r"[^a-zäöüß0-9]")
 
 _ocr_instance = None
 _ocr_lock = threading.Lock()
-# One inference at a time: a second reading costs seconds against chandra's
-# minutes, and rapidocr's thread-safety is not documented.
+# One inference at a time per process: rapidocr's thread-safety is not
+# documented. The price is that the second readings of concurrent extractions
+# (and the slicer's prep OCR, which shares the engine) queue behind each other
+# at ~2 s a page, small next to chandra's ~90 s a page; relax this if
+# thread-safety is ever established.
 _run_lock = threading.Lock()
 
 
