@@ -99,7 +99,6 @@ SLICING_CUT_SYSTEM = """You decide whether page N is the first page of a new doc
 Response shape:
 {
   "is_new_document": true|false,
-  "confidence": "high"|"medium"|"low",
   "kind": "letter"|"attachment",
   "notes": "one sentence reason"
 }
@@ -115,9 +114,21 @@ A repeated running header is NOT a new document: when the page opens with the sa
 `kind` says what the new document is relative to the pages before it:
 - "letter": an independent letter with its own letterhead, addressee and salutation (e.g. a court Verfügung or a lawyer's cover letter).
 - "attachment": something that travels with the preceding letter — an Anlage/Annex, exhibit, a Schriftsatz forwarded by the court, a copy, a form, a certificate, a medical report, a bank statement or printout, a transmission receipt.
-Use "attachment" when unsure. Only meaningful when is_new_document is true.
+Use "attachment" when unsure. Only meaningful when is_new_document is true."""
 
-Confidence: "high" only when the page itself shows the start (new sender or addressee block, new date or subject line, new Aktenzeichen, salutation, "Seite 1", an Anlage heading). Use "low" when the page could equally continue the previous document."""
+SLICING_OUTLINE_SYSTEM = """You are given the parts of one scanned bundle, in order. Each part has its page range, the start of its first page and the end of its last page. Decide for every part whether it is an independent letter or an enclosure of the letter before it.
+
+Response shape:
+{
+  "parts": [ {"part": 1, "kind": "letter"|"attachment", "notes": "few words"} ]
+}
+
+- "letter": an independent letter with its own letterhead, addressee and salutation, written by its sender to the recipient in its own right.
+- "attachment": something a letter carries along — an Anlage, exhibit, copy, certificate, medical report, bank printout, a transmission receipt or service sheet (Zustellungsurkunde), or a Schriftsatz, report or decision that a COURT forwards.
+
+Court cover letters are relays: when a part is a court's letter that forwards material ("übersende ich Ihnen zur Kenntnisnahme", "Abschrift anbei", "in der Anlage", "zur Stellungnahme"), the parts after it are its enclosures — including letters written by someone else, such as the other side's lawyer or an authority — until a part opens a new, unrelated matter with its own court letterhead and its own salutation to the recipient.
+
+Part 1 is always a "letter". Answer for every part, using the numbers given. Use "attachment" when unsure."""
 
 # ---------------------------------------------------------------------------
 # Batch analysis

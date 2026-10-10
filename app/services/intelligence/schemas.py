@@ -65,9 +65,24 @@ class CutJudgment(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     is_new_document: bool
-    confidence: _ConfidenceLevel
     kind: Literal["letter", "attachment"]
     notes: str = Field(description="One sentence reason.")
+
+
+class _OutlinePart(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    part: int = Field(description="The part's number as given.")
+    kind: Literal["letter", "attachment"]
+    notes: str = Field(description="Few words: why.")
+
+
+class SliceOutline(BaseModel):
+    """SLICING_OUTLINE_SYSTEM output."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    parts: list[_OutlinePart]
 
 
 class _Entity(BaseModel):
