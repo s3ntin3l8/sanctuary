@@ -119,5 +119,6 @@ async def test_judgment_is_schema_constrained_so_a_reasoning_model_cannot_stall(
     options = sent["options"]
     assert options["_schema_name"] == "CutJudgment"
     assert "is_new_document" in options["_response_schema"]["properties"]
+    assert options["num_ctx"] == 4096
     assert options["max_tokens"] == slicer._AI_MAX_TOKENS
     assert options["_include_user_context"] is False

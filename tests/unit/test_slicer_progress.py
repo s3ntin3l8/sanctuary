@@ -53,7 +53,7 @@ def _scan_batch(db_session, tmp_path, pages: int) -> IngestBatch:
 
 @pytest.fixture
 def judged(monkeypatch):
-    """Capture the boundaries prepare() hands the AI; the AI agrees with all."""
+    """Capture the boundaries prepare() hands the AI; it agrees with all but page 2."""
     from app.services.ingestion import slicer
 
     seen: list = []
@@ -61,7 +61,8 @@ def judged(monkeypatch):
     async def fake(candidates, model):
         seen.extend(candidates)
         return {
-            c.page: {"is_new_document": True, "confidence": "high"} for c in candidates
+            c.page: {"is_new_document": c.page != 2, "confidence": "high"}
+            for c in candidates
         }
 
     monkeypatch.setattr(slicer, "_ai_cut_judgments", fake)
@@ -108,12 +109,13 @@ def test_prepare_asks_the_ai_about_every_boundary_even_without_signals(
     assert [c.page for c in judged] == [2, 3, 4]
     assert all(c.signals == () for c in judged)
     db_session.refresh(batch)
-    assert [c["page"] for c in batch.meta["slicing"]["proposed_cuts"]] == [2, 3, 4]
+    # the AI's verdicts, not the candidate list, decide the cuts
+    assert [c["page"] for c in batch.meta["slicing"]["proposed_cuts"]] == [3, 4]
 
 
 @pytest.mark.unit
 def test_prepare_above_the_page_cap_judges_only_signalled_boundaries(
-    db_session, tmp_path, monkeypatch, judged
+    db_session, tmp_path, monkeypatch, judged, caplog
 ):
     from app.services.ingestion import slicer
 
@@ -127,3 +129,4 @@ def test_prepare_above_the_page_cap_judges_only_signalled_boundaries(
 
     assert [c.page for c in judged] == [3]
     assert "enclosure_marker" in judged[0].signals
+    assert "skipping 2" in caplog.text

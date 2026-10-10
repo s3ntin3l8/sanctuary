@@ -258,12 +258,9 @@ def _combine_proposed_cuts(
 ) -> list[dict]:
     """Merge judged boundaries with AI judgments into proposed_cuts.
 
-    A missing `ai_results` entry defaults to `is_new_document=True` (propose
-    the cut) — callers must pre-fill `ai_results` with an explicit
-    conservative entry per candidate on whole-batch AI failure, matching the
-    per-candidate failure default in `_ai_cut_judgment`. Otherwise a total AI
-    outage would propose every heuristic candidate as a cut, while a partial
-    outage suppresses them — the two failure modes must fail the same way.
+    A candidate with no `ai_results` entry, or an entry without a verdict, gets
+    no cut: an unanswered boundary fails the same way as a failed judgment
+    (`_conservative_ai_failure`), so an AI outage can never over-cut.
 
     Each cut also carries a ``kind``: ``letter`` (an independent letter) or
     ``attachment`` (travels with the preceding letter). Anything but an explicit
@@ -272,18 +269,20 @@ def _combine_proposed_cuts(
     """
     proposed_cuts = []
     for cand in candidates:
-        cut_page = cand[0]
+        cut_page = cand.page
         # Validate cut page is in range (hallucination guard for any AI-injected values)
         if not (2 <= cut_page <= page_count):
             continue
         ai = ai_results.get(cut_page, {})
-        ai_raw = ai.get("is_new_document", True)
+        ai_raw = ai.get("is_new_document", False)
         ai_agrees = (
             ai_raw
             if isinstance(ai_raw, bool)
             else str(ai_raw).strip().lower() in ("true", "1", "yes")
         )
         ai_confidence = ai.get("confidence", "medium")
+        if ai_confidence not in ("high", "medium", "low"):
+            ai_confidence = "low"
         kind = (
             "letter"
             if str(ai.get("kind", "")).strip().lower() == "letter"
@@ -427,14 +426,17 @@ def prepare(batch_id: int) -> None:
             for i in range(page_count - 1)
         ]
         if page_count > _AI_MAX_PAGES:
+            signalled = [c for c in candidates if c.signals]
             logger.info(
-                "prepare_slicing: batch %d has %d pages (> %d) — judging only "
-                "boundaries with a heuristic signal",
+                "prepare_slicing: batch %d has %d pages (> %d) — judging only the "
+                "%d boundaries with a heuristic signal, skipping %d",
                 batch_id,
                 page_count,
                 _AI_MAX_PAGES,
+                len(signalled),
+                len(candidates) - len(signalled),
             )
-            candidates = [c for c in candidates if c.signals]
+            candidates = signalled
         marker_pages = {
             c.page for c in candidates if _ATTACHMENT_SIGNALS.intersection(c.signals)
         }
@@ -454,15 +456,8 @@ def prepare(batch_id: int) -> None:
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
                 slice_error = str(exc)
-                # Fill with the same conservative per-candidate failure shape
-                # used inside _ai_cut_judgments — a whole-batch failure must
-                # not propose more cuts than a partial one would. Leaving
-                # ai_results empty here makes every candidate miss the
-                # ai_results.get() lookup below and fall through to its
-                # `True` default (aggressive), the opposite of intended.
-                ai_results = {
-                    b.page: _conservative_ai_failure(slice_error) for b in candidates
-                }
+                # No verdicts at all: _combine_proposed_cuts proposes nothing.
+                ai_results = {}
             # One aggregate entry per slicing run — the candidates fan out to
             # many small parallel judgment calls (see _ai_cut_judgments), and
             # docs don't exist yet at this point, so per-call/per-doc rows
