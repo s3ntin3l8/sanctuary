@@ -135,6 +135,38 @@ def test_dismiss_and_delete_bundle(db_session):
     assert client.post("/api/v1/triage/bundles/999999/dismiss").status_code == 404
 
 
+def test_archive_one_doc_keeps_bundle_with_the_rest(db_session):
+    admin = _admin(db_session)
+    batch, docs = _batch(db_session, admin.id, docs=2)
+    resp = client.post(f"/api/v1/triage/documents/{docs[0].id}/dismiss")
+    assert resp.status_code == 204
+    (bundle,) = client.get("/api/v1/triage").json()["bundles"]
+    assert bundle["key"] == f"batch-{batch.id}"
+    assert [d["id"] for d in bundle["documents"]] == [docs[1].id]
+    assert bundle["lead_doc_id"] == docs[1].id
+    assert bundle["sub_groups"][0]["doc_ids"] == [docs[1].id]
+
+
+def test_delete_one_doc_refuses_while_in_flight(db_session):
+    admin = _admin(db_session)
+    _, docs = _batch(db_session, admin.id, docs=2)
+    from app.models.database import DocumentPipelineStage
+    from app.models.enums import PipelineStage, StageStatus
+
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=docs[0].id,
+            stage=PipelineStage.ENRICH,
+            status=StageStatus.RUNNING,
+        )
+    )
+    db_session.commit()
+    resp = client.delete(f"/api/v1/triage/documents/{docs[0].id}")
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "in_flight"
+    assert client.delete(f"/api/v1/triage/documents/{docs[1].id}").status_code == 204
+
+
 def test_delete_refuses_in_flight_bundle(db_session):
     admin = _admin(db_session)
     batch, docs = _batch(db_session, admin.id, state=PipelineState.RUNNING)

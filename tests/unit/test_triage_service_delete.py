@@ -210,3 +210,70 @@ def test_delete_unknown_batch_returns_false(db_session):
 @pytest.mark.unit
 def test_delete_unknown_doc_returns_false(db_session):
     assert delete_bundle(db_session, doc_id=999_999) is False
+
+
+@pytest.mark.unit
+def test_delete_doc_with_in_flight_stage_rejected(db_session):
+    from app.models.database import DocumentPipelineStage
+
+    _, docs = _make_batch_with_docs(db_session, doc_count=2)
+    db_session.add(
+        DocumentPipelineStage(document_id=docs[0].id, stage="extract", status="running")
+    )
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="actively processing"):
+        delete_bundle(db_session, doc_id=docs[0].id)
+    assert db_session.get(Document, docs[0].id) is not None
+    # A sibling that is quiet stays deletable.
+    assert delete_bundle(db_session, doc_id=docs[1].id) is True
+
+
+@pytest.mark.unit
+def test_delete_doc_hard_deletes_its_action_items(db_session):
+    _, docs = _make_batch_with_docs(db_session, doc_count=2)
+    db_session.add(
+        ActionItem(
+            case_id="_TRIAGE",
+            source_document_id=docs[0].id,
+            title="Action",
+            due_date=datetime.now(UTC),
+        )
+    )
+    db_session.commit()
+
+    assert delete_bundle(db_session, doc_id=docs[0].id) is True
+    assert (
+        db_session.query(ActionItem).filter(ActionItem.title == "Action").count() == 0
+    )
+
+
+@pytest.mark.unit
+def test_delete_cover_letter_keeps_enclosures(db_session):
+    _, docs = _make_batch_with_docs(db_session, doc_count=2)
+    docs[1].parent_id = docs[0].id
+    db_session.commit()
+    child_id = docs[1].id
+
+    assert delete_bundle(db_session, doc_id=docs[0].id) is True
+    child = db_session.get(Document, child_id)
+    assert child is not None
+    assert child.parent_id is None
+
+
+@pytest.mark.unit
+def test_delete_last_doc_removes_batch_and_raw_source(db_session, tmp_path):
+    raw_file = tmp_path / "source.eml"
+    raw_file.write_text("From: someone")
+    batch, docs = _make_batch_with_docs(
+        db_session, doc_count=2, raw_source_path=str(raw_file)
+    )
+    batch_id = batch.id
+
+    assert delete_bundle(db_session, doc_id=docs[0].id) is True
+    assert raw_file.exists()
+    assert db_session.get(IngestBatch, batch_id) is not None
+
+    assert delete_bundle(db_session, doc_id=docs[1].id) is True
+    assert db_session.get(IngestBatch, batch_id) is None
+    assert not raw_file.exists()

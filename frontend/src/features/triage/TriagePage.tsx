@@ -10,6 +10,7 @@ import {
   type TriageFilters,
   defaultFilters,
   useBundleAction,
+  useDocumentAction,
   useRetryAll,
   useRetryBundle,
   useTriage,
@@ -596,6 +597,7 @@ function BundleRow({
   proceedings: Schemas['PickerProceeding'][]
 }) {
   const action = useBundleAction()
+  const docAction = useDocumentAction()
   const openDocument = useOpenDocument()
   const toast = useToast()
   const [menu, setMenu] = useState(false)
@@ -614,6 +616,11 @@ function BundleRow({
       { replace: true },
     )
   const [confirmDanger, setConfirmDanger] = useState<'dismiss' | 'delete' | null>(null)
+  const [docDanger, setDocDanger] = useState<{
+    id: number
+    title: string
+    action: 'dismiss' | 'delete'
+  } | null>(null)
   const processing = b.status === 'processing'
   const sourceIcon = { email: 'mail', scan: 'scanner', manual: 'upload_file' }[b.source_type]
   const confidence = b.sub_groups[0]?.case_confidence ?? null
@@ -846,6 +853,7 @@ function BundleRow({
               bundle={b}
               activeDocId={activeDoc}
               onSelect={setActiveDoc}
+              onDocAction={(d, kind) => setDocDanger({ id: d.id, title: d.title, action: kind })}
               footer={
                 <div className="mt-3.5 flex flex-col gap-1.5">
                   {confirmable && (
@@ -899,6 +907,47 @@ function BundleRow({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={docDanger !== null}
+        onClose={() => setDocDanger(null)}
+        onConfirm={() => {
+          const target = docDanger
+          setDocDanger(null)
+          if (target)
+            docAction.mutate(
+              { docId: target.id, action: target.action },
+              {
+                onSuccess: () => {
+                  toast(target.action === 'delete' ? 'Document deleted' : 'Document archived')
+                  // A stale ?doc= falls back to the lead, but should not linger in the URL.
+                  if (docParam === target.id)
+                    setParams(
+                      (p) => {
+                        const next = new URLSearchParams(p)
+                        next.delete('doc')
+                        return next
+                      },
+                      { replace: true },
+                    )
+                },
+                onError: (e) => toast(e.message, 'error'),
+              },
+            )
+        }}
+        title={
+          docDanger?.action === 'delete'
+            ? 'Delete this document permanently?'
+            : 'Archive this document?'
+        }
+        body={
+          docDanger?.action === 'delete'
+            ? `"${docDanger.title}" and its file are removed permanently.`
+            : `"${docDanger?.title}" leaves the bundle and is kept as dismissed; it is not filed into the case.`
+        }
+        label={docDanger?.action === 'delete' ? 'Delete' : 'Archive'}
+        danger={docDanger?.action === 'delete'}
+        pending={docAction.isPending}
+      />
       <ConfirmDialog
         open={confirmDanger !== null}
         onClose={() => setConfirmDanger(null)}

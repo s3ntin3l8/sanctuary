@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.database import Document
-from app.models.enums import PipelineStage
+from app.models.enums import DocumentStatus, PipelineStage
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,10 @@ def analyze_batch_task(self, batch_id: int):
         doc_ids = [
             r[0]
             for r in db.query(Document.id)
-            .filter(Document.ingest_batch_id == batch_id)
+            .filter(
+                Document.ingest_batch_id == batch_id,
+                Document.status != DocumentStatus.DISMISSED,
+            )
             .all()
         ]
         for doc_id in doc_ids:

@@ -417,6 +417,34 @@ test('?doc= selects the document shown in the pane, falling back to the lead', a
   expect(await screen.findByText('Pane: lead document')).toBeVisible()
 })
 
+test('a document of a bundle is archived after confirming, and the selection resets', async () => {
+  const fetch = stub({
+    'GET /api/v1/documents/2212/review': { body: { ...documentReview, id: 2212 } },
+    'POST /api/v1/triage/documents/2212/dismiss': { status: 204, body: null },
+  })
+  renderAt(
+    '/triage?bundle=batch-42&doc=2212',
+    <>
+      <TriagePage />
+      <Search />
+    </>,
+  )
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Archive Anlage B1.pdf' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByText('Archive this document?')).toBeVisible()
+  await user.click(within(dialog).getByRole('button', { name: 'Archive' }))
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'POST' && r.url.endsWith('/triage/documents/2212/dismiss'),
+      ),
+    ).toBe(true),
+  )
+  expect(await screen.findByRole('status')).toHaveTextContent('Document archived')
+  await waitFor(() => expect(screen.getByTestId('search')).not.toHaveTextContent('doc='))
+})
+
 test('an approved summary can be undone', async () => {
   const fetch = stub({
     'GET /api/v1/documents/2211/review': {

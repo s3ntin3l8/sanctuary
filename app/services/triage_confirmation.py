@@ -23,7 +23,7 @@ from app.models.database import (
     Document,
     IngestBatch,
 )
-from app.models.enums import IngestBatchStatus
+from app.models.enums import DocumentStatus, IngestBatchStatus
 from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.pipeline_status import stages_dict
@@ -201,7 +201,14 @@ def confirm_bundle(
     if not batch:
         return None
 
-    docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+    docs = (
+        db.query(Document)
+        .filter(
+            Document.ingest_batch_id == batch_id,
+            Document.status != DocumentStatus.DISMISSED,
+        )
+        .all()
+    )
     case = db.query(Case).filter(Case.id == case_id).first()
     proc = (
         db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()

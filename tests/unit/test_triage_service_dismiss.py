@@ -125,3 +125,73 @@ def test_get_triage_bundles_filters_dismissed(db_session):
     batch_ids = [b.batch_id for b in bundles]
     assert batch1.id in batch_ids
     assert batch2.id not in batch_ids
+
+
+@pytest.mark.unit
+def test_dismissed_doc_leaves_bundle_and_lead_is_repicked(db_session):
+    batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL, subject="Two docs")
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+    docs = [
+        Document(
+            title=f"Doc {i}",
+            ingest_batch_id=batch.id,
+            case_id="_TRIAGE",
+            needs_review=True,
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(docs)
+    db_session.commit()
+
+    def lead_ids():
+        (bundle,) = [
+            b for b in get_triage_bundles(db_session) if b.batch_id == batch.id
+        ]
+        return [d.id for d in bundle.documents], [
+            sb.lead_doc.id for sb in bundle.sub_bundles if sb.lead_doc
+        ]
+
+    before_docs, _ = lead_ids()
+    assert set(before_docs) == {d.id for d in docs}
+
+    first = before_docs[0]
+    other = next(i for i in before_docs if i != first)
+    assert dismiss_bundle(db_session, doc_id=first) is True
+
+    after_docs, leads = lead_ids()
+    assert after_docs == [other]
+    assert leads == [other]
+
+
+@pytest.mark.unit
+def test_confirm_bundle_skips_dismissed_docs(db_session):
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.triage_confirmation import confirm_bundle
+
+    case = Case(
+        id="ADV-002-T",
+        title="Target",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL, subject="Mixed")
+    db_session.add_all([case, batch])
+    db_session.commit()
+    db_session.refresh(batch)
+    keep = Document(title="Keep", ingest_batch_id=batch.id, case_id="_TRIAGE")
+    drop = Document(title="Drop", ingest_batch_id=batch.id, case_id="_TRIAGE")
+    db_session.add_all([keep, drop])
+    db_session.commit()
+    dismiss_bundle(db_session, doc_id=drop.id)
+
+    confirm_bundle(db_session, batch.id, case.id, finalize=True)
+
+    db_session.refresh(keep)
+    db_session.refresh(drop)
+    assert keep.case_id == case.id
+    assert drop.case_id == "_TRIAGE"
+    assert drop.status == DocumentStatus.DISMISSED
+    assert drop.confirmed_at is None

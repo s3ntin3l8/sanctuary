@@ -22,7 +22,7 @@ from app.models.database import (
     DocumentRelationship,
     IngestBatch,
 )
-from app.models.enums import DocumentRole, RelationshipType
+from app.models.enums import DocumentRole, DocumentStatus, RelationshipType
 from app.repositories.document_relationship import insert_edge_if_absent
 from app.services.ingestion.service import apply_review_reasons
 
@@ -47,7 +47,14 @@ def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGr
     if not batch:
         return []
 
-    docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+    docs = (
+        db.query(Document)
+        .filter(
+            Document.ingest_batch_id == batch_id,
+            Document.status != DocumentStatus.DISMISSED,
+        )
+        .all()
+    )
     docs_by_id = {d.id: d for d in docs}
     children_of: dict[int, list] = {}
     roots: list[Document] = []
@@ -122,7 +129,11 @@ def set_cover_letter(db: Session, doc_id: int, batch_id: int) -> Document:
         group = Document.sub_group_id == doc.sub_group_id
     else:
         group = (Document.ingest_batch_id == batch_id) & Document.sub_group_id.is_(None)
-    members = db.query(Document).filter(group).all()
+    members = (
+        db.query(Document)
+        .filter(group, Document.status != DocumentStatus.DISMISSED)
+        .all()
+    )
     member_ids = {m.id for m in members}
 
     for m in members:
