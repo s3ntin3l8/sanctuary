@@ -40,6 +40,17 @@ _ocr_lock = threading.Lock()
 _run_lock = threading.Lock()
 
 
+# Per-engine onnxruntime threads; more buys little on single letter pages.
+_MAX_OCR_THREADS = 4
+
+
+def _usable_cpus() -> int:
+    """CPUs this process may run on (cgroup/cpuset-aware where the OS says so)."""
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+    return os.cpu_count() or 1
+
+
 def get_ocr():
     """The shared rapidocr engine (also used by the scan slicer)."""
     global _ocr_instance
@@ -52,7 +63,7 @@ def get_ocr():
                 # to pin threads to cores, which a container's cpuset rejects
                 # ("pthread_setaffinity_np failed ... Invalid argument") on
                 # every engine start.
-                threads = max(1, min(4, os.cpu_count() or 1))
+                threads = max(1, min(_MAX_OCR_THREADS, _usable_cpus()))
                 _ocr_instance = RapidOCR(
                     params={
                         "EngineConfig.onnxruntime.intra_op_num_threads": threads,

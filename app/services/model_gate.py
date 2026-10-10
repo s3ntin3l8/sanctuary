@@ -78,6 +78,10 @@ _FAIRNESS_AFTER_SECONDS = 120
 # matters when a waiter dies without cleaning up.
 _WAIT_KEY_TTL_SECONDS = 30
 
+# _ACQUIRE_LUA's "blocked" result when only fairness (not a call in flight)
+# refuses the acquire; 0 is the ordinary conflict, 1 is acquired.
+_BLOCKED_BY_FAIRNESS = 2
+
 # Each per-call sentinel lives slightly longer than the longest plausible
 # HTTP call so a slow-but-live request never has its key prematurely
 # evicted. Mirrors the headroom logic in ai_inflight.py.
@@ -149,8 +153,9 @@ _VALID_FAMILIES = frozenset(COMPATIBILITY)
 #
 # Returns:
 #    1  → acquired (sentinel written, wait marker cleared)
-#    0  → blocked (an incompatible family is in flight, or an incompatible
-#         waiter older than us has waited past the fairness threshold)
+#    0  → blocked (an incompatible family is in flight)
+#    2  → blocked by fairness (nothing incompatible need be in flight: an
+#         incompatible waiter older than us has waited past the threshold)
 _ACQUIRE_LUA = """
 local sentinel_key = KEYS[1]
 local wait_key = KEYS[2]
@@ -171,6 +176,7 @@ if own then
 end
 
 local blocked = false
+local reason = 0
 
 local cursor = "0"
 repeat
@@ -185,6 +191,7 @@ repeat
                 if f and ts and not compat[f] and now - ts >= fairness
                     and (my_ts == nil or ts < my_ts) then
                     blocked = true
+                    reason = 2
                 end
             end
         end
@@ -213,7 +220,7 @@ if blocked then
     else
         redis.call("SET", wait_key, family .. "|" .. now, "EX", wait_ttl)
     end
-    return 0
+    return reason
 end
 
 redis.call("DEL", wait_key)
@@ -460,9 +467,14 @@ def model_gate(
                 started_wait_at = now
             if not wait_logged:
                 logger.info(
-                    "model_gate: %s waiting for %s (another family holds the gate)",
+                    "model_gate: %s waiting for %s (%s)",
                     label or "<unlabeled>",
                     family,
+                    (
+                        "an incompatible waiter has priority"
+                        if int(result) == _BLOCKED_BY_FAIRNESS
+                        else "another family holds the gate"
+                    ),
                 )
                 wait_logged = True
             if now >= deadline:

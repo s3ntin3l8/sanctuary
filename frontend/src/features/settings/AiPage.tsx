@@ -522,15 +522,15 @@ function ExtractionEngine({
           <span>
             <span className="font-semibold">{label}</span>
             <span className="block text-[11px] text-muted">{hint}</span>
-            {value === 'docling' && !tesseractAvailable && (
-              <span className="block text-[11px] text-danger">
-                The tesseract binary is not installed on this server; this engine (and the fallback
-                when Chandra fails) cannot read scans.
-              </span>
-            )}
           </span>
         </label>
       ))}
+      {!tesseractAvailable && (
+        <p className="text-[11px] text-danger">
+          The tesseract binary is not installed on this server: the Docling engine, and the fallback
+          when Chandra fails, cannot read scanned pages.
+        </p>
+      )}
     </SettingsCard>
   )
 }
