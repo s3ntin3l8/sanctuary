@@ -104,12 +104,20 @@ Response shape:
   "notes": "one sentence reason"
 }
 
-A new document starts when: letterhead changes, a new Aktenzeichen or docket number appears, page numbering resets, a new salutation/greeting begins, or an explicit enclosure marker ("Anlage", "Annex") appears.
+You get the start and end of the previous page, the start of the page in question, and the heuristic signals that fired on the boundary. The signals are hints only — decide from the text. Many boundaries have no signal at all.
+
+A new document starts when: letterhead or sender changes, a new Aktenzeichen or docket number appears, the document's own page numbering restarts ("Seite 1"), a new salutation/greeting begins, a new subject or date line opens, or an enclosure marker ("Anlage", "Annex") appears. Forms, medical reports, bank printouts and transmission receipts ("Übertragungsnachweis") that follow one another are each a document of their own.
+
+Court scans often carry one continuous folio number in a page corner across the whole packet. That numbering says nothing about where documents begin; judge by content. A page that carries on the previous page's sentence, argument or numbered list is NOT a new document.
+
+A repeated running header is NOT a new document: when the page opens with the same logo, bank or clinic name, report title or date as the previous page ("Arztbrief vom 21.07.2026 (erzeugt am …)", "Finanzübersicht – Druckansicht", a table continued from above), it is a further page of the same document. Multi-page reports, printouts and forms are one document; their second and later pages are not cuts.
 
 `kind` says what the new document is relative to the pages before it:
 - "letter": an independent letter with its own letterhead, addressee and salutation (e.g. a court Verfügung or a lawyer's cover letter).
-- "attachment": something that travels with the preceding letter — an Anlage/Annex, exhibit, a Schriftsatz forwarded by the court, a copy, a form or a certificate.
-Use "attachment" when unsure. Only meaningful when is_new_document is true."""
+- "attachment": something that travels with the preceding letter — an Anlage/Annex, exhibit, a Schriftsatz forwarded by the court, a copy, a form, a certificate, a medical report, a bank statement or printout, a transmission receipt.
+Use "attachment" when unsure. Only meaningful when is_new_document is true.
+
+Confidence: "high" only when the page itself shows the start (new sender or addressee block, new date or subject line, new Aktenzeichen, salutation, "Seite 1", an Anlage heading). Use "low" when the page could equally continue the previous document."""
 
 # ---------------------------------------------------------------------------
 # Batch analysis

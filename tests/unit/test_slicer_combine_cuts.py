@@ -5,13 +5,14 @@ failure modes must suppress the cut, not just one of them.
 """
 
 from app.services.ingestion.slicer import (
+    _Boundary,
     _combine_proposed_cuts,
     _conservative_ai_failure,
 )
 
 _CANDIDATES = [
-    (2, "prev tail 1", "curr head 1"),
-    (5, "prev tail 2", "curr head 2"),
+    _Boundary(2, "prev tail 1", "curr head 1"),
+    _Boundary(5, "prev tail 2", "curr head 2"),
 ]
 
 
@@ -30,28 +31,25 @@ def test_ai_disagrees_suppresses_cut():
 
 
 def test_out_of_range_cut_page_dropped():
-    cuts = _combine_proposed_cuts([(99, "a", "b")], {}, page_count=10)
+    cuts = _combine_proposed_cuts([_Boundary(99, "a", "b")], {}, page_count=10)
     assert cuts == []
 
 
-def test_missing_ai_entry_defaults_to_propose():
-    """A candidate with no ai_results entry at all defaults to proposing the
-    cut — callers are responsible for pre-filling a conservative entry on
-    whole-batch failure; this function's default itself stays `True` so a
-    caller that legitimately has no AI opinion isn't silently suppressed."""
-    cuts = _combine_proposed_cuts(_CANDIDATES[:1], {}, page_count=10)
-    assert cuts == [
-        {"page": 2, "confidence": "medium", "kind": "attachment", "notes": ""}
-    ]
+def test_missing_ai_entry_proposes_nothing():
+    """A boundary the AI never answered is not cut: an outage cannot over-cut."""
+    assert _combine_proposed_cuts(_CANDIDATES, {}, page_count=10) == []
+    assert _combine_proposed_cuts(_CANDIDATES[:1], {2: {}}, page_count=10) == []
+
+
+def test_unknown_confidence_is_low():
+    ai_results = {2: {"is_new_document": True, "confidence": "certain"}}
+    cuts = _combine_proposed_cuts(_CANDIDATES[:1], ai_results, page_count=10)
+    assert cuts[0]["confidence"] == "low"
 
 
 def test_whole_batch_ai_failure_conservative_fill_suppresses_all_cuts():
-    """Regression: a whole-batch AI failure must fail exactly like a
-    per-candidate failure (no cuts proposed), not fall through to the
-    missing-entry default (which proposes every candidate)."""
-    conservative_fill = {
-        cut_page: _conservative_ai_failure("boom") for cut_page, _, _ in _CANDIDATES
-    }
+    """A failed judgment per candidate proposes nothing."""
+    conservative_fill = {c.page: _conservative_ai_failure("boom") for c in _CANDIDATES}
     cuts = _combine_proposed_cuts(_CANDIDATES, conservative_fill, page_count=10)
     assert cuts == []
 
