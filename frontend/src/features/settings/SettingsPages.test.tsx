@@ -8,6 +8,7 @@ import { AdminUsersPage } from '../admin/AdminUsersPage'
 import { AccountPage } from './AccountPage'
 import { AiPage } from './AiPage'
 import { DataPage } from './DataPage'
+import { IdentityPage } from './IdentityPage'
 import { SettingsLayout } from './SettingsLayout'
 
 const account = {
@@ -261,4 +262,30 @@ test('ai: warns when the tesseract binary is missing, whichever engine is select
   })
   renderAt('/settings/ai', <AiPage />)
   expect(await screen.findByText(/tesseract binary is not installed/)).toBeVisible()
+})
+
+test('identity: own-side parties split on lines as well as commas', async () => {
+  const identity = {
+    own_self: 'Björn Hansen',
+    own_parties: ['Haidl Funk'],
+    user_context: '',
+  }
+  const fetch = stubApi({
+    'GET /api/v1/settings/identity': { body: identity },
+    'PUT /api/v1/settings/identity': { body: identity },
+  })
+  renderAt('/settings/identity', <IdentityPage />)
+  const user = userEvent.setup()
+  const parties = await screen.findByLabelText('Own-side parties')
+  await user.clear(parties)
+  await user.type(parties, 'Haidl Funk{Enter}Hr. Funk{Enter}Andreas Funk, Kanzlei X')
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(async () =>
+    expect((await postedJson(fetch, 'PUT', '/settings/identity'))?.own_parties).toEqual([
+      'Haidl Funk',
+      'Hr. Funk',
+      'Andreas Funk',
+      'Kanzlei X',
+    ]),
+  )
 })

@@ -22,7 +22,7 @@ export function IdentityPage() {
       {
         own_self: String(data.get('own_self')),
         own_parties: String(data.get('own_parties'))
-          .split(',')
+          .split(/[,\n]+/)
           .map((s) => s.trim())
           .filter(Boolean),
         user_context: String(data.get('user_context')),
@@ -46,13 +46,13 @@ export function IdentityPage() {
         <Field
           label="Own-side parties"
           htmlFor="own_parties"
-          hint="Comma-separated: your firm, co-counsel, clients you represent."
+          hint="One per line or comma-separated: your firm, co-counsel, clients you represent."
         >
           <textarea
             id="own_parties"
             name="own_parties"
-            rows={2}
-            defaultValue={identity.own_parties.join(', ')}
+            rows={4}
+            defaultValue={identity.own_parties.join('\n')}
             className={inputClass}
           />
         </Field>
