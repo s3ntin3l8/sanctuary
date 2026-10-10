@@ -61,6 +61,8 @@ def test_birth_dates_are_never_the_letter_date():
 def test_sender_letterhead_loses_markdown_heading_markers():
     result = extract_sender("## Landgericht Ingolstadt\n\nAz. 22 T 342/26")
     assert result["value"] == "Landgericht Ingolstadt"
+    result = extract_sender("> **Landgericht Ingolstadt** >\n\nAz. 22 T 342/26")
+    assert result["value"] == "Landgericht Ingolstadt"
 
 
 @pytest.mark.unit
@@ -72,6 +74,9 @@ def test_sender_letterhead_loses_markdown_heading_markers():
         (datetime(2026, 9, 23), "Ingolstadt, den 23. September 2026", True),
         (datetime(2026, 9, 23), "eingegangen 2026-09-23", True),
         (datetime(2025, 9, 23), "Datum 23.09.2026", False),
+        (datetime(2026, 9, 23), "23. September\n2026", True),
+        # a birth date in the parties block is not a letter date
+        (datetime(1986, 9, 12), "Hansen, geboren am 12.09.1986", False),
     ],
 )
 def test_date_in_text(day, content, expected):

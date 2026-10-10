@@ -153,17 +153,24 @@ _GERMAN_MONTHS = (
 
 def date_in_text(day: datetime, content: str) -> bool:
     """Whether ``day`` is written anywhere in ``content`` (numeric, ISO or
-    "23. September 2026"). Used to tell a date the model read from one it made up."""
-    text = re.sub(r"\s+", " ", (content or "").lower())
+    "23. September 2026"). Used to tell a date the model read from one it made up.
+
+    A party's date of birth does not count, as in ``extract_issued_date``.
+    """
     d, m, y = day.day, day.month, day.year
-    candidates = (
-        f"{d:02d}.{m:02d}.{y}",
-        f"{d}.{m}.{y}",
-        f"{d:02d}.{m:02d}.{y % 100:02d}",
-        f"{y}-{m:02d}-{d:02d}",
-    )
-    if any(c in text for c in candidates):
+    text = _BIRTHDATE_RE.sub(" ", content or "").lower()
+    if any(
+        c in text
+        for c in (
+            f"{d:02d}.{m:02d}.{y}",
+            f"{d}.{m}.{y}",
+            f"{d:02d}.{m:02d}.{y % 100:02d}",
+            f"{y}-{m:02d}-{d:02d}",
+        )
+    ):
         return True
+    # Only now pay for collapsing whitespace ("23. September\n2026").
+    text = re.sub(r"\s+", " ", text)
     return re.search(rf"\b{d}\.? ?{_GERMAN_MONTHS[m - 1]} {y}\b", text) is not None
 
 
@@ -294,7 +301,7 @@ def extract_sender(content: str) -> ExtractionResult:
         lh_match = _LETTERHEAD_RE.search(content[:1500] if content else "")
         if lh_match:
             # OCR markdown wraps letterheads in heading/bold markers.
-            value = re.sub(r"^[#*_>\s]+|[#*_\s]+$", "", lh_match.group(0))[:120]
+            value = re.sub(r"^[#*_>\s]+|[#*_>\s]+$", "", lh_match.group(0))[:120]
             confidence = "medium"
 
     if not value:
