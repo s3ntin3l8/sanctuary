@@ -6,7 +6,9 @@ import pytest
 from app.config import AI_EMBED_DIM
 from app.models.database import Document, DocumentChunk
 from app.services.embeddings import (
+    _CHUNK_EMBED_MAX_CHARS,
     _chunks_to_embed,
+    _split_text,
     generate_embedding,
     nearest_chunks,
     nearest_document_ids,
@@ -505,3 +507,86 @@ def test_reindex_task_persists_failure(db_session):
     job = get_reindex_job(db_session)
     assert job["status"] == "failed"
     assert "provider down" in job["error"]
+
+
+def test_split_text_keeps_every_character_and_respects_the_limit():
+    paragraph = "Der Antragsgegner trägt vor, dass die Frist gewahrt sei. " * 8
+    text = "\n\n".join([paragraph] * 6)  # ~3k per paragraph, ~18k total
+    pieces = _split_text(text, 3000)
+    assert all(len(p) <= 3000 for p in pieces)
+    assert "".join(pieces) == text
+    # cuts land on paragraph breaks here, not mid-sentence
+    assert all(p.endswith("\n\n") for p in pieces[:-1])
+
+
+def test_split_text_hard_cuts_unbroken_text():
+    pieces = _split_text("x" * 7000, 3000)
+    assert [len(p) for p in pieces] == [3000, 3000, 1000]
+
+
+def test_chunks_to_embed_splits_long_chunks_instead_of_truncating():
+    long_chunk = ("Satz eins. Satz zwei. " * 400).strip()  # ~8.8k chars
+    doc = MagicMock()
+    doc.meta = {"chunks": [{"text": long_chunk}]}
+    doc.content = ""
+    texts = _chunks_to_embed(doc)
+    assert len(texts) >= 3
+    assert all(len(t) <= _CHUNK_EMBED_MAX_CHARS for t in texts)
+    assert "".join(texts) == long_chunk  # nothing lost from retrieval
+
+
+def _status_error(code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "http://embed.test/v1/embeddings")
+    return httpx.HTTPStatusError(
+        f"{code}", request=request, response=httpx.Response(code, request=request)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_embed_resilient_retries_a_rejected_chunk_as_halves():
+    from app.services import embeddings as emb
+
+    calls: list[int] = []
+
+    async def fake_post(text, cfg, label):
+        calls.append(len(text))
+        if len(text) > 1500:
+            raise _status_error(400)
+        return [0.1] * 4
+
+    with (
+        patch.object(emb, "_post_embedding", side_effect=fake_post),
+        patch.object(emb, "_SPLIT_RETRY_DELAY_SECONDS", 0),
+    ):
+        out = await emb._embed_resilient("a" * 2900, object(), "embed:doc:1:chunk:0")
+
+    assert calls[0] == 2900  # full chunk tried first
+    assert len(out) == 2
+    assert "".join(t for t, _ in out) == "a" * 2900
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_embed_resilient_gives_up_when_halves_also_fail():
+    from app.services import embeddings as emb
+
+    with (
+        patch.object(emb, "_post_embedding", side_effect=_status_error(400)),
+        patch.object(emb, "_SPLIT_RETRY_DELAY_SECONDS", 0),
+    ):
+        with pytest.raises(httpx.HTTPStatusError):
+            await emb._embed_resilient("a" * 2900, object(), "embed:doc:1:chunk:0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_embed_resilient_does_not_split_on_auth_errors_or_tiny_chunks():
+    from app.services import embeddings as emb
+
+    with patch.object(emb, "_post_embedding", side_effect=_status_error(401)):
+        with pytest.raises(httpx.HTTPStatusError):
+            await emb._embed_resilient("a" * 2900, object(), "x")
+    with patch.object(emb, "_post_embedding", side_effect=_status_error(400)):
+        with pytest.raises(httpx.HTTPStatusError):
+            await emb._embed_resilient("a" * 300, object(), "x")

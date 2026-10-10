@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -15,11 +16,20 @@ from app.services.model_gate import model_gate
 
 logger = logging.getLogger(__name__)
 
-# nomic-embed-text:v1.5 has an 8192-token context window; ~3 chars/token for
-# German legal text. Each Docling/OCR chunk is already section-sized, so this
-# is a per-chunk safety cap, not sized for whole-document context (contrast
-# the old whole-document _EMBED_MAX_CHARS=22000 budget this replaces).
-_CHUNK_EMBED_MAX_CHARS = 4000
+# Longest text sent to the embedding model in one request. Chunks longer than
+# this are split (never truncated: the tail of a long section must stay
+# searchable). Kept well under the ~4000 chars at which Ollama 0.40's
+# qwen3-embedding runner was seen to crash ("EOF" / segfault), and far below
+# the models' context windows (nomic-embed-text:v1.5: 8192 tokens, ~3
+# chars/token for German legal text).
+_CHUNK_EMBED_MAX_CHARS = 3000
+
+# A provider that rejects a chunk (400) or fails on it (500) is retried once
+# with the chunk split in half, after a pause long enough for a crashed
+# runner to restart. Splitting stops below this size.
+_SPLIT_RETRY_STATUSES = frozenset({400, 500})
+_SPLIT_RETRY_DELAY_SECONDS = 3.0
+_SPLIT_RETRY_MIN_CHARS = 400
 
 # A document's matching passage may not be its only high-ranked chunk, and
 # several chunks from the same document can appear before a different
@@ -30,29 +40,119 @@ _CHUNK_RETRIEVAL_OVERSAMPLE = 5
 from app.services.ai_provider import embed_provider
 
 
+def _split_text(text: str, limit: int) -> list[str]:
+    """Split ``text`` into pieces of at most ``limit`` chars, concatenating back
+    to the original (modulo whitespace-only pieces, which are dropped).
+
+    Cuts at the last paragraph break, line break, sentence end or space in the
+    back half of the window, so a cut rarely lands mid-sentence; falls back to a
+    hard cut for unbroken text.
+    """
+    pieces: list[str] = []
+    rest = text
+    while len(rest) > limit:
+        window = rest[:limit]
+        floor = limit // 2
+        cut = limit
+        for sep in ("\n\n", "\n", ". ", " "):
+            idx = window.rfind(sep)
+            if idx >= floor:
+                cut = idx + len(sep)
+                break
+        pieces.append(rest[:cut])
+        rest = rest[cut:]
+    pieces.append(rest)
+    return [p for p in pieces if p.strip()]
+
+
 def _chunks_to_embed(doc) -> list[str]:
-    """Return the chunk texts to embed for `doc`, each capped to
-    _CHUNK_EMBED_MAX_CHARS.
+    """Return the chunk texts to embed for `doc`, each at most
+    _CHUNK_EMBED_MAX_CHARS (longer chunks are split, not truncated).
 
     Falls back to fixed-size windows over doc.content when the document has
     no chunk metadata (e.g. an extraction path that doesn't populate
     doc.meta['chunks']), so passage-level retrieval still works.
     """
     raw_chunks = doc.meta.get("chunks", []) if doc.meta else []
-    texts = []
+    texts: list[str] = []
     for chunk in raw_chunks:
         t = condense_image_descriptions(chunk.get("text") or "").strip()
         if t:
-            texts.append(t[:_CHUNK_EMBED_MAX_CHARS])
+            texts.extend(_split_text(t, _CHUNK_EMBED_MAX_CHARS))
 
     if not texts:
-        content = condense_image_descriptions(doc.content or "")
-        texts = [
-            content[i : i + _CHUNK_EMBED_MAX_CHARS]
-            for i in range(0, len(content), _CHUNK_EMBED_MAX_CHARS)
-        ]
+        texts = _split_text(doc.content or "", _CHUNK_EMBED_MAX_CHARS)
 
     return texts
+
+
+async def _post_embedding(text: str, cfg, label: str) -> list[float]:
+    """One embedding request. Raises httpx.HTTPStatusError on a provider error
+    and ValueError on a missing or wrongly-sized vector."""
+    params = await embed_provider.get_embedding_params(cfg.embed_model, text)
+    async with track_ai_call_async(label):
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                params["url"], json=params["json"], headers=params["headers"]
+            )
+            response.raise_for_status()
+            data = response.json()
+
+    embedding = None
+    if "embedding" in data:
+        embedding = data["embedding"]
+    elif "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0:
+        embedding = data["data"][0].get("embedding")
+
+    if not embedding:
+        raise ValueError(f"Embedding provider returned no vector for {label}")
+    if len(embedding) != cfg.embed_dim:
+        raise ValueError(
+            f"Embedding dim mismatch for {label}: provider "
+            f"returned {len(embedding)}, config embed_dim={cfg.embed_dim}. "
+            "Check AI_EMBED_DIM matches the embedding model."
+        )
+    return embedding
+
+
+def _split_in_half(text: str) -> list[str]:
+    return _split_text(text, max(1, (len(text) + 1) // 2))
+
+
+async def _embed_resilient(
+    text: str, cfg, label: str, *, may_split: bool = True
+) -> list[tuple[str, list[float]]]:
+    """Embed ``text``; if the provider rejects or chokes on it, retry once as
+    two halves. Returns (text, vector) pairs covering the whole input.
+
+    An embedding runner that dies on a long or odd chunk answers 400/500 for a
+    few seconds while it restarts; halving the input both shrinks the trigger
+    and keeps every part of the chunk searchable.
+    """
+    try:
+        return [(text, await _post_embedding(text, cfg, label))]
+    except httpx.HTTPStatusError as exc:
+        if (
+            not may_split
+            or exc.response.status_code not in _SPLIT_RETRY_STATUSES
+            or len(text) < 2 * _SPLIT_RETRY_MIN_CHARS
+        ):
+            raise
+        logger.warning(
+            "%s: provider answered %d for a %d-char chunk — retrying as halves",
+            label,
+            exc.response.status_code,
+            len(text),
+        )
+    await asyncio.sleep(_SPLIT_RETRY_DELAY_SECONDS)
+    out: list[tuple[str, list[float]]] = []
+    for part_no, part in enumerate(_split_in_half(text)):
+        out.extend(
+            await _embed_resilient(
+                part, cfg, f"{label}:part:{part_no}", may_split=False
+            )
+        )
+    return out
 
 
 async def _embed_document_chunks(doc: Document, db, cfg) -> int:
@@ -76,47 +176,18 @@ async def _embed_document_chunks(doc: Document, db, cfg) -> int:
     written = 0
     with model_gate("embed", label=f"embed:doc:{doc.id}"):
         for idx, chunk_text in enumerate(texts):
-            params = await embed_provider.get_embedding_params(
-                cfg.embed_model, chunk_text
-            )
-            async with track_ai_call_async(f"embed:doc:{doc.id}:chunk:{idx}"):
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
-                        params["url"], json=params["json"], headers=params["headers"]
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-
-            embedding = None
-            if "embedding" in data:
-                embedding = data["embedding"]
-            elif (
-                "data" in data
-                and isinstance(data["data"], list)
-                and len(data["data"]) > 0
+            for part_text, embedding in await _embed_resilient(
+                chunk_text, cfg, f"embed:doc:{doc.id}:chunk:{idx}"
             ):
-                embedding = data["data"][0].get("embedding")
-
-            if not embedding:
-                raise ValueError(
-                    f"Embedding provider returned no vector for doc {doc.id} chunk {idx}"
+                db.add(
+                    DocumentChunk(
+                        document_id=doc.id,
+                        chunk_index=written,
+                        text=part_text,
+                        embedding=embedding,
+                    )
                 )
-            if len(embedding) != cfg.embed_dim:
-                raise ValueError(
-                    f"Embedding dim mismatch for doc {doc.id} chunk {idx}: provider "
-                    f"returned {len(embedding)}, config embed_dim={cfg.embed_dim}. "
-                    "Check AI_EMBED_DIM matches the embedding model."
-                )
-
-            db.add(
-                DocumentChunk(
-                    document_id=doc.id,
-                    chunk_index=idx,
-                    text=chunk_text,
-                    embedding=embedding,
-                )
-            )
-            written += 1
+                written += 1
 
     db.commit()
     return written
