@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import {
@@ -21,11 +21,15 @@ import { Icon } from '../../ui/Icon'
 import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
+import { CreateCaseModal } from '../cases/CreateCaseModal'
 import { GmailImportStatus } from './GmailImportStatus'
 import { MessageRow } from './MessageRow'
 import { NewMailBanner } from './NewMailBanner'
 
 type Group = Schemas['GmailGroup']
+
+/** GmailImportRequest.gmail_ids accepts at most this many ids. */
+const MAX_SELECTED = 500
 
 function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -42,23 +46,60 @@ function GroupMessages({
   group,
   selected,
   onToggle,
+  onSetMany,
 }: {
   group: Group
   selected: Set<string>
   onToggle: (gmailId: string) => void
+  /** Select or clear several rows at once; the page enforces the import cap. */
+  onSetMany: (gmailIds: string[], on: boolean) => void
 }) {
   const query = useGmailMessages(group.key, true)
+  const lastClicked = useRef<string | null>(null)
   if (!query.data) return <QueryState error={query.error} pending={query.isPending} />
   const items = query.data.pages.flatMap((page) => page.items)
+  // Rows already ingested can't be picked again.
+  const pickable = items.filter((m) => !m.ingested).map((m) => m.gmail_id)
+  const pickedCount = pickable.filter((id) => selected.has(id)).length
+  const allPicked = pickable.length > 0 && pickedCount === pickable.length
+
+  function onRowToggle(gmailId: string, range: boolean) {
+    const anchor = lastClicked.current
+    lastClicked.current = gmailId
+    const from = anchor ? pickable.indexOf(anchor) : -1
+    const to = pickable.indexOf(gmailId)
+    if (range && from >= 0 && to >= 0) {
+      // The clicked row's new state applies to the whole swept range.
+      const ids = pickable.slice(Math.min(from, to), Math.max(from, to) + 1)
+      onSetMany(ids, !selected.has(gmailId))
+    } else {
+      onToggle(gmailId)
+    }
+  }
+
   return (
     <div className="border-t border-line2 bg-panel2/40">
+      {pickable.length > 0 && (
+        <label className="flex items-center gap-2 px-4 py-1.5 text-muted">
+          <input
+            type="checkbox"
+            checked={allPicked}
+            ref={(el) => {
+              if (el) el.indeterminate = pickedCount > 0 && !allPicked
+            }}
+            onChange={() => onSetMany(pickable, !allPicked)}
+          />
+          Select all {pickable.length}
+          {query.hasNextPage && ' loaded'}
+        </label>
+      )}
       <ul>
         {items.map((m) => (
           <MessageRow
             key={m.gmail_id}
             message={m}
             selected={selected.has(m.gmail_id)}
-            onToggle={onToggle}
+            onToggle={onRowToggle}
           />
         ))}
       </ul>
@@ -94,6 +135,7 @@ export function ImportPage() {
   // Raw text, so clearing the field to retype doesn't fight a clamp on every keystroke.
   const [oldestInput, setOldestInput] = useState('25')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [creatingFor, setCreatingFor] = useState<Group | null>(null)
 
   useEffect(() => {
     document.title = 'Import history | The Sanctuary'
@@ -125,6 +167,23 @@ export function ImportPage() {
       if (!next.delete(gmailId)) next.add(gmailId)
       return next
     })
+  }
+
+  function setMany(gmailIds: string[], on: boolean) {
+    const next = new Set(selected)
+    if (!on) {
+      for (const id of gmailIds) next.delete(id)
+    } else {
+      // Rows arrive oldest first, so a capped selection keeps the oldest.
+      for (const id of gmailIds) {
+        if (next.size >= MAX_SELECTED && !next.has(id)) {
+          toast(`Selection capped at ${MAX_SELECTED} messages — import these first`)
+          break
+        }
+        next.add(id)
+      }
+    }
+    setSelected(next)
   }
 
   function runImport(body: Schemas['GmailImportRequest']) {
@@ -315,12 +374,26 @@ export function ImportPage() {
                       <tr>
                         <td colSpan={5} className="p-0">
                           {!g.matched_case_id && g.key !== 'unreferenced' && (
-                            <p className="px-4 py-2 text-muted">
-                              No case for {referenceLabel(g)} yet — create it first and its mail is
-                              filed into it automatically on import.
-                            </p>
+                            <div className="flex items-center gap-3 px-4 py-2 text-muted">
+                              <p>
+                                No case for {referenceLabel(g)} yet — create it first and its mail
+                                is filed into it automatically on import.
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setCreatingFor(g)}
+                              >
+                                Create case
+                              </Button>
+                            </div>
                           )}
-                          <GroupMessages group={g} selected={selected} onToggle={toggleMessage} />
+                          <GroupMessages
+                            group={g}
+                            selected={selected}
+                            onToggle={toggleMessage}
+                            onSetMany={setMany}
+                          />
                         </td>
                       </tr>
                     )}
@@ -337,6 +410,23 @@ export function ImportPage() {
           Nothing indexed yet. Refresh the index to read the headers of your lawyer&apos;s mail —
           nothing is imported until you choose.
         </p>
+      )}
+
+      {creatingFor && (
+        <CreateCaseModal
+          open
+          onClose={() => setCreatingFor(null)}
+          defaults={
+            creatingFor.kind === 'internal_id'
+              ? { caseId: creatingFor.key }
+              : { azCourt: creatingFor.key }
+          }
+          onCreated={(id) => {
+            setCreatingFor(null)
+            groupsQuery.refetch()
+            toast(`Created case ${id}`)
+          }}
+        />
       )}
 
       <ConfirmDialog

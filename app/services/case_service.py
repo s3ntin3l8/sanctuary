@@ -1161,6 +1161,7 @@ class CaseService:
         court_name: str,
         jurisdiction: Jurisdiction,
         owner_id: int,
+        az_court: str | None = None,
     ) -> Case:
         """Create a case plus its first active proceeding (court level inferred).
 
@@ -1184,6 +1185,7 @@ class CaseService:
             Proceeding(
                 case_id=case_id,
                 court_name=court_name,
+                az_court=az_court,
                 court_level=infer_court_level(court_name) or ProceedingCourtLevel.OTHER,
                 status=ProceedingStatus.ACTIVE,
             )

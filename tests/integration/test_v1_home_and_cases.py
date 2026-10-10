@@ -235,6 +235,29 @@ def test_create_case_creates_active_proceeding(db_session):
     assert dup.json()["code"] == "case_id_taken"
 
 
+def test_create_case_saves_az_court_on_first_proceeding(db_session):
+    resp = client.post(
+        "/api/v1/cases",
+        json={
+            "case_id": "AZ-1",
+            "title": "x",
+            "court_name": "AG Hamburg",
+            "az_court": " 003 F 426/25 ",
+        },
+    )
+    assert resp.status_code == 201
+    (proc,) = db_session.query(Proceeding).filter_by(case_id="AZ-1").all()
+    assert proc.az_court == "003 F 426/25"
+
+    blank = client.post(
+        "/api/v1/cases",
+        json={"case_id": "AZ-2", "title": "x", "court_name": "AG", "az_court": "  "},
+    )
+    assert blank.status_code == 201
+    (proc,) = db_session.query(Proceeding).filter_by(case_id="AZ-2").all()
+    assert proc.az_court is None
+
+
 def test_create_case_rejects_blank_fields(db_session):
     resp = client.post(
         "/api/v1/cases", json={"case_id": "", "title": "x", "court_name": "AG"}

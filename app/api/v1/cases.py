@@ -125,6 +125,7 @@ def create_case(
             court_name=body.court_name.strip(),
             jurisdiction=body.jurisdiction,
             owner_id=user.id,
+            az_court=body.az_court,
         )
     except CaseIdTaken as exc:
         raise ApiError(409, "case_id_taken", str(exc)) from exc

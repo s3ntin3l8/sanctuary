@@ -3134,6 +3134,8 @@ export interface components {
         };
         /** CaseCreate */
         CaseCreate: {
+            /** Az Court */
+            az_court?: string | null;
             /** Case Id */
             case_id: string;
             /** Court Name */
