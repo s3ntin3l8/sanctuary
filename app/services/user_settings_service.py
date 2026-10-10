@@ -541,10 +541,15 @@ def set_party_identity(identity: dict, db) -> None:
     data = dict(settings.settings_json or {})
     data["party_identity"] = {
         "own_self": (identity.get("own_self") or "").strip(),
+        # One party per entry: a multi-line value (one name per line pasted into
+        # a single field) is several parties, and a party blob would never match
+        # a name in a document or a cost ruling.
         "own_parties": [
-            p.strip()
+            name.strip()
             for p in (identity.get("own_parties") or [])
-            if p and str(p).strip()
+            if p
+            for name in str(p).splitlines()
+            if name.strip()
         ],
     }
     settings.settings_json = data

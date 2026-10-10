@@ -529,6 +529,12 @@ claim_type must be exactly one of: factual, legal, procedural.
 role must be exactly one of: supports, contests, refutes, cites_as_proof.
 Only use claim_ids from the provided existing claims list — never invent IDs.
 
+# LANGUAGE
+
+Write every `claim_text` in English, whatever language the document is in — claims from German, Chinese and English documents are compared with one another, and the same proposition must read the same in each.
+Keep proper names, court names, statute and case citations (e.g. "§ 242 BGB", "2 K 92/25") and defined German legal terms (e.g. "Teilungsversteigerung", "Verfahrenskostenhilfe") in their original form.
+`excerpt` is the opposite: copy it verbatim from the document in its original language. Never translate an excerpt.
+
 # PARTY PERSPECTIVE
 
 When the document refers to a party by role label (e.g. "the petitioner", "the respondent", "the plaintiff", "the defendant", "the creditor", "the debtor" — in any language) AND the document context (caption, letterhead, addressee) plus the Known Party Identity block in the user prompt make clear which party holds that role, resolve the role label to the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
