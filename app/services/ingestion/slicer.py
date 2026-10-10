@@ -310,6 +310,9 @@ def _cut_confidence(signals: tuple[str, ...]) -> str:
     found = set(signals)
     if found & _START_SIGNALS:
         return "high"
+    # A repeated header only counts against the cut when the date did not change
+    # too: two consecutive court Verfügungen share one letterhead but carry
+    # different dates, and those stay "medium".
     if "repeated_header" in found and "date_line_change" not in found:
         return "low"
     return "medium"
@@ -398,6 +401,8 @@ def _outline_prompt(parts: list[_Part], pages: list[dict]) -> str | None:
 
     None when there are too many parts for even the minimum per part to fit.
     """
+    # At the floor (_OUTLINE_MIN_PART_CHARS each) the budget is exactly used up;
+    # one part more and the prompt would outgrow the context, so skip.
     if len(parts) > _OUTLINE_BUDGET_CHARS // _OUTLINE_MIN_PART_CHARS:
         return None
     per_part = min(
@@ -651,6 +656,9 @@ def prepare(batch_id: int) -> None:
         # Per-boundary judgments cannot see the cover letter before them, so
         # court-forwarded letters and service sheets come back as "letter".
         # One call over the whole outline decides which parts are enclosures.
+        # Low-confidence proposals start uncut, so they are not parts: when
+        # every cut is a continuation page there is a single part, no outline
+        # call, and the kinds stay as judged.
         parts = _outline_parts(proposed_cuts, page_count)
         outline_prompt = _outline_prompt(parts, page_data) if len(parts) > 1 else None
         if outline_prompt is not None:
