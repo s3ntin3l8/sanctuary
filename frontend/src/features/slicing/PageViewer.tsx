@@ -9,6 +9,9 @@ type Props = {
   pages: Schemas['SlicingPage'][]
   /** Cuts keyed by the page they follow. */
   cuts: Map<number, Kind>
+  /** Pages that end up in no document. */
+  discarded: Set<number>
+  onToggleDiscard: (page: number) => void
   onPage: (page: number) => void
   onClose: () => void
   onToggleCut: (after: number) => void
@@ -21,6 +24,8 @@ export function PageViewer({
   page,
   pages,
   cuts,
+  discarded,
+  onToggleDiscard,
   onPage,
   onClose,
   onToggleCut,
@@ -31,6 +36,7 @@ export function PageViewer({
   const after = page - 1
   const kind = cuts.get(after)
   const part = [...cuts.keys()].filter((c) => c < page).length + 1
+  const isDiscarded = discarded.has(page)
 
   return (
     <div
@@ -62,7 +68,7 @@ export function PageViewer({
           <Icon name="chevron_right" size={20} />
         </button>
         <span className="font-mono text-[10px] text-muted">
-          ←/→ flip · C cut before this page · L / A letter / attachment · Esc close
+          ←/→ flip · C cut before this page · L / A letter / attachment · D discard page · Esc close
         </span>
         <button
           type="button"
@@ -75,11 +81,18 @@ export function PageViewer({
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 items-center justify-center overflow-auto p-4">
-          <img
-            src={`/api/v1/slicing/${batchId}/page/${page}`}
-            alt={`Page ${page}`}
-            className="max-h-full max-w-full rounded-md border border-line2 bg-white object-contain"
-          />
+          <div className="relative flex max-h-full max-w-full">
+            <img
+              src={`/api/v1/slicing/${batchId}/page/${page}`}
+              alt={`Page ${page}`}
+              className={`max-h-full max-w-full rounded-md border border-line2 bg-white object-contain ${isDiscarded ? 'opacity-30' : ''}`}
+            />
+            {isDiscarded && (
+              <span className="absolute inset-0 flex items-center justify-center font-mono text-[28px] font-bold tracking-widest text-danger uppercase">
+                Discarded
+              </span>
+            )}
+          </div>
         </div>
         <aside className="w-[340px] shrink-0 space-y-3 overflow-y-auto border-l border-line bg-panel p-4 text-[11px]">
           {page > 1 ? (
@@ -112,6 +125,15 @@ export function PageViewer({
           ) : (
             <p className="text-muted">The first page always starts the first part.</p>
           )}
+          <button
+            type="button"
+            aria-pressed={isDiscarded}
+            onClick={() => onToggleDiscard(page)}
+            className={`flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-[11px] ${isDiscarded ? 'border-danger/50 bg-danger/10 text-danger' : 'border-line3 text-muted hover:text-ink'}`}
+          >
+            <Icon name={isDiscarded ? 'undo' : 'delete'} size={14} />{' '}
+            {isDiscarded ? 'Discarded — keep this page' : 'Discard this page'}
+          </button>
           <section>
             <h2 className="mb-1 font-mono text-[10px] tracking-wider text-muted uppercase">
               Page starts

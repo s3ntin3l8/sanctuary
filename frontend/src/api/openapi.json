@@ -8293,6 +8293,13 @@
             },
             "title": "Cuts",
             "type": "array"
+          },
+          "discard": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Discard",
+            "type": "array"
           }
         },
         "title": "SlicingConfirm",
@@ -8316,6 +8323,11 @@
       },
       "SlicingPage": {
         "properties": {
+          "blank": {
+            "default": false,
+            "title": "Blank",
+            "type": "boolean"
+          },
           "has_thumbnail": {
             "title": "Has Thumbnail",
             "type": "boolean"

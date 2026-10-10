@@ -22,6 +22,8 @@ export function SlicingPage() {
   const retry = useSlicingRetry(batchId)
   const toast = useToast()
   const [cuts, setCuts] = useState<Map<number, Kind> | null>(null)
+  // null = the pages the server marked blank; edited once the user toggles a page.
+  const [discarded, setDiscarded] = useState<Set<number> | null>(null)
   const [cursor, setCursor] = useState(1)
   const [viewing, setViewing] = useState<number | null>(null)
   const view = query.data
@@ -32,6 +34,8 @@ export function SlicingPage() {
   // A proposal's page is where the new part starts; a cut is stored as the page it follows.
   const activeCuts: Map<number, Kind> =
     cuts ?? new Map(view?.proposed_cuts.map((c) => [c.page - 1, c.kind]) ?? [])
+  const activeDiscarded: Set<number> =
+    discarded ?? new Set(view?.pages.filter((p) => p.blank).map((p) => p.page) ?? [])
 
   useEffect(() => {
     if (!view || view.status !== 'ready') return
@@ -43,6 +47,7 @@ export function SlicingPage() {
         if (e.key === 'ArrowLeft') setViewing(Math.max(viewing - 1, 1))
         else if (e.key === 'ArrowRight') setViewing(Math.min(viewing + 1, view.page_count))
         else if (e.key === 'Escape') setViewing(null)
+        else if (k === 'd') toggleDiscard(viewing)
         else if (viewing > 1 && k === 'c') toggle(viewing - 1)
         else if (viewing > 1 && k === 'l') setKind(viewing - 1, 'letter')
         else if (viewing > 1 && k === 'a') setKind(viewing - 1, 'attachment')
@@ -57,6 +62,7 @@ export function SlicingPage() {
       else if (e.key.toLowerCase() === 'c') toggle(cursor)
       else if (e.key.toLowerCase() === 'l') setKind(cursor, 'letter')
       else if (e.key.toLowerCase() === 'a') setKind(cursor, 'attachment')
+      else if (e.key.toLowerCase() === 'd') toggleDiscard(cursor + 1)
       else if (e.key === 'Enter' && !confirm.isPending) submit()
       else if (e.key === 'Escape') leaveTo('/triage')
     }
@@ -66,7 +72,10 @@ export function SlicingPage() {
 
   function submit() {
     confirm.mutate(
-      [...activeCuts].sort(([a], [b]) => a - b).map(([page, kind]) => ({ page, kind })),
+      {
+        cuts: [...activeCuts].sort(([a], [b]) => a - b).map(([page, kind]) => ({ page, kind })),
+        discard: [...activeDiscarded].sort((a, b) => a - b),
+      },
       {
         onSuccess: (r) => {
           toast(`${r.document_ids.length} document(s) queued`)
@@ -82,6 +91,15 @@ export function SlicingPage() {
       const next = new Map(prev ?? activeCuts)
       if (next.has(after)) next.delete(after)
       else next.set(after, 'attachment')
+      return next
+    })
+  }
+
+  function toggleDiscard(page: number) {
+    setDiscarded((prev) => {
+      const next = new Set(prev ?? activeDiscarded)
+      if (next.has(page)) next.delete(page)
+      else next.add(page)
       return next
     })
   }
@@ -102,8 +120,25 @@ export function SlicingPage() {
       </div>
     )
   const sorted = [...activeCuts.keys()].sort((a, b) => a - b)
-  const partCount = sorted.length + 1
-  const letterCount = 1 + [...activeCuts.values()].filter((k) => k === 'letter').length
+  // Parts that are entirely discarded vanish; their letter opener carries to the next kept part
+  // (mirrors the server).
+  let partCount = 0
+  let letterCount = 0
+  let carryLetter = false
+  ;[0, ...sorted].forEach((after, i) => {
+    const end = sorted[i] ?? view.page_count
+    const opensLetter = i === 0 || activeCuts.get(after) === 'letter'
+    const kept = view.pages.some(
+      (p) => p.page > after && p.page <= end && !activeDiscarded.has(p.page),
+    )
+    if (!kept) {
+      carryLetter = carryLetter || opensLetter
+      return
+    }
+    partCount += 1
+    if (partCount === 1 || opensLetter || carryLetter) letterCount += 1
+    carryLetter = false
+  })
 
   return (
     <div className="flex min-h-full flex-col">
@@ -118,6 +153,7 @@ export function SlicingPage() {
           <p className="font-mono text-[11px] text-muted">
             {view.subject ?? 'scan'} · {view.page_count} pages · {partCount} document
             {partCount === 1 ? '' : 's'} · {letterCount} letter{letterCount === 1 ? '' : 's'}
+            {activeDiscarded.size > 0 && ` · ${activeDiscarded.size} discarded`}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -138,7 +174,10 @@ export function SlicingPage() {
               <Button
                 variant="secondary"
                 title="Discard your edits and go back to the saved proposal"
-                onClick={() => setCuts(null)}
+                onClick={() => {
+                  setCuts(null)
+                  setDiscarded(null)
+                }}
               >
                 Reset to proposal
               </Button>
@@ -152,7 +191,11 @@ export function SlicingPage() {
               >
                 <Icon name="replay" size={16} /> Re-run proposal
               </Button>
-              <Button disabled={confirm.isPending} onClick={submit}>
+              <Button
+                disabled={confirm.isPending || partCount === 0}
+                title={partCount === 0 ? 'Every page is discarded' : undefined}
+                onClick={submit}
+              >
                 Confirm <kbd className="ml-1 font-mono text-[9px] opacity-70">↵</kbd>
               </Button>
             </>
@@ -220,7 +263,9 @@ export function SlicingPage() {
               split after that page, then mark the new part as a <b>new letter</b> or an{' '}
               <b>attachment</b> of the letter above (<kbd className="font-mono">L</kbd> /{' '}
               <kbd className="font-mono">A</kbd>). ↑↓ moves the highlight,{' '}
-              <kbd className="font-mono">Space</kbd> opens the page, ↵ confirms, Esc leaves.
+              <kbd className="font-mono">Space</kbd> opens the page,{' '}
+              <kbd className="font-mono">D</kbd> discards the page below the highlight (it ends up
+              in no document), ↵ confirms, Esc leaves.
             </p>
             <ol className="space-y-1">
               {view.pages.map((p, i) => {
@@ -228,9 +273,12 @@ export function SlicingPage() {
                 const cutKind = activeCuts.get(after)
                 const isCut = cutKind !== undefined
                 const proposed = view.proposed_cuts.find((c) => c.page - 1 === after)
+                const isDiscarded = activeDiscarded.has(p.page)
                 return (
                   <li key={p.page}>
-                    <div className="flex gap-3 rounded-xl border border-line bg-card p-2">
+                    <div
+                      className={`flex gap-3 rounded-xl border border-line bg-card p-2 ${isDiscarded ? 'opacity-50' : ''}`}
+                    >
                       <button
                         type="button"
                         aria-label={`Open page ${p.page}`}
@@ -238,7 +286,7 @@ export function SlicingPage() {
                           setCursor(Math.min(p.page, view.page_count - 1))
                           setViewing(p.page)
                         }}
-                        className="h-28 w-20 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-line2 bg-panel2 hover:border-accent"
+                        className="relative h-28 w-20 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-line2 bg-panel2 hover:border-accent"
                       >
                         {p.has_thumbnail ? (
                           <img
@@ -252,9 +300,17 @@ export function SlicingPage() {
                             p. {p.page}
                           </span>
                         )}
+                        {isDiscarded && (
+                          <span className="absolute inset-0 flex items-center justify-center bg-bg/60 font-mono text-[10px] text-danger line-through">
+                            discarded
+                          </span>
+                        )}
                       </button>
                       <div className="min-w-0 flex-1 text-[11px]">
-                        <div className="font-mono text-[10px] text-muted">Page {p.page}</div>
+                        <div className="flex items-center gap-2 font-mono text-[10px] text-muted">
+                          Page {p.page}
+                          {p.blank && <Badge tone="warning">blank?</Badge>}
+                        </div>
                         <p className="line-clamp-2 text-ink2" title={p.text_head}>
                           <span className="font-mono text-[9px] text-muted uppercase">starts </span>
                           {p.text_head}
@@ -263,6 +319,16 @@ export function SlicingPage() {
                           <span className="font-mono text-[9px] uppercase">ends </span>…
                           {p.text_tail}
                         </p>
+                        <button
+                          type="button"
+                          aria-pressed={isDiscarded}
+                          aria-label={`${isDiscarded ? 'Keep' : 'Discard'} page ${p.page}`}
+                          onClick={() => toggleDiscard(p.page)}
+                          className={`mt-1 flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] ${isDiscarded ? 'border-danger/50 text-danger' : 'border-line3 text-muted hover:text-ink'}`}
+                        >
+                          <Icon name={isDiscarded ? 'undo' : 'delete'} size={13} />{' '}
+                          {isDiscarded ? 'Keep page' : 'Discard page'}
+                        </button>
                       </div>
                     </div>
                     {i < view.pages.length - 1 && (
@@ -331,6 +397,8 @@ export function SlicingPage() {
           page={viewing}
           pages={view.pages}
           cuts={activeCuts}
+          discarded={activeDiscarded}
+          onToggleDiscard={toggleDiscard}
           onPage={setViewing}
           onClose={() => setViewing(null)}
           onToggleCut={toggle}

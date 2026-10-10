@@ -23,12 +23,19 @@ class SlicingFailed(RuntimeError):
     """A slice could not be written; everything written so far was removed."""
 
 
-def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> list[int]:
+def confirm_slices(
+    db: Session,
+    batch: IngestBatch,
+    cuts: list[SliceCut],
+    discard: list[int] | None = None,
+) -> list[int]:
     """Split the batch's source PDF after each page in ``cuts``.
 
     Creates one ``_TRIAGE`` document per slice and groups them into bundles: a
     ``letter`` cut opens a new bundle, an ``attachment`` cut adds the next part
-    to the current one (the first part always opens the first bundle). A bundle
+    to the current one (the first part always opens the first bundle). Pages in
+    ``discard`` are left out of every part; a part left with no pages is skipped
+    and a letter cut that opened it carries to the next kept part. A bundle
     of several parts gets its first part as cover letter and the rest as
     enclosures. Each bundle becomes a ``BatchSubGroup``, so the structure is the
     user's and batch analysis leaves roles alone. Flips the batch to PROCESSING
@@ -48,6 +55,9 @@ def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> lis
         if 1 <= cut.page < page_count:
             kinds.setdefault(cut.page, cut.kind)
     cut_positions = sorted(kinds)
+    discard_set = {p for p in discard or [] if 1 <= p <= page_count}
+    if len(discard_set) >= page_count:
+        raise ValueError("Every page is discarded; nothing to slice")
     if not batch.raw_source_path:
         raise ValueError("Source PDF no longer available")
     pdf_path = resolve_storage_path(batch.raw_source_path)
@@ -70,9 +80,24 @@ def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> lis
     try:
         src_pdf = pdfium.PdfDocument(str(pdf_path))
 
+        # kept: (0-based page indices, opens a new letter). A skipped slice's
+        # letter opener carries to the next kept slice.
+        kept: list[tuple[list[int], bool]] = []
+        carry_letter = False
         for slice_idx, (start_page, end_page) in enumerate(slices):
+            opens_letter = slice_idx == 0 or kinds[boundaries[slice_idx]] == "letter"
+            indices = [
+                p - 1 for p in range(start_page, end_page + 1) if p not in discard_set
+            ]
+            if not indices:
+                carry_letter = carry_letter or opens_letter
+                continue
+            kept.append((indices, opens_letter or carry_letter))
+            carry_letter = False
+
+        bundles: list[list[Document]] = []
+        for slice_idx, (page_indices, opens_letter) in enumerate(kept):
             slice_pdf = pdfium.PdfDocument.new()
-            page_indices = list(range(start_page - 1, end_page))
             slice_pdf.import_pages(src_pdf, page_indices)
 
             slice_filename = pdf_path.parent / f"slice_{slice_idx + 1}.pdf"
@@ -83,8 +108,6 @@ def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> lis
             slice_bytes = slice_filename.read_bytes()
             content_hash = hashlib.sha256(slice_bytes).hexdigest()
 
-            slice_page_count = end_page - start_page + 1
-
             doc = Document(
                 title=f"{base_name} – Part {slice_idx + 1}",
                 owner_id=batch.owner_id,  # sliced docs inherit the batch's owner
@@ -93,8 +116,11 @@ def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> lis
                 content_hash=content_hash,
                 case_id="_TRIAGE",
                 ingest_batch_id=batch.id,
-                meta={"slice_range": [start_page, end_page]},
-                page_count=slice_page_count,
+                meta={
+                    "slice_range": [page_indices[0] + 1, page_indices[-1] + 1],
+                    "pages": [p + 1 for p in page_indices],
+                },
+                page_count=len(page_indices),
             )
             from app.services.pipeline_status import initialize as _pipeline_init
 
@@ -102,15 +128,12 @@ def confirm_slices(db: Session, batch: IngestBatch, cuts: list[SliceCut]) -> lis
             db.flush()
             _pipeline_init(doc, batched=True, db=db)
             docs_to_process.append(doc)
+            if slice_idx == 0 or opens_letter:
+                bundles.append([])
+            bundles[-1].append(doc)
 
         src_pdf.close()
 
-        # slice i > 0 starts after the cut at boundaries[i]
-        bundles: list[list[Document]] = []
-        for slice_idx, doc in enumerate(docs_to_process):
-            if slice_idx == 0 or kinds[boundaries[slice_idx]] == "letter":
-                bundles.append([])
-            bundles[-1].append(doc)
         _wire_bundles(db, batch.id, bundles)
 
         batch.status = IngestBatchStatus.PROCESSING

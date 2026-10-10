@@ -456,11 +456,9 @@ export function useSlicing(batchId: number) {
 }
 
 export function useSlicingConfirm(batchId: number) {
-  return useMutation<S['SlicingConfirmed'], ApiError, S['SliceCut'][]>({
-    mutationFn: (cuts) =>
-      unwrap(
-        api.POST('/api/v1/slicing/{batch_id}/confirm', { ...batchPath(batchId), body: { cuts } }),
-      ),
+  return useMutation<S['SlicingConfirmed'], ApiError, S['SlicingConfirm']>({
+    mutationFn: (body) =>
+      unwrap(api.POST('/api/v1/slicing/{batch_id}/confirm', { ...batchPath(batchId), body })),
   })
 }
 
