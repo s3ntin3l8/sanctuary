@@ -32,8 +32,14 @@ export function SlicingPage() {
     document.title = 'Slicing review | The Sanctuary'
   }, [])
   // A proposal's page is where the new part starts; a cut is stored as the page it follows.
+  // A low-confidence proposal stays visible at its gap but starts uncut: the AI is
+  // asked about every boundary, so the unsure ones are mostly continuation pages.
   const activeCuts: Map<number, Kind> =
-    cuts ?? new Map(view?.proposed_cuts.map((c) => [c.page - 1, c.kind]) ?? [])
+    cuts ??
+    new Map(
+      view?.proposed_cuts.filter((c) => c.confidence !== 'low').map((c) => [c.page - 1, c.kind]) ??
+        [],
+    )
   const activeDiscarded: Set<number> =
     discarded ?? new Set(view?.pages.filter((p) => p.blank).map((p) => p.page) ?? [])
 

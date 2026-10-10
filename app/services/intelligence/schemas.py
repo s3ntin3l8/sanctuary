@@ -59,6 +59,17 @@ _CostDeltaKind = Literal[
 _CostDirection = Literal["incoming", "outgoing", "ruling", "none"]
 
 
+class CutJudgment(BaseModel):
+    """SLICING_CUT_SYSTEM output."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    is_new_document: bool
+    confidence: _ConfidenceLevel
+    kind: Literal["letter", "attachment"]
+    notes: str = Field(description="One sentence reason.")
+
+
 class _Entity(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

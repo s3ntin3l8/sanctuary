@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import time
+from typing import Any, NamedTuple
 
 import httpx
 import pypdfium2 as pdfium
@@ -20,6 +21,7 @@ from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.ai_run_index import record_run
 from app.services.intelligence.prompts import SLICING_CUT_SYSTEM
+from app.services.intelligence.schemas import CutJudgment
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +32,19 @@ _TEXT_HEAD_CHARS = 500
 _BLANK_PAGE_CHARS = 20
 _TEXT_TAIL_CHARS = 500
 
-_W_PAGE_RESET = float(os.getenv("SLICE_W_PAGE_RESET", "0.30"))
-_W_LETTERHEAD = float(os.getenv("SLICE_W_LETTERHEAD", "0.20"))
-_W_SALUTATION = float(os.getenv("SLICE_W_SALUTATION", "0.20"))
-_W_BLANK = float(os.getenv("SLICE_W_BLANK", "0.15"))
-_W_AZ_CHANGE = float(os.getenv("SLICE_W_AZ_CHANGE", "0.25"))
-_W_ENCLOSURE = float(os.getenv("SLICE_W_ENCLOSURE", "0.30"))
-_W_DATE_LINE = float(os.getenv("SLICE_W_DATE_LINE", "0.25"))
-
-_HEURISTIC_THRESHOLD = float(os.getenv("SLICE_HEURISTIC_THRESHOLD", "0.35"))
+# Every page boundary goes to the AI. Above this page count only boundaries with
+# at least one heuristic signal do, so a huge scan cannot stall prep.
+_AI_MAX_PAGES = int(os.getenv("SLICE_AI_MAX_PAGES", "200"))
+# Judgment calls in flight at once; a local model serializes more than this anyway.
+_AI_CONCURRENCY = int(os.getenv("SLICE_AI_CONCURRENCY", "4"))
+_AI_TIMEOUT_SECONDS = 60.0
+_AI_MAX_TOKENS = 300
+_PREV_HEAD_CHARS = 300
+# The marker must sit at the top of the page: "Anlagen: 3" in a letter's subject
+# block is not an enclosure.
+_MARKER_ZONE_CHARS = 120
+# A page opening with one of these is an attachment, whatever the AI says.
+_ATTACHMENT_SIGNALS = frozenset({"enclosure_marker", "transmittal_page"})
 
 
 # ---------------------------------------------------------------------------
@@ -79,9 +85,10 @@ def _ocr_page_text(image: Image.Image) -> str:
 # Heuristic signals
 # ---------------------------------------------------------------------------
 
-_RE_PAGE_NUM = re.compile(r"\b(?:Seite\s+)?(\d+)\s*/\s*(\d+)\b")
+_RE_PAGE_NUM = re.compile(r"\b(?:Seite\s+)?(\d+)\s*(?:/|von)\s*(\d+)\b", re.IGNORECASE)
 _RE_AZ = re.compile(r"\b\d+\s*[A-Za-z]+\s*\d+/\d{2,4}\b")
 _RE_ENCLOSURE = re.compile(r"\b(?:Anlage|Annex|Anhang)\s*[A-Z0-9]*\b", re.IGNORECASE)
+_RE_TRANSMITTAL = re.compile(r"\b[ÜU]bertragungsnachweis\b", re.IGNORECASE)
 _RE_SALUTATION = re.compile(r"\b(?:Sehr geehrte|Dear|Hiermit|Betreff)\b", re.IGNORECASE)
 _RE_SIGNATURE = re.compile(
     r"\b(?:Mit freundlichen Grüßen|Hochachtungsvoll|Yours sincerely)\b", re.IGNORECASE
@@ -95,119 +102,57 @@ _RE_DATE_LINE = re.compile(
 )
 
 
-def _signal_page_reset(prev_tail: str, curr_head: str) -> float:
+def _signal_page_reset(prev_tail: str, curr_head: str) -> bool:
     m_prev = _RE_PAGE_NUM.search(prev_tail)
     m_curr = _RE_PAGE_NUM.search(curr_head)
-    if m_prev and m_curr and int(m_curr.group(1)) <= 1:
-        return 1.0
-    return 0.0
+    return bool(m_prev and m_curr and int(m_curr.group(1)) <= 1)
 
 
-def _signal_letterhead_change(prev_img: Image.Image, curr_img: Image.Image) -> float:
-    """Grayscale average diff on top 20% of thumbnail."""
-    import numpy as np
-
-    h = max(1, prev_img.height // 5)
-    prev_arr = np.array(
-        prev_img.convert("L").crop((0, 0, prev_img.width, h)), dtype=float
-    )
-    curr_arr = np.array(
-        curr_img.convert("L").crop((0, 0, curr_img.width, h)), dtype=float
-    )
-    if prev_arr.size == 0 or curr_arr.size == 0:
-        return 0.0
-    diff = abs(float(prev_arr.mean()) - float(curr_arr.mean())) / 255.0
-    return min(diff * 2.5, 1.0)
-
-
-def _signal_salutation_signature(prev_tail: str, curr_head: str) -> float:
-    has_sig = bool(_RE_SIGNATURE.search(prev_tail))
-    has_sal = bool(_RE_SALUTATION.search(curr_head))
-    if has_sig and has_sal:
-        return 1.0
-    if has_sig or has_sal:
-        return 0.4
-    return 0.0
-
-
-def _signal_blank_page(curr_head: str) -> float:
-    return 1.0 if len(curr_head.strip()) < 20 else 0.0
-
-
-def _signal_az_change(prev_head: str, curr_head: str) -> float:
+def _signal_az_change(prev_head: str, curr_head: str) -> bool:
     az_prev = set(_RE_AZ.findall(prev_head))
     az_curr = set(_RE_AZ.findall(curr_head))
-    if az_prev and az_curr and not az_prev.intersection(az_curr):
-        return 1.0
-    return 0.0
+    return bool(az_prev and az_curr and not az_prev.intersection(az_curr))
 
 
-def _signal_enclosure_marker(curr_head: str) -> float:
-    return 1.0 if _RE_ENCLOSURE.search(curr_head) else 0.0
-
-
-def _signal_date_line(prev_tail: str, curr_head: str) -> float:
+def _signal_date_line(prev_tail: str, curr_head: str) -> bool:
     """Check if date line changed between pages (indicates new document)."""
     dates_prev = _RE_DATE_LINE.findall(prev_tail)
     dates_curr = _RE_DATE_LINE.findall(curr_head)
-    if dates_prev and dates_curr:
-        prev_dates = {
-            d.group() if hasattr(d, "group") else str(d) for d in dates_prev if d
-        }
-        curr_dates = {
-            d.group() if hasattr(d, "group") else str(d) for d in dates_curr if d
-        }
-        if prev_dates and curr_dates and prev_dates != curr_dates:
-            return 1.0
-    return 0.0
+    if not (dates_prev and dates_curr):
+        return False
+    prev_dates = {d.group() if hasattr(d, "group") else str(d) for d in dates_prev if d}
+    curr_dates = {d.group() if hasattr(d, "group") else str(d) for d in dates_curr if d}
+    return bool(prev_dates and curr_dates and prev_dates != curr_dates)
 
 
-def _boundary_heuristic_score(
-    prev_tail: str,
-    curr_head: str,
-    prev_img: Image.Image,
-    curr_img: Image.Image,
-    prev_head: str,
-) -> tuple[float, list[str]]:
+def _boundary_signals(prev_head: str, prev_tail: str, curr_head: str) -> list[str]:
+    """Names of the heuristics that fire on the boundary before ``curr_head``.
+
+    Hints for the AI judgment, not a gate: a boundary with no signal is still
+    judged (enclosure-to-enclosure cuts in court scans carry none).
+    """
     signals = []
-    score = 0.0
-
-    s = _signal_page_reset(prev_tail, curr_head)
-    if s > 0:
-        score += s * _W_PAGE_RESET
+    if _signal_page_reset(prev_tail, curr_head):
         signals.append("page_reset")
-
-    s = _signal_letterhead_change(prev_img, curr_img)
-    if s > 0:
-        score += s * _W_LETTERHEAD
-        signals.append(f"letterhead_diff={s:.2f}")
-
-    s = _signal_salutation_signature(prev_tail, curr_head)
-    if s > 0:
-        score += s * _W_SALUTATION
+    has_sig = bool(_RE_SIGNATURE.search(prev_tail))
+    has_sal = bool(_RE_SALUTATION.search(curr_head))
+    if has_sig and has_sal:
         signals.append("salutation_signature")
-
-    s = _signal_blank_page(curr_head)
-    if s > 0:
-        score += s * _W_BLANK
+    elif has_sig:
+        signals.append("signature_on_previous_page")
+    elif has_sal:
+        signals.append("salutation_on_page")
+    if len(curr_head.strip()) < _BLANK_PAGE_CHARS:
         signals.append("blank_page")
-
-    s = _signal_az_change(prev_head, curr_head)
-    if s > 0:
-        score += s * _W_AZ_CHANGE
+    if _signal_az_change(prev_head, curr_head):
         signals.append("az_change")
-
-    s = _signal_enclosure_marker(curr_head)
-    if s > 0:
-        score += s * _W_ENCLOSURE
+    if _RE_ENCLOSURE.search(curr_head[:_MARKER_ZONE_CHARS]):
         signals.append("enclosure_marker")
-
-    s = _signal_date_line(prev_tail, curr_head)
-    if s > 0:
-        score += s * _W_DATE_LINE
+    if _RE_TRANSMITTAL.search(curr_head):
+        signals.append("transmittal_page")
+    if _signal_date_line(prev_tail, curr_head):
         signals.append("date_line_change")
-
-    return score, signals
+    return signals
 
 
 # ---------------------------------------------------------------------------
@@ -215,24 +160,47 @@ def _boundary_heuristic_score(
 # ---------------------------------------------------------------------------
 
 
-async def _ai_cut_judgment(
-    prev_tail: str, curr_head: str, model: str, client: httpx.AsyncClient
-) -> dict:
+class _Boundary(NamedTuple):
+    """The page boundary before ``page``, with the text the AI judges it on."""
+
+    page: int
+    prev_tail: str
+    curr_head: str
+    prev_head: str = ""
+    signals: tuple[str, ...] = ()
+
+
+def _judgment_prompt(b: _Boundary) -> str:
+    signals = ", ".join(b.signals) or "none"
+    return (
+        f"Page {b.page - 1} starts:\n{b.prev_head[:_PREV_HEAD_CHARS]}\n\n"
+        f"Page {b.page - 1} ends:\n{b.prev_tail}\n\n"
+        f"Page {b.page} (the page in question) starts:\n{b.curr_head}\n\n"
+        f"Heuristic signals: {signals}"
+    )
+
+
+async def _ai_cut_judgment(b: _Boundary, model: str, client: httpx.AsyncClient) -> dict:
     # Does not use call_json_ai: this runs as async tasks via asyncio.gather for
-    # parallel boundary detection, uses non-streaming with a tight 30s timeout,
+    # parallel boundary detection, uses non-streaming with a tight timeout,
     # and silently falls back to "no cut" on failure — different semantics from
     # the sequential intelligence pipeline helpers.
-    prompt = (
-        f"Previous page last {_TEXT_TAIL_CHARS} chars:\n{prev_tail}\n\n"
-        f"Current page first {_TEXT_HEAD_CHARS} chars:\n{curr_head}"
-    )
     try:
         params = await chat_provider.get_generate_params(
             model=model,
-            prompt=prompt,
+            prompt=_judgment_prompt(b),
             system_prompt=SLICING_CUT_SYSTEM,
             stream=False,
-            options={"num_ctx": 2048, "temperature": 0.1},
+            options={
+                "num_ctx": 4096,
+                "temperature": 0.1,
+                "max_tokens": _AI_MAX_TOKENS,
+                # The schema grammar keeps a reasoning model from thinking its
+                # way past the timeout; it also drops the case-narrative preamble.
+                "_response_schema": CutJudgment.model_json_schema(),
+                "_schema_name": CutJudgment.__name__,
+                "_include_user_context": False,
+            },
         )
         ptype = await chat_provider.get_type()
         resp = await client.post(
@@ -262,28 +230,33 @@ def _conservative_ai_failure(notes: str) -> dict:
     return {"is_new_document": False, "confidence": "low", "notes": notes}
 
 
-async def _ai_cut_judgments(
-    candidates: list[tuple[int, str, str]], model: str
-) -> dict[int, dict]:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        tasks = [_ai_cut_judgment(pt, ch, model, client) for _, pt, ch in candidates]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+async def _ai_cut_judgments(candidates: list[_Boundary], model: str) -> dict[int, dict]:
+    gate = asyncio.Semaphore(_AI_CONCURRENCY)
+
+    async def judge(b: _Boundary, client: httpx.AsyncClient) -> dict:
+        async with gate:
+            return await _ai_cut_judgment(b, model, client)
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(_AI_TIMEOUT_SECONDS)) as client:
+        results = await asyncio.gather(
+            *(judge(b, client) for b in candidates), return_exceptions=True
+        )
     out = {}
-    for (page_num, _, _), result in zip(candidates, results, strict=False):
+    for b, result in zip(candidates, results, strict=False):
         if isinstance(result, BaseException):
-            out[page_num] = _conservative_ai_failure(str(result))
+            out[b.page] = _conservative_ai_failure(str(result))
         else:
-            out[page_num] = result
+            out[b.page] = result
     return out
 
 
 def _combine_proposed_cuts(
-    heuristic_candidates: list[tuple[int, str, str]],
+    candidates: list[_Boundary],
     ai_results: dict[int, dict],
     page_count: int,
     marker_pages: frozenset[int] = frozenset(),
 ) -> list[dict]:
-    """Merge heuristic candidates with AI judgments into proposed_cuts.
+    """Merge judged boundaries with AI judgments into proposed_cuts.
 
     A missing `ai_results` entry defaults to `is_new_document=True` (propose
     the cut) — callers must pre-fill `ai_results` with an explicit
@@ -295,10 +268,11 @@ def _combine_proposed_cuts(
     Each cut also carries a ``kind``: ``letter`` (an independent letter) or
     ``attachment`` (travels with the preceding letter). Anything but an explicit
     ``letter`` from the AI is an attachment, as is every page in ``marker_pages``
-    (an Anlage/Annex marker was seen there).
+    (an Anlage/Annex marker or a transmission-receipt sheet was seen there).
     """
     proposed_cuts = []
-    for cut_page, _prev_tail, _curr_head in heuristic_candidates:
+    for cand in candidates:
+        cut_page = cand[0]
         # Validate cut page is in range (hallucination guard for any AI-injected values)
         if not (2 <= cut_page <= page_count):
             continue
@@ -368,7 +342,7 @@ def _write_progress(db: Session, batch: IngestBatch, done: int, total: int, phas
 
 
 def prepare(batch_id: int) -> None:
-    """Render thumbnails, OCR, run heuristics + AI, write proposed_cuts to batch.meta."""
+    """Render thumbnails, OCR, judge every page boundary with the AI, write proposed_cuts to batch.meta."""
     from app.config import SessionLocal
 
     db: Session = SessionLocal()
@@ -397,8 +371,7 @@ def prepare(batch_id: int) -> None:
         pdf_doc = pdfium.PdfDocument(str(pdf_path))
         page_count = len(pdf_doc)
 
-        page_data = []
-        images: list[Image.Image] = []
+        page_data: list[dict[str, Any]] = []
 
         try:
             for i in range(page_count):
@@ -421,7 +394,6 @@ def prepare(batch_id: int) -> None:
 
                 thumb_path = thumbs_dir / f"page_{i + 1}.png"
                 img.save(str(thumb_path))
-                images.append(img)
 
                 page_data.append(
                     {
@@ -436,38 +408,49 @@ def prepare(batch_id: int) -> None:
         finally:
             pdf_doc.close()
 
-        # Heuristic pass: find candidate cuts (between pages i and i+1; cut position = i+1)
-        heuristic_candidates = []
-        marker_pages: set[int] = set()
-        for i in range(page_count - 1):
-            score, signals = _boundary_heuristic_score(
+        # Every boundary between page i and i+1 (cut position = i+1) gets judged;
+        # the heuristic signals only travel with it as hints.
+        candidates = [
+            _Boundary(
+                page=i + 2,
                 prev_tail=page_data[i]["text_tail"],
                 curr_head=page_data[i + 1]["text_head"],
-                prev_img=images[i],
-                curr_img=images[i + 1],
                 prev_head=page_data[i]["text_head"],
+                signals=tuple(
+                    _boundary_signals(
+                        page_data[i]["text_head"],
+                        page_data[i]["text_tail"],
+                        page_data[i + 1]["text_head"],
+                    )
+                ),
             )
-            if score >= _HEURISTIC_THRESHOLD:
-                if "enclosure_marker" in signals:
-                    marker_pages.add(i + 2)
-                heuristic_candidates.append(
-                    (i + 2, page_data[i]["text_tail"], page_data[i + 1]["text_head"])
-                )
+            for i in range(page_count - 1)
+        ]
+        if page_count > _AI_MAX_PAGES:
+            logger.info(
+                "prepare_slicing: batch %d has %d pages (> %d) — judging only "
+                "boundaries with a heuristic signal",
+                batch_id,
+                page_count,
+                _AI_MAX_PAGES,
+            )
+            candidates = [c for c in candidates if c.signals]
+        marker_pages = {
+            c.page for c in candidates if _ATTACHMENT_SIGNALS.intersection(c.signals)
+        }
 
         # AI pass
-        if heuristic_candidates:
+        if candidates:
             _write_progress(db, batch, page_count, page_count, "ai")
         chat_provider.reload_from_db(db)
         chat_cfg = get_chat_config(db)
         summary_model = chat_cfg.summary_model
         ai_results: dict[int, dict] = {}
-        if heuristic_candidates:
+        if candidates:
             slice_started = time.perf_counter()
             slice_error: str | None = None
             try:
-                ai_results = run_async(
-                    _ai_cut_judgments(heuristic_candidates, summary_model)
-                )
+                ai_results = run_async(_ai_cut_judgments(candidates, summary_model))
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
                 slice_error = str(exc)
@@ -478,8 +461,7 @@ def prepare(batch_id: int) -> None:
                 # ai_results.get() lookup below and fall through to its
                 # `True` default (aggressive), the opposite of intended.
                 ai_results = {
-                    cut_page: _conservative_ai_failure(slice_error)
-                    for cut_page, _, _ in heuristic_candidates
+                    b.page: _conservative_ai_failure(slice_error) for b in candidates
                 }
             # One aggregate entry per slicing run — the candidates fan out to
             # many small parallel judgment calls (see _ai_cut_judgments), and
@@ -500,7 +482,7 @@ def prepare(batch_id: int) -> None:
 
         # Combine heuristic + AI into proposed_cuts
         proposed_cuts = _combine_proposed_cuts(
-            heuristic_candidates, ai_results, page_count, frozenset(marker_pages)
+            candidates, ai_results, page_count, frozenset(marker_pages)
         )
 
         meta = dict(batch.meta or {})

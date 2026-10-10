@@ -68,6 +68,33 @@ test('starts from the AI proposal, lets the user toggle cuts, and confirms', asy
   expect(navigation.leaveTo).toHaveBeenCalledWith('/triage')
 })
 
+test('a low-confidence proposal is shown but starts uncut', async () => {
+  stubApi({
+    'GET /api/v1/slicing/77': {
+      body: {
+        ...view,
+        proposed_cuts: [
+          { page: 2, confidence: 'low', kind: 'attachment', notes: 'maybe a continuation' },
+          { page: 3, confidence: 'medium', kind: 'letter', notes: 'new letterhead' },
+        ],
+      },
+    },
+  })
+  renderAt(
+    '/ingest/slice/77',
+    <Routes>
+      <Route path="/ingest/slice/:batchId" element={<SlicingPage />} />
+    </Routes>,
+  )
+  expect(await screen.findByText(/3 pages · 2 documents · 2 letters/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Split after page 1' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  expect(screen.getByText('AI low')).toBeVisible()
+  expect(screen.getByText('maybe a continuation')).toBeVisible()
+})
+
 function renderPage() {
   stubApi({ 'GET /api/v1/slicing/77': { body: view } })
   renderAt(
