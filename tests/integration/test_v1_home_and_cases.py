@@ -247,7 +247,8 @@ def test_create_case_saves_az_court_on_first_proceeding(db_session):
     )
     assert resp.status_code == 201
     (proc,) = db_session.query(Proceeding).filter_by(case_id="AZ-1").all()
-    assert proc.az_court == "003 F 426/25"
+    # stored the way extraction writes it, so exact matching finds it
+    assert proc.az_court == "3 F 426/25"
 
     blank = client.post(
         "/api/v1/cases",

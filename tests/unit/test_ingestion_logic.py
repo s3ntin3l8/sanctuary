@@ -7,6 +7,7 @@ from app.services.ingestion import (
     extract_sender,
     normalize_az_court,
 )
+from app.services.ingestion.extractors import canonical_az_court
 from app.services.ingestion.service import _h1_looks_clean
 
 # ---------------------------------------------------------------------------
@@ -179,6 +180,15 @@ def test_extract_internal_id_none_when_absent():
     content = "Aktenzeichen: 26 UF 288/26 e\nDatum: 12.03.2025"
     result = extract_internal_id(content)
     assert result["value"] is None
+
+
+@pytest.mark.unit
+def test_canonical_az_court_normalizes_typed_values_and_keeps_odd_ones():
+    assert canonical_az_court(" 003 F 2022/23 ") == "3 F 2022/23"
+    # outside the standard shape: kept as typed, not rejected
+    assert canonical_az_court(" 1 DR II 1030/26 ") == "1 DR II 1030/26"
+    assert canonical_az_court("   ") is None
+    assert canonical_az_court(None) is None
 
 
 @pytest.mark.unit

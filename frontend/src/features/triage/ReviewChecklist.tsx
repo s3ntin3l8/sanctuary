@@ -22,6 +22,7 @@ const MISSING_FIELDS: Record<string, string> = {
   missing_sender: 'sender',
   missing_received_date: 'received date',
   missing_issued_date: 'issued date',
+  issued_date_suspect: 'issued date',
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`

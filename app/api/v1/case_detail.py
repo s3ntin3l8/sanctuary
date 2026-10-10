@@ -82,6 +82,7 @@ from app.services.case_service import (
     set_case_opposing_parties,
 )
 from app.services.case_timeline_service import CaseTimelineService
+from app.services.ingestion.extractors import canonical_az_court
 from app.services.triage_bundles import (
     actionable_review_reasons,
     summary_awaits_approval,
@@ -602,6 +603,8 @@ def update_proceeding(
     proc: Proceeding = Depends(require_proceeding_access(edit=True)),
 ):
     data = body.model_dump(exclude_none=True)
+    if "az_court" in data:
+        data["az_court"] = canonical_az_court(data["az_court"])
     if data:
         ProceedingRepository(db).update(proc.id, **data)
         db.commit()
