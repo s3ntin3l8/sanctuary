@@ -20,10 +20,10 @@ _AI = {
 }
 
 
-def _doc(db_session, confidence):
+def _doc(db_session, confidence, content="x"):
     doc = Document(
         title="x",
-        content="x",
+        content=content,
         sender="Kanzlei X",
         originator_type=OriginatorType.OWN,
         issued_date=datetime(2026, 4, 30, tzinfo=UTC),
@@ -59,7 +59,12 @@ def test_user_set_fields_survive_a_metadata_rerun(db_session):
 
 @pytest.mark.unit
 def test_ai_still_overwrites_fields_the_user_did_not_set(db_session):
-    doc = _doc(db_session, {"sender": "user_set", "originator_type": "low"})
+    # The text shows the AI's date, so it can replace the one read earlier.
+    doc = _doc(
+        db_session,
+        {"sender": "user_set", "originator_type": "low"},
+        content="Beschluss vom 02.01.2026",
+    )
 
     enrich_document_with_ai(doc, dict(_AI), db_session)
 

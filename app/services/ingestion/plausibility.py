@@ -10,11 +10,18 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, IngestBatch
+from app.models.enums import IngestBatchSourceType
 
 # Slack between a letter's issue date and the day *it* arrived (time zones, a
 # letter dated the evening before it was delivered). Never compared with the
 # wall clock: an old document is not "in the future" because of today's date.
 _FUTURE_SLACK = timedelta(days=1)
+
+# A document delivered in a bundle is rarely dated years before the cover
+# letter / arrival day. A date this much older is nearly always a misread or a
+# date of birth picked off the parties block — flagged for a look, not
+# rejected (an old bank statement enclosed as evidence is legitimate).
+_STALE_AFTER = timedelta(days=5 * 365)
 
 
 def _one_digit_apart(a: int, b: int) -> bool:
@@ -26,9 +33,11 @@ def _one_digit_apart(a: int, b: int) -> bool:
 def issued_date_suspect(doc: Document, db: Session) -> bool:
     """The extracted issue date cannot be right given where the document sits.
 
-    Two tells, both about the date and not about the document's content:
+    Three tells, all about the date and not about the document's content:
     - it lies after the day the document arrived (a letter cannot be issued
-      after it was received), or
+      after it was received),
+    - it is more than five years older than the cover letter or the arrival
+      day (a birth date or a century-digit misread), or
     - it falls on the same day and month as the bundle's cover letter or the
       arrival day but a year that differs in a single digit — the signature
       of a misread digit on a form signed the day it was sent.
@@ -54,6 +63,14 @@ def issued_date_suspect(doc: Document, db: Session) -> bool:
     references = [
         r.date() for r in (lead.issued_date if lead else None, arrived) if r is not None
     ]
+    # A scan's "arrival" is the day it was scanned, years after an old letter was
+    # written; only the cover letter says anything about how old the bundle is.
+    scanned = batch is not None and batch.source_type == IngestBatchSourceType.SCAN
+    stale_references = [
+        r.date() for r in (lead.issued_date if lead else None,) if r is not None
+    ] + ([] if scanned or arrived is None else [arrived.date()])
+    if any(day < ref - _STALE_AFTER for ref in stale_references):
+        return True
     return any(
         (ref.month, ref.day) == (day.month, day.day)
         and _one_digit_apart(ref.year, day.year)

@@ -11,9 +11,11 @@ from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingSta
 from app.services.ai_config import get_chat_config
 from app.services.content_text import condense_image_descriptions
 from app.services.ingestion.extractors import (
+    date_in_text,
     extract_internal_id,
     infer_court_level,
     normalize_az_court,
+    normalize_internal_id,
 )
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
@@ -434,7 +436,11 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             except ValueError:
                 pass
         if parsed_date is not None:
-            doc.issued_date = parsed_date.replace(tzinfo=UTC)
+            # A date already read from the text outranks one the model cannot
+            # show in it (it can slip a year, or pick a birth date).
+            unverifiable = not date_in_text(parsed_date, doc.content or "")
+            if doc.issued_date is None or not unverifiable:
+                doc.issued_date = parsed_date.replace(tzinfo=UTC)
 
     # 2. Update confidence scores — only accept schema keys; drop unknown ones
     #    (e.g. case_id) so prompt drift can't inject bogus confidence values.
@@ -482,9 +488,10 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
     #    az_court (Proceeding.az_court) is secondary context used as fallback.
     az_court = normalize_az_court(summary_data.get("az_court"))
-    from app.core.validators import normalize_case_id
-
-    internal_id = normalize_case_id(summary_data.get("internal_id"))
+    # The model sometimes returns the firm's whole reference ("8441/25 L02 RS
+    # D4/2247-25") or an unrelated number; only the leading file number
+    # identifies the matter, and anything else must not create a draft case.
+    internal_id = normalize_internal_id(summary_data.get("internal_id"))
     ai_case_title = summary_data.get("case_title")
     # Discard case_title when it's just the internal_id echoed back (prompt drift)
     if ai_case_title and internal_id and ai_case_title.strip() == internal_id:
