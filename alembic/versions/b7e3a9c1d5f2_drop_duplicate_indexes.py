@@ -80,6 +80,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Exact inverse, for a rollback. It rebuilds plain (non-CONCURRENT) indexes,
+    # which block writes to the table while they build: schedule a downgrade.
+    # Until the next upgrade the schema carries indexes the models no longer
+    # declare; re-running upgrade is the supported way back.
     for table in _PK_TABLES:
         op.execute(f'CREATE INDEX IF NOT EXISTS "ix_{table}_id" ON "{table}" ("id")')
     for name, table, column in _TWINS:

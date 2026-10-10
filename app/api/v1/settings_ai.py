@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -134,8 +134,10 @@ def _reindex_job(db: Session) -> ReindexJob | None:
     if job["status"] != "running" and job.get("ended_at"):
         try:
             ended = datetime.fromisoformat(job["ended_at"])
-        except ValueError:
+        except (TypeError, ValueError):
             return None
+        if ended.tzinfo is None:  # a legacy/hand-written value: read it as UTC
+            ended = ended.replace(tzinfo=UTC)
         if now_utc() - ended > _REINDEX_RESULT_VISIBLE:
             return None
     return ReindexJob(**job)
