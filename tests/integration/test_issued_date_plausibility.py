@@ -152,3 +152,22 @@ def test_a_modestly_older_enclosure_is_not_suspect(db_session, bundle):
     _, enclosure = bundle
     enclosure.issued_date = _day(2023, 9, 4)  # e.g. a bank letter enclosed as proof
     assert not issued_date_suspect(enclosure, db_session)
+
+
+@pytest.mark.integration
+def test_a_scans_arrival_day_says_nothing_about_how_old_a_letter_may_be(
+    db_session, bundle
+):
+    """An old letter scanned today is not suspect for being old; the same date in
+    an email bundle (arrival = when it was sent) is."""
+    lead, enclosure = bundle
+    lead.issued_date = None  # no cover-letter date to compare with
+    enclosure.issued_date = _day(2015, 3, 4)
+    db_session.commit()
+
+    assert not issued_date_suspect(enclosure, db_session)  # SCAN bundle
+
+    batch = db_session.get(IngestBatch, enclosure.ingest_batch_id)
+    batch.source_type = IngestBatchSourceType.EMAIL
+    db_session.commit()
+    assert issued_date_suspect(enclosure, db_session)

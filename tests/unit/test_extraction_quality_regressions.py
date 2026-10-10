@@ -25,6 +25,7 @@ from app.services.ingestion.extractors import (
         ("8441-25 L02 RS D4-1811-26", "8441-25"),
         ("9418/26 L02 RS D4/2584-26", "9418-26"),
         ("ADV-024-A", "ADV-024-A"),  # an already-canonical Case.id survives
+        ("8441-25-A", "8441-25-A"),  # ...including a numeric one with a suffix
         ("888520392705", None),  # a phone/ID number, not a file reference
         ("Aktenzeichen unbekannt", None),
         ("", None),
@@ -158,3 +159,17 @@ def test_an_unrelated_number_never_creates_a_draft_case(db_session, sample_docum
     )
     assert sample_document.case_id == "_TRIAGE"
     assert db_session.get(Case, "888520392705") is None
+
+
+@pytest.mark.unit
+def test_extractors_import_on_their_own():
+    """A module-level import of app.core.validators made this a circular import."""
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "-c", "import app.services.ingestion.extractors"],
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr

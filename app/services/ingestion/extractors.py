@@ -2,7 +2,6 @@ import re
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from app.core.validators import CASE_ID_PATTERN, normalize_case_id
 from app.models.enums import CaseType, ProceedingCourtLevel
 
 CASE_ID_PATTERNS = [
@@ -458,17 +457,24 @@ _LAWYER_REF_RE = re.compile(r"^\s*(\d{1,6})\s*[/-]\s*(\d{2,4})(?!\d)")
 def normalize_internal_id(raw: object) -> str | None:
     """Canonical Case.id candidate from an AI-extracted ``internal_id``.
 
-    ``"8441/25 L02 RS D4/2247-25"`` -> ``"8441-25"``. Returns ``None`` for
-    values that are not a recognisable file reference (a bare 12-digit number,
-    prose), so they can never create a draft case.
+    A value that already is a valid Case.id (``8441/25``, ``8441-25-A``,
+    ``ADV-024-A``) is kept as-is; a firm reference with trailing department or
+    clerk codes (``"8441/25 L02 RS D4/2247-25"``) is cut to its leading file
+    number (``"8441-25"``). Anything else (a bare 12-digit number, prose) is
+    ``None``, so it can never create a draft case.
     """
+    # Imported here: app.core.validators -> app.models.enums -> app.models ->
+    # (database) -> app.core.validators, so a module-level import makes this
+    # module unimportable on its own.
+    from app.core.validators import CASE_ID_PATTERN, normalize_case_id
+
     if not raw or not isinstance(raw, str):
         return None
-    match = _LAWYER_REF_RE.match(raw)
-    if match:
-        return f"{match.group(1)}-{match.group(2)}"
     candidate = normalize_case_id(raw)
-    return candidate if candidate and CASE_ID_PATTERN.match(candidate) else None
+    if candidate and CASE_ID_PATTERN.match(candidate):
+        return candidate
+    match = _LAWYER_REF_RE.match(raw)
+    return f"{match.group(1)}-{match.group(2)}" if match else None
 
 
 def extract_internal_id(content: str) -> ExtractionResult:

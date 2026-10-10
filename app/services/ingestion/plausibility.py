@@ -10,6 +10,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, IngestBatch
+from app.models.enums import IngestBatchSourceType
 
 # Slack between a letter's issue date and the day *it* arrived (time zones, a
 # letter dated the evening before it was delivered). Never compared with the
@@ -62,7 +63,13 @@ def issued_date_suspect(doc: Document, db: Session) -> bool:
     references = [
         r.date() for r in (lead.issued_date if lead else None, arrived) if r is not None
     ]
-    if any(day < ref - _STALE_AFTER for ref in references):
+    # A scan's "arrival" is the day it was scanned, years after an old letter was
+    # written; only the cover letter says anything about how old the bundle is.
+    scanned = batch is not None and batch.source_type == IngestBatchSourceType.SCAN
+    stale_references = [
+        r.date() for r in (lead.issued_date if lead else None,) if r is not None
+    ] + ([] if scanned or arrived is None else [arrived.date()])
+    if any(day < ref - _STALE_AFTER for ref in stale_references):
         return True
     return any(
         (ref.month, ref.day) == (day.month, day.day)
