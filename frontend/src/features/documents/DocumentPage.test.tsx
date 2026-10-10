@@ -168,3 +168,27 @@ test('warns about OCR page failures and re-extracts on demand', async () => {
     ).toBe(true),
   )
 })
+
+test('the Aktenzeichen is editable and saved with the metadata', async () => {
+  const fetch = stub({
+    'PUT /api/v1/documents/2211/metadata': { body: { ...documentReader, az_court: '3 F 2022/23' } },
+  })
+  page()
+  const user = userEvent.setup()
+  await screen.findByRole('heading', { name: 'Klageerwiderung.pdf' })
+  const edit = screen.getAllByRole('button', { name: 'Edit' }).at(0)
+  if (!edit) throw new Error('no Edit button')
+  await user.click(edit)
+
+  const az = await screen.findByRole('textbox', { name: 'AZ' })
+  expect(az).not.toHaveAttribute('readonly')
+  await user.clear(az)
+  await user.type(az, '3 F 2022/23')
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+
+  await waitFor(async () => {
+    const put = fetch.mock.calls.map(([r]) => r).find((r) => r.method === 'PUT')
+    if (!put) throw new Error('no PUT yet')
+    expect((await put.clone().json()).az_court).toBe('3 F 2022/23')
+  })
+})

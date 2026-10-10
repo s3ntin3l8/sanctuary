@@ -102,20 +102,34 @@ def confirm_document(
     originator_type=None,
     sender: str | None = None,
     internal_id: str | None = None,
+    az_court: str | None = None,
     issued_date: datetime | None = None,
     received_date: datetime | None = None,
     significance_tier=None,
     document_type=None,
     finalize: bool = False,
 ) -> Document | None:
-    """Apply metadata patch; optionally remove from triage."""
+    """Apply metadata patch; optionally remove from triage.
+
+    A changed ``az_court`` re-matches the document's proceeding and, once
+    committed, re-runs its relationship detection (the thread pool matches on
+    the Aktenzeichen).
+    """
     doc_repo = DocumentRepository(db)
     doc = doc_repo.get(doc_id)
     if not doc:
         return None
 
-    from app.services.ingestion.service import apply_review_reasons
+    from app.services.ingestion.extractors import canonical_az_court
+    from app.services.ingestion.service import (
+        apply_review_reasons,
+        refresh_bundle_review_reasons,
+    )
     from app.services.pipeline_status import retry_on_db_locked
+    from app.services.proceeding_rematch import rematch_proceeding
+
+    new_az = canonical_az_court(az_court) if az_court is not None else None
+    az_changed = False
 
     # The mutations live *inside* the retried closure, not just db.commit():
     # retry_on_db_locked's db.rollback() (on a lock-contention retry) expires
@@ -129,6 +143,7 @@ def confirm_document(
     # cascade isn't optional, unlike the best-effort skip-on-busy pattern
     # used for the idempotent reload latch in bundle_ops.py.
     def _apply_and_commit() -> None:
+        nonlocal az_changed
         if title is not None:
             doc.title = title
         if case_id is not None:
@@ -139,6 +154,9 @@ def confirm_document(
             doc.sender = sender
         if internal_id is not None:
             doc.internal_id = internal_id or None
+        az_changed = az_court is not None and new_az != doc.az_court
+        if az_court is not None:
+            doc.az_court = new_az
         if issued_date is not None:
             doc.issued_date = issued_date
         if received_date is not None:
@@ -156,6 +174,7 @@ def confirm_document(
             "originator_type": originator_type,
             "sender": sender,
             "internal_id": internal_id,
+            "az_court": new_az,
             "issued_date": issued_date,
             "significance_tier": significance_tier,
             "document_type": document_type,
@@ -168,14 +187,44 @@ def confirm_document(
 
         if finalize and doc.confirmed_at is None:
             doc.confirmed_at = now_utc()
+        if az_changed:
+            rematch_proceeding(doc, db)
         apply_review_reasons(doc)
+        if az_court is not None:
+            # "az_conflict" is a relation between bundle siblings.
+            refresh_bundle_review_reasons(doc, db, commit=False)
 
         db.commit()
 
     retry_on_db_locked(_apply_and_commit, db)
     cleanup_orphaned_drafts(db)
     db.refresh(doc)
+    if az_changed:
+        _rerun_relationships(doc, db)
     return doc
+
+
+def _rerun_relationships(doc: Document, db: Session) -> None:
+    """Re-judge a document's relationships after its Aktenzeichen changed.
+
+    Only a stage that already finished needs it; a pending or running one
+    reads the new Aktenzeichen itself. The default backfill re-queues the newer
+    documents that were detected before this one's corrected prior set existed.
+    """
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import reset_stage
+    from app.services.triage_retry import dispatch_pipeline_retry
+
+    status = (stages_dict(doc).get(PipelineStage.RELATIONSHIPS.value) or {}).get(
+        "status"
+    )
+    if status not in ("completed", "failed", "skipped"):
+        return
+    if reset_stage(doc.id, PipelineStage.RELATIONSHIPS, db):
+        db.commit()
+        dispatch_pipeline_retry(
+            doc.id, doc.ingest_batch_id, PipelineStage.RELATIONSHIPS, db
+        )
 
 
 def confirm_bundle(

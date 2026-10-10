@@ -5,6 +5,7 @@ const LABELS: Record<string, string> = {
   missing_received_date: 'received date missing',
   missing_issued_date: 'issued date missing',
   issued_date_suspect: 'issued date looks wrong',
+  az_conflict: 'Aktenzeichen differs within bundle — check',
   low_confidence: 'metadata to check',
   unresolved_relationship: 'relationships to confirm',
   contests_existing_claim: 'claim links to confirm',

@@ -4761,6 +4761,8 @@ export interface components {
         };
         /** MetadataUpdate */
         MetadataUpdate: {
+            /** Az Court */
+            az_court?: string | null;
             document_type?: components["schemas"]["DocumentType"] | null;
             /** Internal Id */
             internal_id?: string | null;

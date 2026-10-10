@@ -488,6 +488,7 @@ def update_metadata(
         originator_type=body.originator_type,
         sender=body.sender.strip() if body.sender is not None else None,
         internal_id=body.internal_id.strip() if body.internal_id is not None else None,
+        az_court=body.az_court,
         issued_date=body.issued_date,
         received_date=body.received_date,
         significance_tier=body.significance_tier,

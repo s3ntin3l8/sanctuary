@@ -233,6 +233,7 @@ class MetadataUpdate(BaseModel):
     originator_type: OriginatorType | None = None
     sender: str | None = Field(default=None, max_length=255)
     internal_id: str | None = Field(default=None, max_length=255)
+    az_court: str | None = Field(default=None, max_length=100)
     issued_date: datetime | None = None
     received_date: datetime | None = None
     significance_tier: SignificanceTier | None = None

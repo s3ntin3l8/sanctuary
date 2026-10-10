@@ -27,6 +27,7 @@ const MISSING_FIELDS: Record<string, string> = {
   missing_received_date: 'received date',
   missing_issued_date: 'issued date',
   issued_date_suspect: 'issued date',
+  az_conflict: 'Aktenzeichen',
 }
 
 /** The OCR cross-check stores up to 20 doubtful words a page; the row shows the first few. */
