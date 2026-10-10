@@ -273,22 +273,31 @@ Each is a cheap cue that a new document starts at page N:
 - **Blank page**: blank intervening pages often indicate a cover-separator
 - **Date line change**: top-of-page date on prior ≠ top-of-page date on current ✅ IMPLEMENTED
 - **Azeichen change**: court file number in header/footer changes
+- **Repeated header**: the page opens with the previous page's running header (logo, clinic or bank name, report title); a hint that it continues that document
 - **Enclosure marker**: text "Anlage K1" or "Anlage 1" appears prominently near the top
 
 Each signal contributes a score; pages with score > threshold are marked as **proposed cut points**.
 
 ### 4.3 AI signal
 
-For each candidate cut point (from heuristics) + a few "close calls", the AI is given:
+The AI is asked about **every** page boundary (above `SLICE_AI_MAX_PAGES` pages, only about boundaries with a heuristic signal). It gets the start and end of the previous page, the start of the page in question and the signals that fired — hints, not a gate:
 
 ```
-You're deciding whether page N is the start of a new document.
-Previous page (last 500 chars of OCR): "... Mit freundlichen Grüßen / Unterschrift"
-Current page (first 500 chars of OCR): "Landgericht Hamburg / An ... / Aktenzeichen: 003 F 426/25"
-Is this page the start of a new document? (yes/no/unsure)
+Page 4 starts: "…"   Page 4 ends: "… Mit freundlichen Grüßen / Unterschrift"
+Page 5 (the page in question) starts: "Landgericht Hamburg / An ... / Aktenzeichen: 003 F 426/25"
+Heuristic signals: salutation_on_page, az_change
+→ {"is_new_document": true, "kind": "letter", "notes": "…"}
 ```
 
-The AI confirms/refines the heuristic's proposals. When heuristic and AI disagree, the cut is still proposed but marked **low-confidence** for user attention in the slicing UI.
+**Confidence is derived from the signals, not asked of the model** (a model's self-report was uncalibrated: every proposal came back `high`):
+
+- `high` — the page itself shows a start: `page_reset`, `az_change`, `salutation_*`, `enclosure_marker`, `transmittal_page`.
+- `low` — `repeated_header` (the page opens with the previous page's running header) with the same date and no start cue: a continuation page of a multi-page report or printout.
+- `medium` — everything else, including enclosure-to-enclosure cuts that carry no signal.
+
+When the AI says "not a new document" but a start cue is on the page, the cut is still proposed as `low` with the disagreement in its notes. A failed judgment proposes nothing. The review page starts `low` proposals uncut.
+
+**Outline pass.** A per-boundary judgment cannot see the cover letter before it, so a court-forwarded letter, a service sheet or a clinic report comes back as `letter`. After the cuts are combined, one call sees every part (page range, start of its first page, end of its last) and decides which parts are independent letters and which are enclosures of the letter before them. Its `kind` replaces the per-boundary one; an Anlage/Annex marker still forces `attachment`, and if the call fails the per-boundary kinds stand.
 
 ### 4.4 Slicing UI
 

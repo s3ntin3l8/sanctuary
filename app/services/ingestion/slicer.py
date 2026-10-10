@@ -1,6 +1,7 @@
 """3c — Prepare slicing candidates for a multi-page scanned PDF batch."""
 
 import asyncio
+import difflib
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ from typing import Any, NamedTuple
 import httpx
 import pypdfium2 as pdfium
 from PIL import Image
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.async_utils import run_async
@@ -20,8 +22,8 @@ from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.ai_run_index import record_run
 from app.services.ingestion import ocr_crosscheck
-from app.services.intelligence.prompts import SLICING_CUT_SYSTEM
-from app.services.intelligence.schemas import CutJudgment
+from app.services.intelligence.prompts import SLICING_CUT_SYSTEM, SLICING_OUTLINE_SYSTEM
+from app.services.intelligence.schemas import CutJudgment, SliceOutline
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,34 @@ _PREV_HEAD_CHARS = 300
 _MARKER_ZONE_CHARS = 120
 # A page opening with one of these is an attachment, whatever the AI says.
 _ATTACHMENT_SIGNALS = frozenset({"enclosure_marker", "transmittal_page"})
+# Signals that the page itself shows a start. Confidence is derived from them
+# (the model's own "high" was uncalibrated: every proposal came back high).
+_START_SIGNALS = frozenset(
+    {
+        "page_reset",
+        "az_change",
+        "salutation_signature",
+        "salutation_on_page",
+        "enclosure_marker",
+        "transmittal_page",
+    }
+)
+# A page whose header repeats the previous page's is usually its continuation.
+_HEADER_CHARS = 120
+_HEADER_MIN_CHARS = 20
+_HEADER_SIMILARITY = 0.8
+
+# The outline pass: one call that sees every part and decides which are
+# independent letters and which enclosures of the cover letter before them.
+_OUTLINE_BUDGET_CHARS = 14000
+_OUTLINE_MIN_PART_CHARS = 150
+_OUTLINE_MAX_PART_CHARS = 700
+_OUTLINE_BASE_TOKENS = 150
+_OUTLINE_TOKENS_PER_PART = 70
+# Prompt (<= _OUTLINE_BUDGET_CHARS, ~3.5k tokens) plus the largest answer
+# (_OUTLINE_BASE_TOKENS + _OUTLINE_TOKENS_PER_PART * 93, ~6.7k) must fit.
+_OUTLINE_NUM_CTX = 12288
+_OUTLINE_TIMEOUT_SECONDS = 180.0
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +135,19 @@ def _signal_date_line(prev_tail: str, curr_head: str) -> bool:
     return bool(prev_dates and curr_dates and prev_dates != curr_dates)
 
 
+def _header_key(text: str) -> str:
+    """The top of a page with digits and spacing flattened, for header comparison."""
+    return " ".join(re.sub(r"\d", "#", text.lower()[:_HEADER_CHARS]).split())
+
+
+def _signal_repeated_header(prev_head: str, curr_head: str) -> bool:
+    """The page opens with the same running header as the one before it."""
+    a, b = _header_key(prev_head), _header_key(curr_head)
+    if min(len(a), len(b)) < _HEADER_MIN_CHARS:
+        return False
+    return difflib.SequenceMatcher(None, a, b).ratio() >= _HEADER_SIMILARITY
+
+
 def _boundary_signals(prev_head: str, prev_tail: str, curr_head: str) -> list[str]:
     """Names of the heuristics that fire on the boundary before ``curr_head``.
 
@@ -132,6 +175,8 @@ def _boundary_signals(prev_head: str, prev_tail: str, curr_head: str) -> list[st
         signals.append("transmittal_page")
     if _signal_date_line(prev_tail, curr_head):
         signals.append("date_line_change")
+    if _signal_repeated_header(prev_head, curr_head):
+        signals.append("repeated_header")
     return signals
 
 
@@ -160,43 +205,67 @@ def _judgment_prompt(b: _Boundary) -> str:
     )
 
 
+async def _chat_json(
+    client: httpx.AsyncClient,
+    *,
+    model: str,
+    system_prompt: str,
+    prompt: str,
+    schema: type[BaseModel],
+    max_tokens: int,
+    num_ctx: int,
+) -> dict:
+    """One non-streaming, schema-constrained chat call; the parsed JSON object.
+
+    Does not use call_json_ai: the slicer runs these as async tasks (parallel
+    boundary judgments), non-streaming with a tight timeout, and every caller
+    silently falls back on failure — different semantics from the sequential
+    intelligence pipeline helpers.
+    """
+    params = await chat_provider.get_generate_params(
+        model=model,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        stream=False,
+        options={
+            "num_ctx": num_ctx,
+            "temperature": 0.1,
+            "max_tokens": max_tokens,
+            # The schema grammar keeps a reasoning model from thinking its
+            # way past the timeout; it also drops the case-narrative preamble.
+            "_response_schema": schema.model_json_schema(),
+            "_schema_name": schema.__name__,
+            "_include_user_context": False,
+        },
+    )
+    ptype = await chat_provider.get_type()
+    resp = await client.post(
+        params["url"], json=params["json"], headers=params["headers"]
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    if ptype == "ollama":
+        raw = data.get("response", "")
+    else:
+        raw = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+    from app.services.intelligence._json import parse_json_response
+
+    return parse_json_response(raw)
+
+
 async def _ai_cut_judgment(b: _Boundary, model: str, client: httpx.AsyncClient) -> dict:
-    # Does not use call_json_ai: this runs as async tasks via asyncio.gather for
-    # parallel boundary detection, uses non-streaming with a tight timeout,
-    # and silently falls back to "no cut" on failure — different semantics from
-    # the sequential intelligence pipeline helpers.
     try:
-        params = await chat_provider.get_generate_params(
+        return await _chat_json(
+            client,
             model=model,
-            prompt=_judgment_prompt(b),
             system_prompt=SLICING_CUT_SYSTEM,
-            stream=False,
-            options={
-                "num_ctx": 4096,
-                "temperature": 0.1,
-                "max_tokens": _AI_MAX_TOKENS,
-                # The schema grammar keeps a reasoning model from thinking its
-                # way past the timeout; it also drops the case-narrative preamble.
-                "_response_schema": CutJudgment.model_json_schema(),
-                "_schema_name": CutJudgment.__name__,
-                "_include_user_context": False,
-            },
+            prompt=_judgment_prompt(b),
+            schema=CutJudgment,
+            max_tokens=_AI_MAX_TOKENS,
+            num_ctx=4096,
         )
-        ptype = await chat_provider.get_type()
-        resp = await client.post(
-            params["url"], json=params["json"], headers=params["headers"]
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        if ptype == "ollama":
-            raw = data.get("response", "")
-        else:
-            raw = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-
-        from app.services.intelligence._json import parse_json_response
-
-        return parse_json_response(raw)
     except Exception as exc:
         logger.debug("AI cut judgment failed: %s", exc)
         return _conservative_ai_failure(str(exc))
@@ -204,10 +273,11 @@ async def _ai_cut_judgment(b: _Boundary, model: str, client: httpx.AsyncClient) 
 
 def _conservative_ai_failure(notes: str) -> dict:
     """The single fail-safe shape for a failed AI cut judgment — no cut
-    proposed. Used for both a single candidate's failure and, filled per
+    proposed, not even a low one (``failed`` tells it apart from an answer of
+    "no"). Used for both a single candidate's failure and, filled per
     candidate, for a whole-batch failure — the two failure modes must not
     disagree on which way to fail."""
-    return {"is_new_document": False, "confidence": "low", "notes": notes}
+    return {"is_new_document": False, "failed": True, "notes": notes}
 
 
 async def _ai_cut_judgments(candidates: list[_Boundary], model: str) -> dict[int, dict]:
@@ -230,6 +300,30 @@ async def _ai_cut_judgments(candidates: list[_Boundary], model: str) -> dict[int
     return out
 
 
+def _cut_confidence(signals: tuple[str, ...]) -> str:
+    """How sure the page itself is about starting a document, from the heuristic signals.
+
+    ``high``: a start cue is on the page (new Aktenzeichen, "Seite 1", salutation,
+    an Anlage marker, a transmission receipt). ``low``: the page repeats the
+    previous page's running header with the same date and shows no start cue — a
+    continuation. Everything else is ``medium``, which includes enclosure-to-
+    enclosure cuts that carry no signal at all.
+
+    ``date_line_change`` is deliberately not a start cue — a date alone shifts for
+    many reasons (a typo'd header, a rollover, OCR) — so it stays ``medium`` and
+    reaches the model only as a hint.
+    """
+    found = set(signals)
+    if found & _START_SIGNALS:
+        return "high"
+    # A repeated header only counts against the cut when the date did not change
+    # too: two consecutive court Verfügungen share one letterhead but carry
+    # different dates, and those stay "medium".
+    if "repeated_header" in found and "date_line_change" not in found:
+        return "low"
+    return "medium"
+
+
 def _combine_proposed_cuts(
     candidates: list[_Boundary],
     ai_results: dict[int, dict],
@@ -238,14 +332,18 @@ def _combine_proposed_cuts(
 ) -> list[dict]:
     """Merge judged boundaries with AI judgments into proposed_cuts.
 
-    A candidate with no `ai_results` entry, or an entry without a verdict, gets
-    no cut: an unanswered boundary fails the same way as a failed judgment
-    (`_conservative_ai_failure`), so an AI outage can never over-cut.
+    A candidate with no `ai_results` entry, an entry without a verdict, or a
+    failed judgment gets no cut: an AI outage can never over-cut. When the AI
+    answers "not a new document" but the page shows a start cue (see
+    ``_START_SIGNALS``), the cut is still proposed as ``low`` so the review page
+    shows the disagreement at its gap while it starts uncut.
 
-    Each cut also carries a ``kind``: ``letter`` (an independent letter) or
-    ``attachment`` (travels with the preceding letter). Anything but an explicit
-    ``letter`` from the AI is an attachment, as is every page in ``marker_pages``
-    (an Anlage/Annex marker or a transmission-receipt sheet was seen there).
+    ``confidence`` comes from the signals (``_cut_confidence``), not from the
+    model's self-report. Each cut also carries a ``kind``: ``letter`` (an
+    independent letter) or ``attachment`` (travels with the preceding letter).
+    Anything but an explicit ``letter`` from the AI is an attachment, as is
+    every page in ``marker_pages`` (an Anlage/Annex marker or a
+    transmission-receipt sheet was seen there).
     """
     proposed_cuts = []
     for cand in candidates:
@@ -260,25 +358,126 @@ def _combine_proposed_cuts(
             if isinstance(ai_raw, bool)
             else str(ai_raw).strip().lower() in ("true", "1", "yes")
         )
-        ai_confidence = ai.get("confidence", "medium")
-        if ai_confidence not in ("high", "medium", "low"):
-            ai_confidence = "low"
+        confidence = _cut_confidence(cand.signals)
+        notes = ai.get("notes", "")
+        if not ai_agrees:
+            if (
+                ai.get("failed")
+                or "is_new_document" not in ai
+                or not _START_SIGNALS.intersection(cand.signals)
+            ):
+                continue
+            confidence = "low"
+            notes = f"AI: continuation — {notes}".rstrip(" —")
+            notes += f" (signals: {', '.join(cand.signals)})"
         kind = (
             "letter"
             if str(ai.get("kind", "")).strip().lower() == "letter"
             and cut_page not in marker_pages
             else "attachment"
         )
-        if ai_agrees:
-            proposed_cuts.append(
-                {
-                    "page": cut_page,
-                    "confidence": ai_confidence,
-                    "kind": kind,
-                    "notes": ai.get("notes", ""),
-                }
-            )
+        proposed_cuts.append(
+            {"page": cut_page, "confidence": confidence, "kind": kind, "notes": notes}
+        )
     return proposed_cuts
+
+
+# ---------------------------------------------------------------------------
+# Outline pass: which parts are letters, which are enclosures
+# ---------------------------------------------------------------------------
+
+
+class _Part(NamedTuple):
+    number: int  # 1-based, as the model sees it
+    first: int  # 1-based page range, inclusive
+    last: int
+
+
+def _outline_parts(proposed_cuts: list[dict], page_count: int) -> list[_Part]:
+    """The parts the review page starts with: every cut that is not low confidence."""
+    starts = [1, *sorted(c["page"] for c in proposed_cuts if c["confidence"] != "low")]
+    ends = [nxt - 1 for nxt in starts[1:]] + [page_count]
+    return [
+        _Part(i + 1, a, b) for i, (a, b) in enumerate(zip(starts, ends, strict=True))
+    ]
+
+
+def _outline_prompt(parts: list[_Part], pages: list[dict]) -> str | None:
+    """Every part's first and last text, within a budget shared by all parts.
+
+    None when there are too many parts for even the minimum per part to fit.
+    """
+    # At the floor (_OUTLINE_MIN_PART_CHARS each) the budget is exactly used up;
+    # one part more and the prompt would outgrow the context, so skip.
+    if len(parts) > _OUTLINE_BUDGET_CHARS // _OUTLINE_MIN_PART_CHARS:
+        return None
+    per_part = min(
+        _OUTLINE_MAX_PART_CHARS,
+        max(_OUTLINE_MIN_PART_CHARS, _OUTLINE_BUDGET_CHARS // len(parts)),
+    )
+    head_chars = per_part * 2 // 3
+    tail_chars = per_part - head_chars
+    blocks = []
+    for part in parts:
+        block = (
+            f"Part {part.number} (pages {part.first}-{part.last}) starts:\n"
+            f"{pages[part.first - 1]['text_head'][:head_chars].strip()}"
+        )
+        if part.last > part.first:
+            block += (
+                f"\n...ends:\n{pages[part.last - 1]['text_tail'][-tail_chars:].strip()}"
+            )
+        blocks.append(block)
+    return "\n\n".join(blocks)
+
+
+async def _ai_outline(prompt: str, n_parts: int, model: str) -> dict:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(_OUTLINE_TIMEOUT_SECONDS)
+    ) as client:
+        return await _chat_json(
+            client,
+            model=model,
+            system_prompt=SLICING_OUTLINE_SYSTEM,
+            prompt=prompt,
+            schema=SliceOutline,
+            max_tokens=_OUTLINE_BASE_TOKENS + _OUTLINE_TOKENS_PER_PART * n_parts,
+            num_ctx=_OUTLINE_NUM_CTX,
+        )
+
+
+def _apply_outline(
+    proposed_cuts: list[dict],
+    parts: list[_Part],
+    outline: dict,
+    marker_pages: frozenset[int],
+) -> list[dict]:
+    """Take each part's ``kind`` from the outline where it answered.
+
+    A cut the outline did not answer for (malformed or missing entry, a low
+    proposal, which is not a part yet) keeps the per-boundary kind, and a page
+    with an Anlage/Annex marker stays an attachment whatever the outline says.
+    """
+    answers: dict[int, tuple[str, str]] = {}
+    entries = outline.get("parts") if isinstance(outline, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        if (
+            isinstance(entry, dict)
+            and isinstance(entry.get("part"), int)
+            and entry.get("kind") in ("letter", "attachment")
+        ):
+            answers[entry["part"]] = (entry["kind"], str(entry.get("notes") or ""))
+    part_at = {p.first: p.number for p in parts[1:]}
+    result = []
+    for cut in proposed_cuts:
+        answer = answers.get(part_at.get(cut["page"], 0))
+        if answer is None or cut["page"] in marker_pages or answer[0] == cut["kind"]:
+            result.append(cut)
+            continue
+        kind, why = answer
+        notes = f"{cut['notes']} · outline: {why}".strip(" ·")
+        result.append({**cut, "kind": kind, "notes": notes})
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +658,43 @@ def prepare(batch_id: int) -> None:
         proposed_cuts = _combine_proposed_cuts(
             candidates, ai_results, page_count, frozenset(marker_pages)
         )
+
+        # Per-boundary judgments cannot see the cover letter before them, so
+        # court-forwarded letters and service sheets come back as "letter".
+        # One call over the whole outline decides which parts are enclosures.
+        # Low-confidence proposals start uncut, so they are not parts: when
+        # every cut is a continuation page there is a single part, no outline
+        # call, and the kinds stay as judged.
+        parts = _outline_parts(proposed_cuts, page_count)
+        outline_prompt = _outline_prompt(parts, page_data) if len(parts) > 1 else None
+        if outline_prompt is not None:
+            outline_started = time.perf_counter()
+            outline_error: str | None = None
+            outline: dict = {}
+            try:
+                outline = run_async(
+                    _ai_outline(outline_prompt, len(parts), summary_model)
+                )
+            except Exception as exc:
+                logger.warning("AI slice outline failed: %s", exc)
+                outline_error = str(exc)
+            if not isinstance(outline, dict):
+                outline = {}
+            record_run(
+                kind="batch",
+                scope_id=str(batch_id),
+                stage="slice",
+                batch_id=batch_id,
+                model=summary_model,
+                provider=chat_cfg.provider,
+                duration_ms=int((time.perf_counter() - outline_started) * 1000),
+                response_len=len(outline.get("parts") or []),
+                status="error" if outline_error else "ok",
+                error=outline_error[:200] if outline_error else None,
+            )
+            proposed_cuts = _apply_outline(
+                proposed_cuts, parts, outline, frozenset(marker_pages)
+            )
 
         meta = dict(batch.meta or {})
         meta["slicing"] = {
