@@ -52,7 +52,7 @@ export function IdentityPage() {
             id="own_parties"
             name="own_parties"
             rows={2}
-            defaultValue={identity.own_parties.join(', ')}
+            defaultValue={identity.own_parties.join('\n')}
             className={inputClass}
           />
         </Field>

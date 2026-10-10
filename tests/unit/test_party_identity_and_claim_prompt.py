@@ -10,7 +10,11 @@ def test_multiline_own_parties_become_one_entry_per_name(db_session):
     set_party_identity(
         {
             "own_self": " Björn Hansen ",
-            "own_parties": ["Haidl Funk\nHr. Funk\r\nAndreas Funk", "  ", "Kanzlei X"],
+            "own_parties": [
+                "Haidl Funk\nHr. Funk\r\nAndreas Funk",
+                "  ",
+                "Kanzlei X, Kanzlei Y",
+            ],
         },
         db_session,
     )
@@ -22,10 +26,14 @@ def test_multiline_own_parties_become_one_entry_per_name(db_session):
         "Hr. Funk",
         "Andreas Funk",
         "Kanzlei X",
+        "Kanzlei Y",
     ]
 
 
 @pytest.mark.unit
 def test_claim_prompt_pins_claim_text_to_english_and_excerpts_to_the_source():
-    assert "Write every `claim_text` in English" in CLAIM_EXTRACTOR_SYSTEM
-    assert "copy it verbatim" in CLAIM_EXTRACTOR_SYSTEM
+    prompt = CLAIM_EXTRACTOR_SYSTEM.lower()
+    language_section = prompt[prompt.index("# language") :]
+    language_section = language_section[: language_section.index("# party")]
+    for token in ("claim_text", "english", "excerpt", "verbatim", "never translate"):
+        assert token in language_section, token

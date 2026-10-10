@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy.exc import OperationalError
@@ -541,14 +542,14 @@ def set_party_identity(identity: dict, db) -> None:
     data = dict(settings.settings_json or {})
     data["party_identity"] = {
         "own_self": (identity.get("own_self") or "").strip(),
-        # One party per entry: a multi-line value (one name per line pasted into
-        # a single field) is several parties, and a party blob would never match
-        # a name in a document or a cost ruling.
+        # One party per entry: a value holding several names (one per line, or
+        # comma-separated, as the SPA form also accepts) is several parties, and
+        # a blob would never match a name in a document or a cost ruling.
         "own_parties": [
             name.strip()
             for p in (identity.get("own_parties") or [])
             if p
-            for name in str(p).splitlines()
+            for name in re.split(r"[,\n]+", str(p))
             if name.strip()
         ],
     }
