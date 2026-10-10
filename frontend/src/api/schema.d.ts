@@ -2936,6 +2936,8 @@ export interface components {
             reindex_job: components["schemas"]["ReindexJob"] | null;
             /** Roles */
             roles: components["schemas"]["AiRole"][];
+            /** Tesseract Available */
+            tesseract_available: boolean;
             /** Worker Concurrency */
             worker_concurrency: number;
         };

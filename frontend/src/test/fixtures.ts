@@ -167,6 +167,7 @@ export const aiSettings: Schemas['AiSettingsView'] = {
     },
   ],
   extraction_engine: 'chandra',
+  tesseract_available: true,
   worker_concurrency: 2,
   ocr_concurrency: 4,
   embed_index: { dim: 768, model: 'nomic-embed-text', index_dim: 768, mismatch: false },

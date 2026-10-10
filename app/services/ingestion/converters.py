@@ -7,6 +7,8 @@ from typing import overload
 
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app.services.model_gate import ModelGateTimeout
+
 logger = logging.getLogger(__name__)
 
 
@@ -799,6 +801,12 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
             # main thread waits on its page futures would be misread as "the
             # OCR endpoint crashed" and trigger a full Docling re-run from
             # scratch, exactly when there's no time budget left for one.
+            raise
+        except ModelGateTimeout:
+            # Not an OCR failure: the model was never called because another
+            # family held the gate. Falling back to Docling here would burn the
+            # document on a worse engine (or fail outright when its binary is
+            # missing); the extract task retries instead.
             raise
         except Exception as exc:  # noqa: BLE001 — never let OCR brick ingest
             logger.warning(

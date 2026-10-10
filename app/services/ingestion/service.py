@@ -36,6 +36,7 @@ from app.services.ingestion.extractors import (
     extract_issued_date,
     extract_sender,
 )
+from app.services.model_gate import ModelGateTimeout
 
 _H1_MIN_ALPHA_RATIO = 0.35
 
@@ -445,6 +446,11 @@ def process_uploaded_document(doc: Document, db: Session):
         # SoftTimeLimitExceeded and treat a soft time limit as an ordinary
         # (retryable-looking) conversion failure rather than its own
         # dedicated no-retry, cascade-and-return-cleanly branch.
+        raise
+    except ModelGateTimeout:
+        # The OCR model was never called (another model family held the gate
+        # for the whole wait). Not a conversion failure: let it reach
+        # process_document_task's retry path instead of failing the document.
         raise
     except Exception as e:
         error_str = str(e)

@@ -59,3 +59,58 @@ def test_convert_file_docling_engine_never_touches_ocr_concurrency():
         ):
             convert_file("doc.pdf", engine="docling")
     get_conc.assert_not_called()
+
+
+@pytest.mark.unit
+def test_convert_file_chandra_gate_timeout_propagates_instead_of_falling_back():
+    """A gate timeout means the OCR model was never called: the task must retry,
+    not silently re-run the document through Docling."""
+    from app.services.model_gate import ModelGateTimeout
+
+    with (
+        patch("app.config.SessionLocal", return_value=MagicMock()),
+        patch(
+            "app.services.ai_config.get_ocr_config",
+            return_value=MagicMock(ocr_model="chandra-ocr-2"),
+        ),
+        patch(
+            "app.services.user_settings_service.get_ocr_concurrency",
+            return_value=4,
+        ),
+        patch(
+            "app.services.ingestion.chandra_extractor.extract_with_chandra",
+            side_effect=ModelGateTimeout("waited 1800s"),
+        ),
+        patch("app.services.ingestion.converters._convert_document") as docling,
+    ):
+        with pytest.raises(ModelGateTimeout):
+            convert_file("doc.pdf", engine="chandra")
+
+    docling.assert_not_called()
+
+
+@pytest.mark.unit
+def test_convert_file_chandra_crash_still_falls_back_to_docling():
+    fallback = {"content": "x", "metadata": {"pages": 1}, "chunks": []}
+    with (
+        patch("app.config.SessionLocal", return_value=MagicMock()),
+        patch(
+            "app.services.ai_config.get_ocr_config",
+            return_value=MagicMock(ocr_model="chandra-ocr-2"),
+        ),
+        patch(
+            "app.services.user_settings_service.get_ocr_concurrency",
+            return_value=4,
+        ),
+        patch(
+            "app.services.ingestion.chandra_extractor.extract_with_chandra",
+            side_effect=RuntimeError("boom"),
+        ),
+        patch(
+            "app.services.ingestion.converters._convert_document",
+            return_value=fallback,
+        ),
+    ):
+        result = convert_file("doc.pdf", engine="chandra")
+
+    assert result["metadata"]["chandra_ocr_error"] == "boom"
