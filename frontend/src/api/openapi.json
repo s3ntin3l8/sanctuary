@@ -7157,6 +7157,11 @@
       },
       "PipelineView": {
         "properties": {
+          "ocr_crosscheck_unavailable": {
+            "default": false,
+            "title": "Ocr Crosscheck Unavailable",
+            "type": "boolean"
+          },
           "ocr_page_failures": {
             "items": {
               "type": "integer"

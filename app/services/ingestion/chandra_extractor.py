@@ -534,6 +534,9 @@ def extract_with_chandra(
         "ocr_base_url": base_url,
         "extraction_seconds": round(time.perf_counter() - start, 2),
         "page_failures": page_failures,
+        # Set when no page got a second reading (engine broken or missing): the
+        # empty ocr_unverified_pages below is then "not checked", not "all clear".
+        "ocr_crosscheck_unavailable": not second_readings,
         "ocr_unverified_pages": [
             idx for idx, check in checks.items() if ocr_crosscheck.is_unverified(check)
         ],

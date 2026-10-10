@@ -4967,6 +4967,11 @@ export interface components {
         PipelineState: "pending" | "running" | "completed" | "failed" | "dismissed" | "partial";
         /** PipelineView */
         PipelineView: {
+            /**
+             * Ocr Crosscheck Unavailable
+             * @default false
+             */
+            ocr_crosscheck_unavailable: boolean;
             /** Ocr Page Failures */
             ocr_page_failures: number[];
             /** Ocr Unverified */

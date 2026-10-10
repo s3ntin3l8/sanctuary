@@ -338,6 +338,7 @@ def test_pages_the_second_ocr_cannot_corroborate_are_flagged():
     chunks = result["chunks"]
     assert "crosscheck" in chunks[0]["meta"] and "crosscheck" in chunks[1]["meta"]
     assert result["metadata"]["ocr_unverified_pages"] == [2]
+    assert result["metadata"]["ocr_crosscheck_unavailable"] is False
     assert "wohnplatz" in chunks[1]["meta"]["crosscheck"]["unsupported"]
 
 
@@ -355,6 +356,8 @@ def test_a_failed_second_ocr_never_fails_extraction():
     ):
         result = extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=2)
     assert result["metadata"]["ocr_unverified_pages"] == []
+    # "not checked" is distinguishable from "all clear"
+    assert result["metadata"]["ocr_crosscheck_unavailable"] is True
     assert all("crosscheck" not in c["meta"] for c in result["chunks"])
     assert result["metadata"]["page_failures"] == []
 

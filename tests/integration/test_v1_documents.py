@@ -172,6 +172,19 @@ def test_acknowledging_the_ocr_crosscheck_clears_the_flag(db_session):
     assert doc.meta["ocr_unverified_acknowledged"] == [3]
 
 
+def test_review_says_when_the_ocr_crosscheck_could_not_run(db_session):
+    admin = _admin(db_session)
+    ran = _doc(db_session, admin.id, meta={"chunks": []})
+    skipped = _doc(db_session, admin.id, meta={"ocr_crosscheck_unavailable": True})
+
+    def unavailable(doc):
+        body = client.get(f"/api/v1/documents/{doc.id}/review").json()
+        return body["pipeline"]["ocr_crosscheck_unavailable"]
+
+    assert unavailable(ran) is False
+    assert unavailable(skipped) is True
+
+
 def test_acknowledging_a_clean_document_writes_nothing(db_session):
     admin = _admin(db_session)
     doc = _doc(db_session, admin.id, meta={"chunks": []})

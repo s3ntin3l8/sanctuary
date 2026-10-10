@@ -87,6 +87,8 @@ def check_page(chandra_markdown: str, second_text: str) -> dict:
     A word counts as supported when it appears in the second reading verbatim,
     inside it once spaces and punctuation are squashed away (a split or merged
     word), or as a close spelling of one of its words (the detector garbles).
+    Words are compared as a set: ``count`` is the number of distinct
+    unsupported words and ``ratio`` their share of the page's distinct words.
     Returns ``{"unsupported": [...], "ratio": share, "count": n}``.
     """
     second = _tokens(second_text)

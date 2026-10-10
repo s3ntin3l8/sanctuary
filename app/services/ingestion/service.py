@@ -217,6 +217,9 @@ def compute_review_reasons(doc: Document) -> list[str]:
 
     # Pages whose OCR text a second engine could not corroborate (set by the
     # chandra extractor's cross-check).
+    # Acknowledging moves the pages to ``ocr_unverified_acknowledged`` (see the
+    # acknowledge route); that separate key is what clears this reason, so do not
+    # fold the two together.
     if doc.meta and doc.meta.get("ocr_unverified_pages"):
         reasons.append("ocr_unverified")
 

@@ -53,6 +53,8 @@ class PipelineView(BaseModel):
     # 1-indexed pages whose OCR text a second engine could not corroborate, with
     # the words in question (the user should check these against the scan).
     ocr_unverified: list[OcrUnverifiedPage]
+    # True when the OCR cross-check could not run at all (so no pages were checked).
+    ocr_crosscheck_unavailable: bool = False
 
 
 class MetadataField(BaseModel):

@@ -128,6 +128,21 @@ test('number keys fire reactions and Esc on the shortcuts overview stays on the 
   expect(screen.getByRole('heading', { name: 'Klageerwiderung.pdf' })).toBeVisible()
 })
 
+test('says so when the OCR cross-check did not run', async () => {
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: { ...documentReader.pipeline, ocr_crosscheck_unavailable: true },
+      },
+    },
+  })
+  page()
+  expect(await screen.findByTestId('ocr-crosscheck-unavailable')).toHaveTextContent(
+    'cross-check did not run',
+  )
+})
+
 test('warns about OCR page failures and re-extracts on demand', async () => {
   const fetch = stub({
     'GET /api/v1/documents/2211/reader': {

@@ -140,6 +140,7 @@ def pipeline_view(doc: Document) -> PipelineView:
         state=doc.pipeline_state,
         stages=out,
         ocr_page_failures=sorted(int(p) for p in failures),
+        ocr_crosscheck_unavailable=bool(meta.get("ocr_crosscheck_unavailable")),
         ocr_unverified=[
             OcrUnverifiedPage(
                 page=chunk["meta"]["page"],

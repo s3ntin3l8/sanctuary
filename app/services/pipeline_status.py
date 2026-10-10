@@ -582,6 +582,7 @@ def clear_extraction_stamp(doc) -> None:
             "chunks",
             "page_failures",
             "ocr_unverified_pages",
+            "ocr_crosscheck_unavailable",
             "ocr_unverified_acknowledged",
         )
     ]
