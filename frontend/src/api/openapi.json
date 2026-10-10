@@ -6492,6 +6492,18 @@
       },
       "MetadataUpdate": {
         "properties": {
+          "az_court": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
           "document_type": {
             "anyOf": [
               {

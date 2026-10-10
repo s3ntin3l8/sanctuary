@@ -567,6 +567,7 @@ function MetadataModal({
         originator_type: str('originator_type') as Schemas['OriginatorType'],
         sender: str('sender'),
         internal_id: str('internal_id'),
+        az_court: str('az_court'),
         issued_date: date('issued_date'),
         received_date: date('received_date'),
         significance_tier: (str('significance_tier') || null) as Schemas['SignificanceTier'] | null,
@@ -657,13 +658,11 @@ function MetadataModal({
         </Field>
         <TextField
           label="AZ"
-          value={review.az_court ?? ''}
+          name="az_court"
+          defaultValue={review.az_court ?? ''}
           placeholder="—"
-          readOnly
-          tabIndex={-1}
-          hint="Comes from the proceeding."
-          className="cursor-default font-mono text-muted focus:border-line"
-          onChange={() => undefined}
+          hint="Saving files the document under this Aktenzeichen's proceeding. A department can change after a transfer."
+          className="font-mono"
         />
         <div className="col-span-2 flex justify-end gap-2 pt-1">
           <Button variant="secondary" onClick={onClose}>

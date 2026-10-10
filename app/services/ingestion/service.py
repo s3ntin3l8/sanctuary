@@ -173,12 +173,14 @@ def compute_review_reasons(doc: Document) -> list[str]:
             RelationshipConfidence,
             RelationshipType,
         )
-        from app.services.ingestion.plausibility import issued_date_suspect
+        from app.services.ingestion.plausibility import az_conflict, issued_date_suspect
 
         db = inspect(doc).session
         if db:
             if issued_date_suspect(doc, db):
                 reasons.append("issued_date_suspect")
+            if az_conflict(doc, db):
+                reasons.append("az_conflict")
 
             # ENCLOSES edges come from the bundle layout (cover letter and its
             # enclosures), not from an AI judgement the user could confirm.
@@ -239,6 +241,29 @@ def apply_review_reasons(doc: Document) -> None:
     reasons = compute_review_reasons(doc)
     doc.review_reasons = reasons
     doc.needs_review = bool(set(reasons) - {"missing_parent"})
+
+
+def refresh_bundle_review_reasons(doc: Document, db, *, commit: bool = True) -> None:
+    """Recompute the review reasons of the other documents in ``doc``'s bundle.
+
+    ``az_conflict`` is a relation between siblings: when one document's
+    Aktenzeichen appears or changes, the others' flags change with it.
+    """
+    if not doc.ingest_batch_id:
+        return
+    siblings = (
+        db.query(Document)
+        .filter(
+            Document.ingest_batch_id == doc.ingest_batch_id,
+            Document.id != doc.id,
+            Document.az_court.isnot(None),
+        )
+        .all()
+    )
+    for sibling in siblings:
+        apply_review_reasons(sibling)
+    if commit:
+        db.commit()
 
 
 def refresh_review_reasons(doc: Document, db, *, commit: bool = True) -> None:

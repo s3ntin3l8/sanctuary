@@ -112,6 +112,38 @@ def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
     return f"{head}{separator}{mid}{separator}{tail}"
 
 
+def _is_department_misread(
+    doc: Document, current_proc: Proceeding, extracted_az: str, db: Session
+) -> bool:
+    """The extracted Aktenzeichen differs from the proceeding's only in the department,
+    and the bundle's other documents still agree with the proceeding.
+
+    That reads as one misread digit, not a new instance: moving the whole
+    bundle to a new proceeding (and closing the right one) on a single page's
+    OCR would drag every sibling along. The ``az_conflict`` review flag asks
+    the user to look instead. An Aktenzeichen the user confirmed is never doubted.
+    """
+    from app.services.ingestion.plausibility import az_department_variants
+
+    if (doc.extraction_confidence or {}).get("az_court") == "user_set":
+        return False
+    if not doc.ingest_batch_id or not az_department_variants(
+        extracted_az, current_proc.az_court
+    ):
+        return False
+    return (
+        db.query(Document.id)
+        .filter(
+            Document.ingest_batch_id == doc.ingest_batch_id,
+            Document.id != doc.id,
+            Document.proceeding_id == current_proc.id,
+            Document.az_court == current_proc.az_court,
+        )
+        .first()
+        is not None
+    )
+
+
 def _apply_proceeding_extraction(
     doc: Document, summary_data: dict, db: Session
 ) -> str | None:
@@ -158,6 +190,9 @@ def _apply_proceeding_extraction(
         return "not a court document"
 
     extracted_az = normalize_az_court(data.get("az_court"))
+    # An Aktenzeichen the user typed or confirmed outranks what the AI reads.
+    if doc.az_court and (doc.extraction_confidence or {}).get("az_court") == "user_set":
+        extracted_az = doc.az_court
 
     # Secondary fallback: court doc but invalid AZ — use METADATA hint.
     if (
@@ -269,7 +304,12 @@ def _apply_proceeding_extraction(
         except ValueError:
             pass
 
-    if extracted_az and current_proc.az_court and extracted_az != current_proc.az_court:
+    if (
+        extracted_az
+        and current_proc.az_court
+        and extracted_az != current_proc.az_court
+        and not _is_department_misread(doc, current_proc, extracted_az, db)
+    ):
         is_new_instance = True
 
     if is_new_instance:
@@ -350,7 +390,10 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     """Refine document properties based on deep AI extraction."""
     from app.models.database import Case
     from app.models.enums import parse_originator_type
-    from app.services.ingestion.service import refresh_review_reasons
+    from app.services.ingestion.service import (
+        refresh_bundle_review_reasons,
+        refresh_review_reasons,
+    )
     from app.services.intelligence._court_identity import reconcile_ai_fields
 
     # Resolve self-contradictions in the AI output before writing any fields.
@@ -562,6 +605,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
     # 4. Re-evaluate review status
     refresh_review_reasons(doc, db, commit=False)
+    # A new Aktenzeichen can put the bundle's other documents in conflict.
+    refresh_bundle_review_reasons(doc, db, commit=False)
 
     # 5. Create/update Proceeding (merged from former PROCEEDING_ANALYSIS stage).
     #    Must run after auto-triage above so doc.case_id is set.
