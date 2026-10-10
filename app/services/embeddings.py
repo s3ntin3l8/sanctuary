@@ -10,6 +10,7 @@ from app.models.database import Document, DocumentChunk
 from app.services.ai_config import get_embed_config
 from app.services.ai_inflight import track_ai_call_async
 from app.services.ai_run_index import record_run
+from app.services.content_text import condense_image_descriptions
 from app.services.model_gate import model_gate
 
 logger = logging.getLogger(__name__)
@@ -40,12 +41,12 @@ def _chunks_to_embed(doc) -> list[str]:
     raw_chunks = doc.meta.get("chunks", []) if doc.meta else []
     texts = []
     for chunk in raw_chunks:
-        t = (chunk.get("text") or "").strip()
+        t = condense_image_descriptions(chunk.get("text") or "").strip()
         if t:
             texts.append(t[:_CHUNK_EMBED_MAX_CHARS])
 
     if not texts:
-        content = doc.content or ""
+        content = condense_image_descriptions(doc.content or "")
         texts = [
             content[i : i + _CHUNK_EMBED_MAX_CHARS]
             for i in range(0, len(content), _CHUNK_EMBED_MAX_CHARS)

@@ -8,6 +8,7 @@ from app.models.database import (
     Document,
 )
 from app.services.case_dashboard_service import key_passages_for_template
+from app.services.content_text import condense_image_descriptions
 from app.services.intelligence.chronology_context import format_chronology_for_case
 from app.services.intelligence.claim_context import format_claims_for_case
 from app.services.intelligence.reaction_context import (
@@ -32,7 +33,7 @@ def build_document_chat_prompt(
         lines = [f"  [{i + 1}] {p['text']}" for i, p in enumerate(passages[:10])]
         passages_block = "Key passages:\n" + "\n".join(lines)
 
-    content_preview = (doc.content or "")[:6000]
+    content_preview = condense_image_descriptions(doc.content or "")[:6000]
     reactions_block = format_reactions_for_document(db, doc.id)
 
     context = f"""Document: [{doc.id}] {doc.title}

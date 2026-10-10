@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.database import CostSignal, Document
 from app.services.ai_config import get_chat_config
 from app.services.case_service import get_case_opposing_parties
+from app.services.content_text import condense_image_descriptions
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
 from app.services.user_settings_service import get_party_identity
@@ -94,7 +95,7 @@ def _excerpt_for_signal(signal: CostSignal, doc: Document) -> str | None:
         if joined.strip():
             return joined[:_MAX_CHARS]
 
-    content = (doc.content or "").strip()
+    content = condense_image_descriptions(doc.content or "").strip()
     if not content:
         return None
     return content[:_MAX_CHARS]
