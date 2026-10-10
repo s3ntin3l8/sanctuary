@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Document, IngestBatch
 
-# Time zones and a letter written the evening before it arrives.
+# Slack between a letter's issue date and the day *it* arrived (time zones, a
+# letter dated the evening before it was delivered). Never compared with the
+# wall clock: an old document is not "in the future" because of today's date.
 _FUTURE_SLACK = timedelta(days=1)
 
 
@@ -45,6 +47,8 @@ def issued_date_suspect(doc: Document, db: Session) -> bool:
     if arrived is not None and day > arrived.date() + _FUTURE_SLACK:
         return True
 
+    # The cover letter's date is the best reference; the arrival day is the
+    # catch-all when the document has no parent or the parent has no date.
     lead = db.get(Document, doc.parent_id) if doc.parent_id else None
     references = [
         r.date() for r in (lead.issued_date if lead else None, arrived) if r is not None

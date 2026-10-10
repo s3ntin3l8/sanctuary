@@ -338,6 +338,17 @@ def normalize_az_court(value: str | None) -> str | None:
     return result
 
 
+def canonical_az_court(typed: str | None) -> str | None:
+    """A user-typed Aktenzeichen, stored the way extraction writes it.
+
+    Matching is exact, so "003 F 2022/23" must become "3 F 2022/23". Numbers
+    outside the standard shape (e.g. "1 DR II 1030/26") are kept as typed
+    rather than rejected; blank input is None.
+    """
+    stripped = (typed or "").strip()
+    return normalize_az_court(stripped) or stripped or None
+
+
 def infer_case_type_from_az(az: str) -> CaseType | None:
     """Infer CaseType from a canonical court Aktenzeichen.
 

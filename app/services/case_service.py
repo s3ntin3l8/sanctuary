@@ -1169,8 +1169,12 @@ class CaseService:
         """
         from app.models.database import Proceeding
         from app.models.enums import ProceedingCourtLevel, ProceedingStatus
-        from app.services.ingestion.extractors import infer_court_level
+        from app.services.ingestion.extractors import (
+            canonical_az_court,
+            infer_court_level,
+        )
 
+        az_court = canonical_az_court(az_court)
         if self.db.get(Case, case_id) is not None:
             raise CaseIdTaken(case_id)
         case = Case(
