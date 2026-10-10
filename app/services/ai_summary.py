@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services.ai_config import get_chat_config
+from app.services.content_text import condense_image_descriptions
 from app.services.ingestion.extractors import (
     extract_internal_id,
     infer_court_level,
@@ -88,7 +89,7 @@ def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
     - Middle: 50% of max_chars (centered)
     - Tail: 25% of max_chars
     """
-    content = doc.content or ""
+    content = condense_image_descriptions(doc.content or "")
 
     # If content fits within max_chars, return as-is
     if len(content) <= max_chars:
@@ -429,7 +430,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         new_meta["ai_contradiction"] = False
 
     # Track strategy and character count for UI transparency
-    content_len = len(doc.content or "")
+    content_len = len(condense_image_descriptions(doc.content or ""))
     new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
     new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
 

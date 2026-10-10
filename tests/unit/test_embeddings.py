@@ -20,6 +20,18 @@ def test_chunks_to_embed_uses_doc_meta_chunks():
     assert _chunks_to_embed(doc) == ["first section", "second section"]
 
 
+def test_chunks_to_embed_condenses_image_descriptions():
+    doc = MagicMock()
+    doc.meta = {
+        "chunks": [
+            {"text": "![Crest]()A heraldic crest."},
+            {"text": "![Eingang 28.08.2026]()Red stamp.\nBeschluss"},
+        ]
+    }
+    doc.content = ""
+    assert _chunks_to_embed(doc) == ["[Bild: Eingang 28.08.2026]\nBeschluss"]
+
+
 def test_chunks_to_embed_skips_blank_chunks():
     doc = MagicMock()
     doc.meta = {"chunks": [{"text": "   "}, {"text": "real text"}]}

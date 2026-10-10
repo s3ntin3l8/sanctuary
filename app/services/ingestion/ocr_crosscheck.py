@@ -12,6 +12,8 @@ import logging
 import re
 import threading
 
+from app.services.content_text import strip_image_lines
+
 logger = logging.getLogger(__name__)
 
 # A page is unverified when at least this share of chandra's words, and at
@@ -24,9 +26,6 @@ UNVERIFIED_MIN_TOKENS = 4
 _MAX_STORED_TOKENS = 20
 _FUZZY_CUTOFF = 0.7
 
-# Chandra describes stamps and logos in English, sometimes after the markup on
-# the same line; none of that is on the page, so the whole line is ignored.
-_RE_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)[^\n]*")
 _RE_TOKEN = re.compile(r"[a-zäöüß0-9]{4,}")
 _RE_SQUASH = re.compile(r"[^a-zäöüß0-9]")
 
@@ -94,7 +93,7 @@ def check_page(chandra_markdown: str, second_text: str) -> dict:
     second = _tokens(second_text)
     known = set(second)
     squashed = _RE_SQUASH.sub("", second_text.lower())
-    words = _tokens(_RE_IMAGE.sub(" ", chandra_markdown))
+    words = _tokens(strip_image_lines(chandra_markdown))
     unsupported: list[str] = []
     for word in dict.fromkeys(words):
         if word in known or word in squashed:

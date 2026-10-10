@@ -53,6 +53,28 @@ def test_get_content_preview_short_doc(sample_document):
 
 
 @pytest.mark.unit
+def test_get_content_preview_condenses_image_descriptions(sample_document):
+    """Stamp narration is gone before windowing; the dated stamp stays."""
+    sample_document.content = (
+        "![Crest of Bavaria]()A heraldic crest.\n"
+        "![Eingang 28. AUG. 2026]()Red stamp.\nText"
+    )
+    sample_document.meta = {}
+    result = get_content_preview(sample_document, max_chars=4000)
+    assert "heraldic" not in result and "Red stamp" not in result
+    assert "[Bild: Eingang 28. AUG. 2026]" in result
+
+
+@pytest.mark.unit
+def test_context_chars_measure_the_condensed_text(db_session, sample_document):
+    from app.services.ai_summary import enrich_document_with_ai
+
+    sample_document.content = "![Crest]()" + "N" * 5000 + "\nShort"
+    enrich_document_with_ai(sample_document, {"confidence": {}}, db_session)
+    assert sample_document.meta["ai_context_chars"] == len("\nShort")
+
+
+@pytest.mark.unit
 def test_get_content_preview_long_doc_proportional(sample_document):
     """Long docs get proportional 25/50/25 window."""
     # 1000 chars total: 0123456789...

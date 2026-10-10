@@ -22,6 +22,7 @@ from app.models.schemas import (
 )
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
+from app.services.content_text import condense_image_descriptions
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -327,7 +328,7 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             logger.warning("Doc %d: invalid ai_summary skipped: %s", doc.id, e)
 
     # Track strategy and character count for UI transparency
-    content_len = len(doc.content or "")
+    content_len = len(condense_image_descriptions(doc.content or ""))
     new_meta = dict(doc.meta or {})
     new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
     new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
