@@ -6,19 +6,21 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
-from app.services.ingestion import slicer
+from app.services.ingestion import ocr_crosscheck, slicer
 
 
 def test_ocr_page_text_joins_txts(monkeypatch):
     monkeypatch.setattr(
-        slicer, "_get_ocr", lambda: lambda arr: SimpleNamespace(txts=("Seite 2", "Mit"))
+        ocr_crosscheck,
+        "get_ocr",
+        lambda: lambda arr: SimpleNamespace(txts=("Seite 2", "Mit")),
     )
     assert slicer._ocr_page_text(Image.new("RGB", (10, 10))) == "Seite 2 Mit"
 
 
 def test_ocr_page_text_blank_page(monkeypatch):
     monkeypatch.setattr(
-        slicer, "_get_ocr", lambda: lambda arr: SimpleNamespace(txts=None)
+        ocr_crosscheck, "get_ocr", lambda: lambda arr: SimpleNamespace(txts=None)
     )
     assert slicer._ocr_page_text(Image.new("RGB", (10, 10))) == ""
 
@@ -27,7 +29,7 @@ def test_ocr_page_text_failure_is_logged(monkeypatch, caplog):
     def boom():
         raise RuntimeError("engine gone")
 
-    monkeypatch.setattr(slicer, "_get_ocr", boom)
+    monkeypatch.setattr(ocr_crosscheck, "get_ocr", boom)
     with caplog.at_level(logging.WARNING, logger=slicer.logger.name):
         assert slicer._ocr_page_text(Image.new("RGB", (10, 10))) == ""
     assert "engine gone" in caplog.text

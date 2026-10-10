@@ -6847,6 +6847,27 @@
         "title": "NotificationsView",
         "type": "object"
       },
+      "OcrUnverifiedPage": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "words": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "page",
+          "words"
+        ],
+        "title": "OcrUnverifiedPage",
+        "type": "object"
+      },
       "OpposingPartiesUpdate": {
         "properties": {
           "opposing_parties": {
@@ -7143,6 +7164,13 @@
             "title": "Ocr Page Failures",
             "type": "array"
           },
+          "ocr_unverified": {
+            "items": {
+              "$ref": "#/components/schemas/OcrUnverifiedPage"
+            },
+            "title": "Ocr Unverified",
+            "type": "array"
+          },
           "stages": {
             "items": {
               "$ref": "#/components/schemas/StageView"
@@ -7157,7 +7185,8 @@
         "required": [
           "state",
           "stages",
-          "ocr_page_failures"
+          "ocr_page_failures",
+          "ocr_unverified"
         ],
         "title": "PipelineView",
         "type": "object"
@@ -12692,6 +12721,49 @@
           }
         },
         "summary": "V1 Update Metadata",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/ocr-unverified/acknowledge": {
+      "post": {
+        "description": "Mark the pages the OCR cross-check could not corroborate as checked against\nthe scan. A re-extract runs the cross-check afresh.",
+        "operationId": "v1_acknowledge_ocr_unverified_api_v1_documents__doc_id__ocr_unverified_acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Acknowledge Ocr Unverified",
         "tags": [
           "documents"
         ]

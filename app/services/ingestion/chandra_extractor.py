@@ -35,6 +35,7 @@ from markdownify import markdownify
 
 from app.config import AI_READ_TIMEOUT, CHANDRA_DOCUMENT_DEADLINE_SECONDS
 from app.services.ai_config import OcrConfig
+from app.services.ingestion import ocr_crosscheck
 from app.services.model_gate import model_gate
 from app.services.ocr_slots import ocr_slot
 
@@ -293,7 +294,9 @@ def extract_with_chandra(
 
     Per-page concurrency is bounded by ``max_workers``. ``metadata`` carries
     ``pages``, ``extractor: "chandra-ocr-2"``, ``page_failures`` (1-indexed
-    page numbers that failed OCR), and per-page extraction latency.
+    page numbers that failed OCR), ``ocr_unverified_pages`` (pages whose text a
+    second OCR could not corroborate, see ``ocr_crosscheck``), and per-page
+    extraction latency.
 
     ``document_deadline`` bounds the *whole document's* wall-clock time
     (default ``CHANDRA_DOCUMENT_DEADLINE_SECONDS``), independent of each
@@ -343,6 +346,9 @@ def extract_with_chandra(
     # already mid-HTTP-call when the deadline fires can't be interrupted;
     # it stays bounded by its own per-page httpx timeout regardless.
     abandoned = threading.Event()
+    # Page -> an independent second reading of the same image, to catch pages
+    # chandra answered fluently but wrongly (see ocr_crosscheck).
+    second_readings: dict[int, str] = {}
 
     def _ocr_safe(
         item: tuple[int, bytes],
@@ -381,6 +387,11 @@ def extract_with_chandra(
                     timeout=timeout,
                 )
             md = _html_to_markdown(html)
+            if (
+                not abandoned.is_set()
+                and (second := ocr_crosscheck.second_opinion(png)) is not None
+            ):
+                second_readings[idx] = second
             return idx, html, md, time.perf_counter() - page_started, None
         except Exception as exc:  # noqa: BLE001 — per-page resilience
             logger.warning(
@@ -494,6 +505,12 @@ def extract_with_chandra(
         f"--- PAGE {idx} ---\n\n{md}" for idx, _, md, _, _ in results
     ).strip()
 
+    checks = {
+        idx: ocr_crosscheck.check_page(md, second_readings[idx])
+        for idx, _, md, _, exc in results
+        if exc is None and idx in second_readings
+    }
+
     chunks = [
         {
             "text": md,
@@ -503,6 +520,7 @@ def extract_with_chandra(
                 "ocr_model": ocr_config.ocr_model,
                 "latency_seconds": round(elapsed, 2),
                 "failed": exc is not None,
+                **({"crosscheck": checks[idx]} if idx in checks else {}),
             },
         }
         for idx, _, md, elapsed, exc in results
@@ -516,6 +534,9 @@ def extract_with_chandra(
         "ocr_base_url": base_url,
         "extraction_seconds": round(time.perf_counter() - start, 2),
         "page_failures": page_failures,
+        "ocr_unverified_pages": [
+            idx for idx, check in checks.items() if ocr_crosscheck.is_unverified(check)
+        ],
         "extraction_engine": "chandra",
     }
 

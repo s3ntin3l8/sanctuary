@@ -40,11 +40,19 @@ class StageView(BaseModel):
     completed_at: str | None
 
 
+class OcrUnverifiedPage(BaseModel):
+    page: int
+    words: list[str]
+
+
 class PipelineView(BaseModel):
     state: PipelineState
     stages: list[StageView]
     # 1-indexed pages the OCR engine failed on while EXTRACT still completed.
     ocr_page_failures: list[int]
+    # 1-indexed pages whose OCR text a second engine could not corroborate, with
+    # the words in question (the user should check these against the scan).
+    ocr_unverified: list[OcrUnverifiedPage]
 
 
 class MetadataField(BaseModel):

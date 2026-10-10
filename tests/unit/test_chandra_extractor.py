@@ -310,3 +310,58 @@ def test_render_pages_streams_real_pdf_pages_and_closes_handles(tmp_path):
     gen.close()  # stopping early must not leak the PDF handle or raise
 
     assert len(list(_render_pages(str(path), dpi=50))) == 3
+
+
+@pytest.mark.unit
+def test_pages_the_second_ocr_cannot_corroborate_are_flagged():
+    render, ocr_page, gate, slot, _ = _patch_common(page_count=2)
+    readings = iter(["hi", "nothing alike at all in this reading"])
+    with (
+        render,
+        gate,
+        slot,
+        patch(
+            "app.services.ingestion.chandra_extractor._ocr_one_page",
+            side_effect=[
+                "<p>hi</p>",
+                "<p>Wohnplatz Schultgasse Sicherung Wärmeanwendungen Muniba</p>",
+            ],
+        ),
+        patch(
+            "app.services.ingestion.ocr_crosscheck.second_opinion",
+            side_effect=lambda _png: next(readings),
+        ),
+        patch("app.services.ingestion.chandra_extractor.ThreadPoolExecutor") as pool,
+    ):
+        pool.return_value.submit.side_effect = lambda fn, arg: _done(fn(arg))
+        result = extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=1)
+    chunks = result["chunks"]
+    assert "crosscheck" in chunks[0]["meta"] and "crosscheck" in chunks[1]["meta"]
+    assert result["metadata"]["ocr_unverified_pages"] == [2]
+    assert "wohnplatz" in chunks[1]["meta"]["crosscheck"]["unsupported"]
+
+
+@pytest.mark.unit
+def test_a_failed_second_ocr_never_fails_extraction():
+    render, ocr_page, gate, slot, _ = _patch_common(page_count=2)
+    with (
+        render,
+        ocr_page,
+        gate,
+        slot,
+        patch(
+            "app.services.ingestion.ocr_crosscheck.second_opinion", return_value=None
+        ),
+    ):
+        result = extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=2)
+    assert result["metadata"]["ocr_unverified_pages"] == []
+    assert all("crosscheck" not in c["meta"] for c in result["chunks"])
+    assert result["metadata"]["page_failures"] == []
+
+
+def _done(value):
+    from concurrent.futures import Future
+
+    fut: Future = Future()
+    fut.set_result(value)
+    return fut

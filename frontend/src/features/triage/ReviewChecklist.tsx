@@ -1,7 +1,11 @@
 import { useState } from 'react'
 
 import type { Schemas } from '../../api/client'
-import { type TriageBundle, useAcknowledgeContradiction } from '../../api/triage'
+import {
+  type TriageBundle,
+  useAcknowledgeContradiction,
+  useAcknowledgeOcrUnverified,
+} from '../../api/triage'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
@@ -93,6 +97,15 @@ export function reviewItems(review: Review): Item[] {
       label: 'AI flagged a contradiction',
     })
   }
+  const unverified = review.pipeline.ocr_unverified
+  if (reasons.has('ocr_unverified') && unverified.length > 0) {
+    items.push({
+      key: 'ocr',
+      label: `OCR text to check on ${unverified.length === 1 ? 'page' : 'pages'} ${unverified
+        .map((p) => p.page)
+        .join(', ')}`,
+    })
+  }
   return items
 }
 
@@ -154,16 +167,19 @@ export function ReviewChecklist({ review, bundle }: { review: Review; bundle?: T
 }
 
 function ChecklistRow({ item, review }: { item: Item; review: Review }) {
-  const ack = useAcknowledgeContradiction(review.id)
+  const ackContradiction = useAcknowledgeContradiction(review.id)
+  const ackOcr = useAcknowledgeOcrUnverified(review.id)
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const contradiction = item.key === 'contradiction'
+  const ocr = item.key === 'ocr'
+  const ack = ocr ? ackOcr : ackContradiction
   return (
     <li className="text-[11.5px]">
       <div className="flex items-center gap-2">
         <Icon name="priority_high" size={14} className="text-warning" />
         <span className="flex-1">{item.label}</span>
-        {contradiction ? (
+        {contradiction || ocr ? (
           <Button variant="secondary" size="sm" onClick={() => setOpen((v) => !v)}>
             {open ? 'Hide' : 'Details'}
           </Button>
@@ -177,6 +193,30 @@ function ChecklistRow({ item, review }: { item: Item; review: Review }) {
           </button>
         )}
       </div>
+      {ocr && open && (
+        <div className="mt-1.5 ml-5.5 rounded-md border border-line2 bg-card p-2">
+          <p className="text-muted">
+            A second OCR could not find these words on the scan. Check them against the original;
+            the text below may be misread.
+          </p>
+          <ul className="mt-1 space-y-1 text-ink2">
+            {review.pipeline.ocr_unverified.map((p) => (
+              <li key={p.page}>
+                <span className="font-mono text-[10.5px] text-muted">p{p.page}</span>{' '}
+                {p.words.join(', ')}
+              </li>
+            ))}
+          </ul>
+          <Button
+            size="sm"
+            className="mt-2"
+            disabled={ack.isPending}
+            onClick={() => ack.mutate(undefined, { onError: (e) => toast(e.message, 'error') })}
+          >
+            Checked
+          </Button>
+        </div>
+      )}
       {contradiction && open && (
         <div className="mt-1.5 ml-5.5 rounded-md border border-line2 bg-card p-2">
           {review.contradiction_notes.length > 0 ? (

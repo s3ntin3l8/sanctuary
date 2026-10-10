@@ -360,6 +360,21 @@ export function useAcknowledgeContradiction(docId: number) {
   })
 }
 
+/** Mark the pages the OCR cross-check could not corroborate as checked against the scan. */
+export function useAcknowledgeOcrUnverified(docId: number) {
+  const queryClient = useQueryClient()
+  return useMutation<S['DocumentReview'], ApiError, undefined>({
+    mutationFn: () =>
+      unwrap(api.POST('/api/v1/documents/{doc_id}/ocr-unverified/acknowledge', docPath(docId))),
+    onSuccess: (view) => {
+      queryClient.setQueriesData<S['DocumentReview']>({ queryKey: ['document', docId] }, (prev) =>
+        prev ? { ...prev, ...view } : prev,
+      )
+      refreshReviewState(queryClient)
+    },
+  })
+}
+
 /** Confirm or dismiss an AI-proposed claim link (CONTESTS / REFUTES / ...) from the review pane. */
 export function useEvidenceDecision() {
   const queryClient = useQueryClient()

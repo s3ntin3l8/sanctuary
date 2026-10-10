@@ -215,6 +215,11 @@ def compute_review_reasons(doc: Document) -> list[str]:
     if doc.meta and doc.meta.get("ai_contradiction"):
         reasons.append("contradiction_detected")
 
+    # Pages whose OCR text a second engine could not corroborate (set by the
+    # chandra extractor's cross-check).
+    if doc.meta and doc.meta.get("ocr_unverified_pages"):
+        reasons.append("ocr_unverified")
+
     return list(dict.fromkeys(reasons))
 
 

@@ -1052,6 +1052,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{doc_id}/ocr-unverified/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Acknowledge Ocr Unverified
+         * @description Mark the pages the OCR cross-check could not corroborate as checked against
+         *     the scan. A re-extract runs the cross-check afresh.
+         */
+        post: operations["v1_acknowledge_ocr_unverified_api_v1_documents__doc_id__ocr_unverified_acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{doc_id}/original": {
         parameters: {
             query?: never;
@@ -4836,6 +4857,13 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** OcrUnverifiedPage */
+        OcrUnverifiedPage: {
+            /** Page */
+            page: number;
+            /** Words */
+            words: string[];
+        };
         /** OpposingPartiesUpdate */
         OpposingPartiesUpdate: {
             /** Opposing Parties */
@@ -4941,6 +4969,8 @@ export interface components {
         PipelineView: {
             /** Ocr Page Failures */
             ocr_page_failures: number[];
+            /** Ocr Unverified */
+            ocr_unverified: components["schemas"]["OcrUnverifiedPage"][];
             /** Stages */
             stages: components["schemas"]["StageView"][];
             state: components["schemas"]["PipelineState"];
@@ -7788,6 +7818,37 @@ export interface operations {
                 "application/json": components["schemas"]["MetadataUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentReview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_acknowledge_ocr_unverified_api_v1_documents__doc_id__ocr_unverified_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
