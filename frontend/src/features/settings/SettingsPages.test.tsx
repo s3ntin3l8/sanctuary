@@ -262,6 +262,7 @@ test('ai: warns when the tesseract binary is missing, whichever engine is select
   })
   renderAt('/settings/ai', <AiPage />)
   expect(await screen.findByText(/tesseract binary is not installed/)).toBeVisible()
+})
 
 test('identity: own-side parties split on lines as well as commas', async () => {
   const identity = {

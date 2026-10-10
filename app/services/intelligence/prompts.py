@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-10-08.2"
+PROMPT_VERSION = "2026-10-10.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
