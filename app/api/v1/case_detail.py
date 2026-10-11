@@ -47,6 +47,8 @@ from app.schemas.case_detail import (
     CaseActionItem,
     CaseDetail,
     CaseDocument,
+    CaseMerge,
+    CaseMergeResult,
     CasePurge,
     CaseUpdate,
     CostRow,
@@ -57,6 +59,7 @@ from app.schemas.case_detail import (
     InstanceExposure,
     OpposingPartiesUpdate,
     PartyView,
+    ProceedingMerge,
     ProceedingUpdate,
     ProceedingView,
     ReenrichResult,
@@ -83,6 +86,7 @@ from app.services.case_service import (
 )
 from app.services.case_timeline_service import CaseTimelineService
 from app.services.ingestion.extractors import canonical_az_court
+from app.services.merge_service import MergeError, merge_cases, merge_proceedings
 from app.services.triage_bundles import (
     actionable_review_reasons,
     summary_awaits_approval,
@@ -630,6 +634,49 @@ def delete_proceeding(
             result["case_id"], None, db, user.id
         )
         db.commit()
+
+
+def _merge_error(exc: MergeError) -> ApiError:
+    return ApiError(404 if exc.code == "not_found" else 409, exc.code, str(exc))
+
+
+@router.post("/proceedings/{proceeding_id}/merge", response_model=ProceedingView)
+def merge_proceeding(
+    body: ProceedingMerge,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    proc: Proceeding = Depends(require_proceeding_access(edit=True)),
+):
+    """Fold this proceeding into another of the same case, then delete it."""
+    case_id = proc.case_id
+    try:
+        target = merge_proceedings(db, proc.id, body.target_id, user.id)
+    except MergeError as exc:
+        raise _merge_error(exc) from exc
+    active = user_settings_service.get_active_proceeding(case_id, db, user.id)
+    if active == proc.id:
+        # merge_proceedings has already committed; this is a separate write.
+        user_settings_service.set_active_proceeding(case_id, target.id, db, user.id)
+        db.commit()
+    return next(p for p in _proceedings(db, case_id) if p.id == target.id)
+
+
+@router.post("/cases/{case_id}/merge", response_model=CaseMergeResult)
+def merge_case(
+    body: CaseMerge,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    case: Case = Depends(require_case_access(edit=True)),
+):
+    """Fold this case into another the user can edit, then delete it."""
+    target = db.get(Case, body.target_id)
+    if target is None or not access_service.can_edit_case(db, user, target):
+        raise ApiError(404, "not_found", "Target case not found.")
+    try:
+        merged = merge_cases(db, case.id, target.id, user.id)
+    except MergeError as exc:
+        raise _merge_error(exc) from exc
+    return CaseMergeResult(case_id=merged.id)
 
 
 # --- Sharing -----------------------------------------------------------------

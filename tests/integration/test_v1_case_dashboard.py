@@ -488,6 +488,8 @@ def test_sharing_roundtrip(db_session, dash):
         ("patch", "/api/v1/costs/{cost}", {"title": "x"}),
         ("patch", "/api/v1/proceedings/{proc}", {"az_court": "x"}),
         ("delete", "/api/v1/proceedings/{proc}", None),
+        ("post", "/api/v1/proceedings/{proc}/merge", {"target_id": 1}),
+        ("post", "/api/v1/cases/{case}/merge", {"target_id": "OTHER-1"}),
         ("patch", "/api/v1/action-items/{item}", {"status": "completed"}),
         ("get", "/api/v1/cases/{case}/shares", None),
     ],

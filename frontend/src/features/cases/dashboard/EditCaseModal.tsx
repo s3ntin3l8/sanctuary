@@ -3,10 +3,13 @@ import { type FormEvent, useState } from 'react'
 import {
   type CaseDetail,
   useDeleteProceeding,
+  useMergeCase,
+  useMergeProceeding,
   usePurgeCase,
   useUpdateCase,
   useUpdateProceeding,
 } from '../../../api/caseDetail'
+import { useCasesDirectory } from '../../../api/cases'
 import { leaveTo } from '../../../navigation'
 import { Button } from '../../../ui/Button'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog'
@@ -35,6 +38,13 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   const updateProc = useUpdateProceeding(detail.id)
   const deleteProcMutation = useDeleteProceeding(detail.id)
   const purge = usePurgeCase(detail.id)
+  const mergeProc = useMergeProceeding(detail.id)
+  const mergeCase = useMergeCase(detail.id)
+  const directory = useCasesDirectory()
+  const [mergeProcSource, setMergeProcSource] = useState<CaseDetail['proceedings'][number] | null>(
+    null,
+  )
+  const [mergingCase, setMergingCase] = useState(false)
   const [worst, setWorst] = useState(detail.assume_worst_case)
   const [purging, setPurging] = useState(false)
   const [deleteProc, setDeleteProc] = useState<CaseDetail['proceedings'][number] | null>(null)
@@ -156,6 +166,16 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
                 <Button type="submit" variant="secondary">
                   Save
                 </Button>
+                {detail.proceedings.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    aria-label={`Merge proceeding ${p.court_name} ${p.az_court ?? ''} into another`}
+                    onClick={() => setMergeProcSource(p)}
+                  >
+                    Merge…
+                  </Button>
+                )}
                 {p.is_deletable && (
                   <Button
                     type="button"
@@ -191,10 +211,64 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
         pending={deleteProcMutation.isPending}
       />
 
+      {mergeProcSource && (
+        <MergeDialog
+          title={`Merge proceeding ${mergeProcSource.az_court ?? mergeProcSource.court_name}`}
+          body={`Its ${mergeProcSource.doc_count} document(s), costs and deadlines move to the proceeding you choose; this one is then deleted.`}
+          label="Target proceeding"
+          options={detail.proceedings
+            .filter((p) => p.id !== mergeProcSource.id)
+            .map((p) => ({
+              value: String(p.id),
+              text: `${p.court_name}${p.az_court ? ` · ${p.az_court}` : ''} (${p.doc_count})`,
+            }))}
+          pending={mergeProc.isPending}
+          onClose={() => setMergeProcSource(null)}
+          onConfirm={(target) =>
+            mergeProc.mutate(
+              { id: mergeProcSource.id, targetId: Number(target) },
+              {
+                onSuccess: () => {
+                  toast('Proceedings merged')
+                  setMergeProcSource(null)
+                },
+                onError: (err) => toast(err.message, 'error'),
+              },
+            )
+          }
+        />
+      )}
+      {mergingCase && (
+        <MergeDialog
+          title={`Merge case ${detail.id}`}
+          body="All documents, proceedings, costs, deadlines and sharing move to the case you choose; this case is then deleted."
+          label="Target case"
+          options={(directory.data?.cases ?? [])
+            .filter((c) => c.id !== detail.id && c.can_edit)
+            .map((c) => ({ value: c.id, text: `${c.id} · ${c.title}` }))}
+          pending={mergeCase.isPending}
+          onClose={() => setMergingCase(false)}
+          onConfirm={(target) =>
+            mergeCase.mutate(target, {
+              onSuccess: (r) => leaveTo(`/cases/${encodeURIComponent(r.case_id)}`),
+              onError: (err) => toast(err.message, 'error'),
+            })
+          }
+        />
+      )}
+
       <section className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-3">
         <h3 className="text-[10px] font-bold tracking-[.12em] text-danger uppercase">
           Danger zone
         </h3>
+        <Button
+          size="sm"
+          variant="danger-outline"
+          className="mt-2 mr-2"
+          onClick={() => setMergingCase(true)}
+        >
+          Merge into another case…
+        </Button>
         {!purging ? (
           <Button
             size="sm"
@@ -224,6 +298,49 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
           </form>
         )}
       </section>
+    </Modal>
+  )
+}
+
+function MergeDialog({
+  title,
+  body,
+  label,
+  options,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  title: string
+  body: string
+  label: string
+  options: { value: string; text: string }[]
+  pending: boolean
+  onClose: () => void
+  onConfirm: (target: string) => void
+}) {
+  const [target, setTarget] = useState('')
+  return (
+    <Modal open onClose={onClose} title={title} icon="merge" width={460}>
+      <p className="mb-3 text-[12.5px] leading-relaxed text-ink2">{body}</p>
+      <Field label={label}>
+        <select value={target} onChange={(e) => setTarget(e.target.value)} className={inputClass}>
+          <option value="">— choose —</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.text}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="danger" disabled={!target || pending} onClick={() => onConfirm(target)}>
+          Merge
+        </Button>
+      </div>
     </Modal>
   )
 }

@@ -177,6 +177,39 @@ export function useDeleteProceeding(caseId: string) {
   })
 }
 
+export function useMergeProceeding(caseId: string) {
+  const invalidate = useCaseInvalidate(caseId)
+  return useMutation<S['ProceedingView'], ApiError, { id: number; targetId: number }>({
+    mutationFn: ({ id, targetId }) =>
+      unwrap(
+        api.POST('/api/v1/proceedings/{proceeding_id}/merge', {
+          params: { path: { proceeding_id: id } },
+          body: { target_id: targetId },
+        }),
+      ),
+    onSuccess: invalidate,
+  })
+}
+
+export function useMergeCase(caseId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<S['CaseMergeResult'], ApiError, string>({
+    mutationFn: (targetId) =>
+      unwrap(
+        api.POST('/api/v1/cases/{case_id}/merge', {
+          ...casePath(caseId),
+          body: { target_id: targetId },
+        }),
+      ),
+    // The source case is gone; refetching it would 404.
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: caseKey(caseId) })
+      queryClient.invalidateQueries({ queryKey: ['cases'] })
+      queryClient.invalidateQueries({ queryKey: ['home'] })
+    },
+  })
+}
+
 export function useCaseActionStatus(caseId: string) {
   const invalidate = useCaseInvalidate(caseId)
   return useMutation<

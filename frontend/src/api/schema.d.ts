@@ -439,6 +439,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Merge Case
+         * @description Fold this case into another the user can edit, then delete it.
+         */
+        post: operations["v1_merge_case_api_v1_cases__case_id__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/opposing-parties": {
         parameters: {
             query?: never;
@@ -1572,6 +1592,26 @@ export interface paths {
         head?: never;
         /** V1 Update Proceeding */
         patch: operations["v1_update_proceeding_api_v1_proceedings__proceeding_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/proceedings/{proceeding_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Merge Proceeding
+         * @description Fold this proceeding into another of the same case, then delete it.
+         */
+        post: operations["v1_merge_proceeding_api_v1_proceedings__proceeding_id__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/relationships/{rel_id}": {
@@ -3299,6 +3339,16 @@ export interface components {
             thread_open: boolean;
             /** Title */
             title: string;
+        };
+        /** CaseMerge */
+        CaseMerge: {
+            /** Target Id */
+            target_id: string;
+        };
+        /** CaseMergeResult */
+        CaseMergeResult: {
+            /** Case Id */
+            case_id: string;
         };
         /** CasePurge */
         CasePurge: {
@@ -5042,6 +5092,11 @@ export interface components {
          * @enum {string}
          */
         ProceedingCourtLevel: "ag" | "lg" | "olg" | "bgh" | "other";
+        /** ProceedingMerge */
+        ProceedingMerge: {
+            /** Target Id */
+            target_id: number;
+        };
         /** ProceedingRef */
         ProceedingRef: {
             /** Az Court */
@@ -6747,6 +6802,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GraphView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_merge_case_api_v1_cases__case_id__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseMerge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseMergeResult"];
                 };
             };
             /** @description Error */
@@ -8790,6 +8880,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProceedingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProceedingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_merge_proceeding_api_v1_proceedings__proceeding_id__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proceeding_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProceedingMerge"];
             };
         };
         responses: {
