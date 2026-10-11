@@ -796,7 +796,9 @@ def build_case_level_costs(case_id: str, db: Session) -> list[LegalCost]:
     )
 
 
-def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
+def recompute_total_cost_exposure(
+    case_id: str, db: Session, commit: bool = True
+) -> int:
     """Recompute and persist Case.total_cost_exposure in cents.
 
     Total = sum of per-proceeding subtotals (RVG/GKG theoretical, or actual
@@ -818,7 +820,10 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
 
     total_cents = int(round(total_eur * 100))
     case.total_cost_exposure = total_cents
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     logger.info(f"Case {case_id}: total_cost_exposure updated to {total_cents} cents")
 
     return total_cents

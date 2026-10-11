@@ -655,6 +655,7 @@ def merge_proceeding(
         raise _merge_error(exc) from exc
     active = user_settings_service.get_active_proceeding(case_id, db, user.id)
     if active == proc.id:
+        # merge_proceedings has already committed; this is a separate write.
         user_settings_service.set_active_proceeding(case_id, target.id, db, user.id)
         db.commit()
     return next(p for p in _proceedings(db, case_id) if p.id == target.id)

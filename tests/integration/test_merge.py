@@ -220,12 +220,25 @@ def test_merge_endpoints(db_session):
     dupe = _proc(db_session, "API-1", "5 K 5/25", level=ProceedingCourtLevel.LG)
     db_session.commit()
     keep_id, dupe_id = keep.id, dupe.id
+    from app.services import user_settings_service
+
+    user_settings_service.set_active_proceeding(
+        "API-1", dupe_id, db_session, _admin(db_session).id
+    )
+    db_session.commit()
 
     resp = client.post(
         f"/api/v1/proceedings/{dupe_id}/merge", json={"target_id": keep_id}
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["id"] == keep_id
+    db_session.expire_all()
+    assert (
+        user_settings_service.get_active_proceeding(
+            "API-1", db_session, _admin(db_session).id
+        )
+        == keep_id
+    )
     bad = client.post(
         f"/api/v1/proceedings/{keep_id}/merge", json={"target_id": keep_id}
     )

@@ -192,7 +192,7 @@ export function useMergeProceeding(caseId: string) {
 }
 
 export function useMergeCase(caseId: string) {
-  const invalidate = useCaseInvalidate(caseId)
+  const queryClient = useQueryClient()
   return useMutation<S['CaseMergeResult'], ApiError, string>({
     mutationFn: (targetId) =>
       unwrap(
@@ -201,7 +201,12 @@ export function useMergeCase(caseId: string) {
           body: { target_id: targetId },
         }),
       ),
-    onSuccess: invalidate,
+    // The source case is gone; refetching it would 404.
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: caseKey(caseId) })
+      queryClient.invalidateQueries({ queryKey: ['cases'] })
+      queryClient.invalidateQueries({ queryKey: ['home'] })
+    },
   })
 }
 

@@ -87,7 +87,7 @@ def merge_proceedings(
     case_id = source.case_id
     db.flush()  # expire_all() below would discard the pending field edits
     db.expire_all()
-    db.delete(db.get(Proceeding, source_id))
+    db.delete(db.get(Proceeding, source_id))  # re-read after expire, never stale
     audit_service.record(
         db,
         AuditEventType.PROCEEDING_MERGED,
@@ -140,6 +140,7 @@ def merge_cases(
         twin = target_by_az.get(proc.az_court) if proc.az_court else None
         if twin is not None:
             # merge_proceedings requires one case; repoint the proceeding first.
+            # Its row-move and audit row are flushed here; the commit below lands them.
             proc.case_id = target_id
             db.flush()
             merge_proceedings(db, proc.id, twin, actor_user_id, commit=False)
@@ -147,7 +148,8 @@ def merge_cases(
             proc.case_id = target_id
             db.flush()
 
-    # The target's deadline rows win a (due date, type) clash.
+    # The target's deadline rows win a (due date, type) clash. Two deadlines with
+    # the same day and type collapse to one on purpose; do not widen the key.
     taken = {
         (a.due_date, a.action_type)
         for a in db.query(ActionItem).filter(ActionItem.case_id == target_id)
@@ -211,9 +213,9 @@ def merge_cases(
         payload={"source_id": source_id},
         actor_user_id=actor_user_id,
     )
-    db.commit()
-
     from app.services.case_service import recompute_total_cost_exposure
 
-    recompute_total_cost_exposure(target_id, db)
+    # Same transaction as the merge: one commit lands rows, delete, audit and total.
+    recompute_total_cost_exposure(target_id, db, commit=False)
+    db.commit()
     return db.get(Case, target_id)  # type: ignore[return-value]
