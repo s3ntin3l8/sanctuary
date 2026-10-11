@@ -19,7 +19,10 @@ from app.services.intelligence.schemas import RelationshipDetection
 logger = logging.getLogger(__name__)
 
 CANDIDATE_TIERS = {SignificanceTier.CRITICAL, SignificanceTier.SIGNIFICANT}
-VALID_RELATIONSHIP_TYPES = {e.value for e in RelationshipType}
+# COPY_OF is written by the copy detector (deterministic), never by this prompt.
+VALID_RELATIONSHIP_TYPES = {
+    e.value for e in RelationshipType if e is not RelationshipType.COPY_OF
+}
 MAX_CANDIDATES = 20
 # Of MAX_CANDIDATES, reserve this many slots for semantic neighbours the recency
 # window missed; the rest go to the most recent docs. Reserving slots is what

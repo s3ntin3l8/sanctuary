@@ -221,6 +221,7 @@ class GraphNode(BaseModel):
     is_new_since_last_visit: bool
     reaction: str | None
     originator_type: str
+    copy_count: int
 
 
 class GraphBundleChild(BaseModel):
@@ -287,6 +288,7 @@ class TimelineEventView(BaseModel):
     is_overdue: bool
     is_future: bool
     claim_count: int
+    copy_count: int
     quiet_gap_days: int | None
 
 

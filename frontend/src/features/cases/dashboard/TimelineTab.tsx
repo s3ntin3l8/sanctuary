@@ -137,6 +137,11 @@ export function TimelineTab({ detail }: { detail: CaseDetail }) {
                 {e.claim_count > 0 && (
                   <span className="font-mono text-[10px] text-muted">⚖ {e.claim_count}</span>
                 )}
+                {e.copy_count > 0 && (
+                  <span className="font-mono text-[10px] text-muted">
+                    +{e.copy_count} {e.copy_count === 1 ? 'copy' : 'copies'}
+                  </span>
+                )}
                 {e.note && <span className="truncate text-[11px] text-muted">{e.note}</span>}
               </Row>
             </li>

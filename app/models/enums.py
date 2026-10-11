@@ -214,6 +214,7 @@ class RelationshipType(enum.StrEnum):
     SUPERSEDES = "supersedes"
     CITED_BY = "cited_by"  # reserved inverse of references; never AI-emitted — user-created only
     ENCLOSES = "encloses"  # cover-letter → enclosure within a single ingest batch
+    COPY_OF = "copy_of"  # copy → original: same text, filed again (e.g. as an exhibit); never AI-emitted
 
 
 class RelationshipConfidence(enum.StrEnum):

@@ -462,6 +462,9 @@ function Canvas({
                   {n.date_short}
                   {n.cross_proceeding && n.proceeding_label ? ` · ${n.proceeding_label}` : ''}
                   {n.tier ? ` · ${n.tier.slice(0, 4)}` : ''}
+                  {n.copy_count
+                    ? ` · +${n.copy_count} ${n.copy_count === 1 ? 'copy' : 'copies'}`
+                    : ''}
                 </text>
                 {graph.proof_badges[String(n.id)] && (
                   <text

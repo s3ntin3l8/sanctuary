@@ -21,6 +21,7 @@ def extract_claims_task(self, doc_id: int):
     from app.models.database import Document
     from app.models.enums import StageStatus
     from app.services.intelligence.claim_extractor import extract
+    from app.services.intelligence.copy_detector import is_copy
     from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
     from app.services.pipeline_status import (
         mark_completed,
@@ -56,6 +57,11 @@ def extract_claims_task(self, doc_id: int):
                 "doc_id": doc_id,
                 "reason": "enrich_not_completed",
             }
+        if is_copy(db, doc_id):
+            mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason="copy_of")
+            logger.info("Doc #%d: claims skipped (copy_of)", doc_id)
+            trigger_case_brief_if_ready(doc_id)
+            return {"status": "skipped", "doc_id": doc_id, "reason": "copy_of"}
         if not doc.ai_summary_created_at:
             mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason="missing_ai_summary")
             logger.info("Doc #%d: claims skipped (missing_ai_summary)", doc_id)

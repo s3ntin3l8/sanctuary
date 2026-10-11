@@ -5675,6 +5675,10 @@
       },
       "GraphNode": {
         "properties": {
+          "copy_count": {
+            "title": "Copy Count",
+            "type": "integer"
+          },
           "cross_proceeding": {
             "title": "Cross Proceeding",
             "type": "boolean"
@@ -5797,7 +5801,8 @@
           "is_bundle",
           "is_new_since_last_visit",
           "reaction",
-          "originator_type"
+          "originator_type",
+          "copy_count"
         ],
         "title": "GraphNode",
         "type": "object"
@@ -8430,7 +8435,8 @@
           "attaches_as_proof",
           "supersedes",
           "cited_by",
-          "encloses"
+          "encloses",
+          "copy_of"
         ],
         "title": "RelationshipType",
         "type": "string"
@@ -9401,6 +9407,10 @@
             "title": "Claim Count",
             "type": "integer"
           },
+          "copy_count": {
+            "title": "Copy Count",
+            "type": "integer"
+          },
           "date": {
             "format": "date-time",
             "title": "Date",
@@ -9496,6 +9506,7 @@
           "is_overdue",
           "is_future",
           "claim_count",
+          "copy_count",
           "quiet_gap_days"
         ],
         "title": "TimelineEventView",

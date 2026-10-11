@@ -25,6 +25,7 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
     Those re-runs pass ``backfill=False`` so the pass never cascades.
     """
     from app.dependencies import get_db_session
+    from app.services.intelligence.copy_detector import is_copy
     from app.services.intelligence.relationship_detector import detect
     from app.services.pipeline_status import (
         mark_completed,
@@ -85,6 +86,10 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
                 "doc_id": doc_id,
                 "reason": "missing_ai_summary",
             }
+        if is_copy(db, doc_id):
+            mark_skipped(doc_id, PipelineStage.RELATIONSHIPS, db, reason="copy_of")
+            logger.info("Doc #%d: relationships skipped (copy_of)", doc_id)
+            return {"status": "skipped", "doc_id": doc_id, "reason": "copy_of"}
     finally:
         db.close()
 
