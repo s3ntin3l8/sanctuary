@@ -160,7 +160,7 @@ def test_pending_triage_is_the_callers_inbox_without_slicing(db_session, two_use
     g = _groups(build_notifications(db_session, a))
     assert g["pending_triage"].count == 1
     assert g["pending_triage"].items[0].title == "a@example.com pending"
-    assert g["pending_triage"].items[0].link == "/triage"
+    assert g["pending_triage"].items[0].link.startswith("/triage?bundle=batch-")
 
 
 def test_overdue_costs_skip_settled_and_future(db_session, two_users):
@@ -203,7 +203,7 @@ def test_count_is_full_while_items_are_capped(db_session, two_users):
     assert g.count == ITEMS_PER_GROUP + 2
     assert len(g.items) == ITEMS_PER_GROUP
     # Soonest first, so the most-recently-missed deadline leads.
-    assert g.items[0].title == "Frist 6"
+    assert g.items[0].title == f"Frist {ITEMS_PER_GROUP + 1}"
     assert view.total == ITEMS_PER_GROUP + 2
 
 

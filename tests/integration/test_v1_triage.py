@@ -240,13 +240,34 @@ def test_feed_picker_lists_draft_cases(db_session):
     assert cases["DRAFT-PICK"]["is_draft"] is True
 
 
-def test_retry_all_counts_bundles(db_session):
+def test_batch_retry_requeues_owned_and_skips_the_rest(db_session):
     admin = _admin(db_session)
-    _batch(db_session, admin.id, "A", state=PipelineState.FAILED)
-    _batch(db_session, admin.id, "B", state=PipelineState.FAILED)
-    with patch("app.api.v1.triage.dispatch_batch_retry"):
-        body = client.post("/api/v1/triage/retry-all").json()
-    assert body["retried"] == 2
+    a, _ = _batch(db_session, admin.id, "A", state=PipelineState.FAILED)
+    b, _ = _batch(db_session, admin.id, "B", state=PipelineState.FAILED)
+    with patch("app.api.v1.triage.dispatch_batch_retry") as dispatch:
+        body = client.post(
+            "/api/v1/triage/batch/retry",
+            json={
+                "keys": [f"batch-{a.id}", f"batch-{b.id}", "batch-999999", "loose-1"]
+            },
+        ).json()
+    assert body["retried_keys"] == [f"batch-{a.id}", f"batch-{b.id}"]
+    assert body["skipped"] == ["batch-999999", "loose-1"]
+    assert dispatch.call_count == 2
+
+
+def test_batch_retry_skips_bundle_with_running_stage(db_session):
+    admin = _admin(db_session)
+    a, _ = _batch(db_session, admin.id, "A", state=PipelineState.FAILED)
+    with (
+        patch("app.api.v1.triage.reset_batch_for_retry", return_value=-1),
+        patch("app.api.v1.triage.dispatch_batch_retry") as dispatch,
+    ):
+        body = client.post(
+            "/api/v1/triage/batch/retry", json={"keys": [f"batch-{a.id}"]}
+        ).json()
+    assert body == {"retried_keys": [], "skipped": [f"batch-{a.id}"]}
+    dispatch.assert_not_called()
 
 
 # --- Routing -----------------------------------------------------------------

@@ -119,14 +119,6 @@ export function useRetryBundle() {
   })
 }
 
-export function useRetryAll() {
-  const queryClient = useQueryClient()
-  return useMutation<S['RetryAllResult'], ApiError>({
-    mutationFn: () => unwrap(api.POST('/api/v1/triage/retry-all')),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
-  })
-}
-
 export function useConfirmBundle() {
   const patch = useBundlePatch()
   return useMutation<S['TriageConfirmResult'], ApiError, S['TriageConfirm'] & { key: string }>({
@@ -144,6 +136,17 @@ export function useBatchConfirm() {
     mutationFn: (keys) => unwrap(api.POST('/api/v1/triage/batch/confirm', { body: { keys } })),
     onSuccess: () => {
       refreshReviewState(queryClient, { documents: true })
+      queryClient.invalidateQueries({ queryKey: ['shell'] })
+    },
+  })
+}
+
+export function useBatchRetry() {
+  const queryClient = useQueryClient()
+  return useMutation<S['BatchRetryResult'], ApiError, string[]>({
+    mutationFn: (keys) => unwrap(api.POST('/api/v1/triage/batch/retry', { body: { keys } })),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: KEY })
       queryClient.invalidateQueries({ queryKey: ['shell'] })
     },
   })

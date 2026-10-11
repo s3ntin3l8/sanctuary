@@ -36,18 +36,42 @@ test('badge shows the total and the popover lists each non-empty group with link
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
-test('shows the "+N more" line when a group is capped', async () => {
+test('long groups collapse to five rows and expand in place', async () => {
   const overdue = notificationsView.groups[0]
-  if (!overdue) throw new Error('fixture')
+  const first = overdue?.items[0]
+  if (!overdue || !first) throw new Error('fixture')
+  const items = Array.from({ length: 8 }, (_, i) => ({
+    ...first,
+    id: 100 + i,
+    title: `Frist ${i}`,
+  }))
   stubApi({
     'GET /api/v1/notifications': {
-      body: { ...notificationsView, total: 8, groups: [{ ...overdue, count: 8 }] },
+      body: { ...notificationsView, total: 8, groups: [{ ...overdue, count: 8, items }] },
     },
   })
   renderAt('/', <NotificationsPanel />)
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'Notifications' }))
-  expect(screen.getByText('+7 more')).toBeVisible()
+  expect(screen.queryByText('Frist 5')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '+3 more' }))
+  expect(screen.getByText('Frist 7')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Show less' }))
+  expect(screen.queryByText('Frist 7')).not.toBeInTheDocument()
+})
+
+test('notes rows the server did not list', async () => {
+  const overdue = notificationsView.groups[0]
+  if (!overdue) throw new Error('fixture')
+  stubApi({
+    'GET /api/v1/notifications': {
+      body: { ...notificationsView, total: 60, groups: [{ ...overdue, count: 60 }] },
+    },
+  })
+  renderAt('/', <NotificationsPanel />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Notifications' }))
+  expect(screen.getByText('59 more not listed')).toBeVisible()
 })
 
 test('empty state when nothing is due and Escape closes', async () => {

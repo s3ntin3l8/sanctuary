@@ -1563,7 +1563,7 @@ export interface paths {
         /**
          * V1 Notifications
          * @description Overdue and upcoming deadlines, hearings, the caller's pending triage
-         *     bundles and overdue costs, each group counted in full and capped at five
+         *     bundles and overdue costs, each group counted in full and listing up to 50
          *     rows.
          */
         get: operations["v1_notifications_api_v1_notifications_get"];
@@ -2568,6 +2568,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/triage/batch/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Batch Retry
+         * @description Re-run every AI stage of each selected bundle (extraction is kept).
+         *
+         *     Loose documents, bundles with a stage actively running and bundles whose
+         *     row is still locked are skipped and reported.
+         */
+        post: operations["v1_batch_retry_api_v1_triage_batch_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/triage/bundles/{batch_id}": {
         parameters: {
             query?: never;
@@ -2771,23 +2794,6 @@ export interface paths {
         /** V1 Set Title */
         put: operations["v1_set_title_api_v1_triage_documents__doc_id__title_put"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/triage/retry-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** V1 Retry All */
-        post: operations["v1_retry_all_api_v1_triage_retry_all_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3120,6 +3126,13 @@ export interface components {
             removed_keys: string[];
             /** Skipped */
             skipped: number;
+        };
+        /** BatchRetryResult */
+        BatchRetryResult: {
+            /** Retried Keys */
+            retried_keys: string[];
+            /** Skipped */
+            skipped: string[];
         };
         /** Body_v1_upload_api_v1_upload_post */
         Body_v1_upload_api_v1_upload_post: {
@@ -5392,11 +5405,6 @@ export interface components {
             rel_type: components["schemas"]["RelationshipType"];
             /** Title */
             title: string;
-        };
-        /** RetryAllResult */
-        RetryAllResult: {
-            /** Retried */
-            retried: number;
         };
         /**
          * RoleHealthView
@@ -10694,6 +10702,39 @@ export interface operations {
             };
         };
     };
+    v1_batch_retry_api_v1_triage_batch_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchKeys"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchRetryResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_bundle_api_v1_triage_bundles__batch_id__get: {
         parameters: {
             query?: never;
@@ -11131,35 +11172,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    v1_retry_all_api_v1_triage_retry_all_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RetryAllResult"];
-                };
             };
             /** @description Error */
             default: {

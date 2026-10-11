@@ -787,6 +787,30 @@
         "title": "BatchResult",
         "type": "object"
       },
+      "BatchRetryResult": {
+        "properties": {
+          "retried_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Retried Keys",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "retried_keys",
+          "skipped"
+        ],
+        "title": "BatchRetryResult",
+        "type": "object"
+      },
       "Body_v1_upload_api_v1_upload_post": {
         "properties": {
           "case_id": {
@@ -8234,19 +8258,6 @@
         "title": "RelationshipView",
         "type": "object"
       },
-      "RetryAllResult": {
-        "properties": {
-          "retried": {
-            "title": "Retried",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "retried"
-        ],
-        "title": "RetryAllResult",
-        "type": "object"
-      },
       "RoleHealthView": {
         "description": "Live health per role; a separate call because it talks to the endpoints.",
         "properties": {
@@ -14052,7 +14063,7 @@
     },
     "/api/v1/notifications": {
       "get": {
-        "description": "Overdue and upcoming deadlines, hearings, the caller's pending triage\nbundles and overdue costs, each group counted in full and capped at five\nrows.",
+        "description": "Overdue and upcoming deadlines, hearings, the caller's pending triage\nbundles and overdue costs, each group counted in full and listing up to 50\nrows.",
         "operationId": "v1_notifications_api_v1_notifications_get",
         "responses": {
           "200": {
@@ -16561,6 +16572,48 @@
         ]
       }
     },
+    "/api/v1/triage/batch/retry": {
+      "post": {
+        "description": "Re-run every AI stage of each selected bundle (extraction is kept).\n\nLoose documents, bundles with a stage actively running and bundles whose\nrow is still locked are skipped and reported.",
+        "operationId": "v1_batch_retry_api_v1_triage_batch_retry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchKeys"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRetryResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Batch Retry",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
     "/api/v1/triage/bundles/{batch_id}": {
       "delete": {
         "operationId": "v1_delete_api_v1_triage_bundles__batch_id__delete",
@@ -17189,37 +17242,6 @@
           }
         },
         "summary": "V1 Set Title",
-        "tags": [
-          "triage"
-        ]
-      }
-    },
-    "/api/v1/triage/retry-all": {
-      "post": {
-        "operationId": "v1_retry_all_api_v1_triage_retry_all_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RetryAllResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "V1 Retry All",
         "tags": [
           "triage"
         ]

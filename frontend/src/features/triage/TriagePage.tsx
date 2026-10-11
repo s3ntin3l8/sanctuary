@@ -12,7 +12,7 @@ import {
   useBatchRemove,
   useBundleAction,
   useDocumentAction,
-  useRetryAll,
+  useBatchRetry,
   useRetryBundle,
   useTriage,
 } from '../../api/triage'
@@ -22,6 +22,7 @@ import { Button, buttonClass } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
+import { Menu } from '../../ui/Menu'
 import { GmailImportStatus, useGmailRunBanner } from '../import/GmailImportStatus'
 import { NewMailNotice, useNewMailToReview } from '../import/NewMailBanner'
 import { BundleStateBar } from '../../ui/PipelineBar'
@@ -64,11 +65,11 @@ export function TriagePage() {
     )
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
   const [retryTarget, setRetryTarget] = useState<TriageBundle | null>(null)
-  const [retryAllOpen, setRetryAllOpen] = useState(false)
+  const [bulkRetryOpen, setBulkRetryOpen] = useState(false)
   const [bulkDanger, setBulkDanger] = useState<'dismiss' | 'delete' | null>(null)
   const batchRemove = useBatchRemove()
   const query = useTriage(filters)
-  const retryAll = useRetryAll()
+  const batchRetry = useBatchRetry()
   const retry = useRetryBundle()
   const toast = useToast()
 
@@ -120,6 +121,8 @@ export function TriagePage() {
   }, [expandedGone, setParams])
   // Selected bundles that are still in the feed (a filed one drops out by itself).
   const picked = useMemo(() => bundles.filter((b) => selected.has(b.key)), [bundles, selected])
+  // A stuck bundle can be retried, archived or deleted, but not confirmed.
+  const confirmablePicked = picked.filter((b) => b.status !== 'stuck')
   const visible = bundles.filter((b) => status === 'all' || b.status === status)
   // Scans waiting for a split decision are not bundles yet; they sit above the inbox.
   const slicingRows = status === 'all' ? (query.data?.slicing_queue ?? []) : []
@@ -150,7 +153,7 @@ export function TriagePage() {
     })
     return c
   }, [bundles])
-  const selectable = visible.filter((b) => b.status !== 'processing' && b.status !== 'stuck')
+  const selectable = visible.filter((b) => b.status !== 'processing')
   const allSelected = selectable.length > 0 && selectable.every((b) => selected.has(b.key))
 
   function toggleSort(sort: TriageFilters['sort']) {
@@ -190,13 +193,6 @@ export function TriagePage() {
               </Badge>
             )}
           </Link>
-          <Button
-            variant="secondary"
-            disabled={retryAll.isPending || bundles.length === 0}
-            onClick={() => setRetryAllOpen(true)}
-          >
-            <Icon name="replay" size={16} /> Re-Analyze all
-          </Button>
           <Button onClick={() => setParams({ upload: '1' })}>
             <Icon name="upload_file" size={16} /> Ingest
           </Button>
@@ -224,23 +220,28 @@ export function TriagePage() {
       {picked.length > 0 && (
         <div className="mx-6 mb-2 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 px-3 py-2 text-[12px]">
           <span className="font-semibold">{picked.length} selected</span>
-          <Button
-            size="sm"
-            onClick={() =>
-              setConfirmTarget({
-                mode: 'batch_confirm',
-                bundles: picked,
-              })
-            }
-          >
-            Confirm ({picked.length})
-          </Button>
+          {confirmablePicked.length > 0 && (
+            <Button
+              size="sm"
+              onClick={() =>
+                setConfirmTarget({
+                  mode: 'batch_confirm',
+                  bundles: confirmablePicked,
+                })
+              }
+            >
+              Confirm ({confirmablePicked.length})
+            </Button>
+          )}
           <Button
             size="sm"
             variant="secondary"
             onClick={() => setConfirmTarget({ mode: 'batch', keys: picked.map((b) => b.key) })}
           >
             Assign to…
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setBulkRetryOpen(true)}>
+            Re-analyze ({picked.length})
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setBulkDanger('dismiss')}>
             Archive ({picked.length})
@@ -443,18 +444,29 @@ export function TriagePage() {
         pending={batchRemove.isPending}
       />
       <ConfirmDialog
-        open={retryAllOpen}
-        onClose={() => setRetryAllOpen(false)}
+        open={bulkRetryOpen}
+        onClose={() => setBulkRetryOpen(false)}
         onConfirm={() => {
-          setRetryAllOpen(false)
-          retryAll.mutate(undefined, {
-            onSuccess: (r) => toast(`${r.retried} bundle(s) re-queued`),
-            onError: (e) => toast(e.message, 'error'),
-          })
+          setBulkRetryOpen(false)
+          batchRetry.mutate(
+            picked.map((b) => b.key),
+            {
+              onSuccess: (r) => {
+                toast(
+                  r.skipped.length > 0
+                    ? `${r.retried_keys.length} re-queued, ${r.skipped.length} skipped`
+                    : `${r.retried_keys.length} re-queued`,
+                )
+                setSelected(new Set())
+              },
+              onError: (e) => toast(e.message, 'error'),
+            },
+          )
         }}
-        title="Re-analyze every bundle?"
-        body="All AI stages run again for every bundle in your inbox. Bundles that are currently processing are skipped."
-        label="Re-analyze all"
+        title={`Re-analyze ${picked.length} bundle(s)?`}
+        body="All AI stages run again for the selected bundles. Bundles with a stage running now, and loose documents, are skipped."
+        label="Re-analyze"
+        pending={batchRetry.isPending}
       />
       <IngestModal open={uploadOpen} caseId={uploadCase} onClose={() => setParams({})} />
     </div>
@@ -503,6 +515,7 @@ function FilterHeader({
   onSort?: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
   return (
     <span className="relative flex items-center gap-1">
       {onSort ? (
@@ -517,6 +530,7 @@ function FilterHeader({
         <span>{label}</span>
       )}
       <button
+        ref={trigger}
         type="button"
         aria-label={`Filter ${label}`}
         aria-expanded={open}
@@ -525,33 +539,31 @@ function FilterHeader({
       >
         <Icon name={selected.length ? 'filter_alt' : 'filter_list'} size={13} />
       </button>
-      {open && (
-        <>
-          <button
-            type="button"
-            aria-label="Close filter"
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-190 cursor-default"
-          />
-          <div className="absolute top-full left-0 z-200 mt-1 w-56 rounded-xl border border-line bg-card p-1.5 text-[11px] normal-case shadow-[0_16px_40px_rgba(0,0,0,.5)]">
-            {options.length === 0 && <p className="px-2 py-1 text-muted">No options</p>}
-            {options.map((o) => (
-              <label
-                key={o.value}
-                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/5"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(o.value)}
-                  onChange={() => onToggle(o.value)}
-                  className="h-3.5 w-3.5 accent-accent"
-                />
-                <span className="truncate font-normal tracking-normal">{o.label}</span>
-              </label>
-            ))}
-          </div>
-        </>
-      )}
+      <Menu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={trigger}
+        align="left"
+        role="dialog"
+        label={`${label} filter`}
+        className="w-56 p-1.5 text-[11px] normal-case"
+      >
+        {options.length === 0 && <p className="px-2 py-1 text-muted">No options</p>}
+        {options.map((o) => (
+          <label
+            key={o.value}
+            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/5"
+          >
+            <input
+              type="checkbox"
+              checked={selected.includes(o.value)}
+              onChange={() => onToggle(o.value)}
+              className="h-3.5 w-3.5 accent-accent"
+            />
+            <span className="truncate font-normal tracking-normal">{o.label}</span>
+          </label>
+        ))}
+      </Menu>
     </span>
   )
 }
@@ -647,6 +659,7 @@ function BundleRow({
   const openDocument = useOpenDocument()
   const toast = useToast()
   const [menu, setMenu] = useState(false)
+  const menuTrigger = useRef<HTMLButtonElement>(null)
   // The selected document lives in the URL (`?doc=`), like the expanded bundle, so the
   // confirm modal can jump to one and a round-trip through the HUD reopens it.
   const [params, setParams] = useSearchParams()
@@ -674,12 +687,9 @@ function BundleRow({
   const openParts = bundleOpenParts(b)
 
   return (
-    <li
-      className={`border-l-2 ${STATUS_STRIPE[b.status]} ${b.status === 'needs_review' && b.confirmed_case_id ? 'opacity-90' : ''}`}
-      data-bundle-key={b.key}
-    >
+    <li className={`border-l-2 ${STATUS_STRIPE[b.status]}`} data-bundle-key={b.key}>
       <div
-        className={`${GRID} cursor-pointer px-3 py-2.5 text-[12px] hover:bg-accent/5`}
+        className={`${GRID} ${b.status === 'needs_review' && b.confirmed_case_id ? 'opacity-90' : ''} cursor-pointer px-3 py-2.5 text-[12px] hover:bg-accent/5`}
         onClick={onToggle}
         role="button"
         tabIndex={0}
@@ -696,7 +706,7 @@ function BundleRow({
           type="checkbox"
           aria-label={`Select ${b.subject ?? b.key}`}
           checked={selected}
-          disabled={processing || b.status === 'stuck'}
+          disabled={processing}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onSelect(e.target.checked)}
           className="h-3.5 w-3.5 accent-accent"
@@ -836,6 +846,7 @@ function BundleRow({
           {!processing && (
             <span className="relative">
               <button
+                ref={menuTrigger}
                 type="button"
                 aria-label="More actions"
                 aria-expanded={menu}
@@ -845,48 +856,41 @@ function BundleRow({
               >
                 <Icon name="more_horiz" size={16} />
               </button>
-              {menu && (
-                <>
-                  <button
-                    type="button"
-                    aria-label="Close menu"
-                    onClick={() => setMenu(false)}
-                    className="fixed inset-0 z-190 cursor-default"
+              <Menu
+                open={menu}
+                onClose={() => setMenu(false)}
+                anchorRef={menuTrigger}
+                label="Bundle actions"
+                className="w-44 p-1 text-[11.5px]"
+              >
+                {b.batch_id !== null && (
+                  <MenuItem
+                    icon="replay"
+                    label="Retry"
+                    onClick={() => {
+                      setMenu(false)
+                      onRetry()
+                    }}
                   />
-                  <div
-                    role="menu"
-                    className="absolute top-full right-0 z-200 mt-1 w-44 rounded-xl border border-line bg-card p-1 text-[11.5px] shadow-[0_16px_40px_rgba(0,0,0,.5)]"
-                  >
-                    {b.batch_id !== null && (
-                      <MenuItem
-                        icon="replay"
-                        label="Retry"
-                        onClick={() => {
-                          setMenu(false)
-                          onRetry()
-                        }}
-                      />
-                    )}
-                    <MenuItem
-                      icon="archive"
-                      label="Archive"
-                      onClick={() => {
-                        setMenu(false)
-                        setConfirmDanger('dismiss')
-                      }}
-                    />
-                    <MenuItem
-                      icon="delete"
-                      label="Delete"
-                      danger
-                      onClick={() => {
-                        setMenu(false)
-                        setConfirmDanger('delete')
-                      }}
-                    />
-                  </div>
-                </>
-              )}
+                )}
+                <MenuItem
+                  icon="archive"
+                  label="Archive"
+                  onClick={() => {
+                    setMenu(false)
+                    setConfirmDanger('dismiss')
+                  }}
+                />
+                <MenuItem
+                  icon="delete"
+                  label="Delete"
+                  danger
+                  onClick={() => {
+                    setMenu(false)
+                    setConfirmDanger('delete')
+                  }}
+                />
+              </Menu>
             </span>
           )}
         </span>
