@@ -208,6 +208,8 @@ class CaseTimelineService:
 
         # A document filed again (an exhibit copying an earlier letter) is not a
         # second event: it folds onto its original, which counts its copies.
+        # Counted whatever the edge's confidence: a person-confirmed copy folds
+        # like a detected one.
         copy_originals: dict[int, int] = (
             {
                 copy_id: original_id
