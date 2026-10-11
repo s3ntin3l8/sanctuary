@@ -25,6 +25,8 @@ from app.config import REDIS_URL
 logger = logging.getLogger(__name__)
 
 _KEY_PREFIX = "sanctuary:ai_inflight:"
+_MAX_LABEL = 200  # characters per label returned by list_inflight
+_MAX_LABELS = 50  # entries returned by list_inflight
 _TTL_SECONDS = 600  # 10 min — safely above the 600s AI_READ_TIMEOUT default
 
 # Warn at most once per minute to avoid log spam when Redis is unreachable.
@@ -165,4 +167,4 @@ def list_inflight() -> list[str]:
     except (redis.RedisError, OSError) as exc:
         _maybe_warn(exc)
         return []
-    return sorted(label for label in labels if label)
+    return sorted(label[:_MAX_LABEL] for label in labels if label)[:_MAX_LABELS]

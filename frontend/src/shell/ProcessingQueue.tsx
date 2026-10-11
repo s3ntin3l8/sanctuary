@@ -40,6 +40,9 @@ export function ProcessingQueue() {
           <div className="mb-1 font-semibold text-ink">
             Processing · {pluralize(active, 'item')} active
             {failed > 0 && <span className="text-danger"> · {failed} failed</span>}
+            {failed > queue.failed.length && (
+              <span className="text-muted"> (listing {queue.failed.length})</span>
+            )}
           </div>
           <div className="text-muted">
             {counts?.executing} executing · {counts?.queued} queued · {counts?.ai_inflight} AI calls
