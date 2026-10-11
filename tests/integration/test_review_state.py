@@ -363,3 +363,59 @@ def test_dismissing_the_target_claim_clears_the_documents_contest_flag(
     db_session.refresh(doc)
     assert "contests_existing_claim" not in doc.review_reasons
     assert doc.needs_review is False
+
+
+def test_claim_evidence_dedupe_migration_keeps_the_stronger_row(
+    db_session, sample_case
+):
+    import importlib.util
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    path = next(Path(__file__).parents[2].glob("alembic/versions/c4f8a2d6e1b9_*.py"))
+    spec = importlib.util.spec_from_file_location("one_link_migration", path)
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+
+    owner = _owner(db_session)
+    doc = _doc(db_session, sample_case.id, owner, "contester")
+    claim = _claim_asserted_in_case(db_session, sample_case, owner)
+    db_session.commit()
+
+    # Recreate the pre-migration schema: no uniqueness on the pair.
+    db_session.execute(
+        text(
+            "ALTER TABLE claim_evidence DROP CONSTRAINT uq_claim_evidence_claim_document"
+        )
+    )
+    db_session.execute(text("DROP INDEX uq_claim_evidence_proposals_pending_pair"))
+    for role in (ClaimEvidenceRole.CONTESTS, ClaimEvidenceRole.REFUTES):
+        db_session.add(
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=doc.id,
+                role=role,
+                confidence=RelationshipConfidence.AI_DETECTED,
+            )
+        )
+        _proposal(db_session, claim, doc, role=role)
+    db_session.commit()
+
+    db_session.execute(text(mig.DEDUPE_EVIDENCE))
+    db_session.execute(text(mig.DEDUPE_PENDING_PROPOSALS))
+    db_session.commit()
+
+    roles = [
+        ev.role
+        for ev in db_session.query(ClaimEvidence).filter_by(
+            claim_id=claim.id, document_id=doc.id
+        )
+    ]
+    assert roles == [ClaimEvidenceRole.REFUTES]
+    proposals = (
+        db_session.query(ClaimEvidenceProposal)
+        .filter_by(target_claim_id=claim.id, source_document_id=doc.id)
+        .all()
+    )
+    assert [p.proposed_role for p in proposals] == [ClaimEvidenceRole.REFUTES]

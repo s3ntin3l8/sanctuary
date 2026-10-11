@@ -45,6 +45,16 @@ def claim_with_evidence(db_session):
     db_session.add(claim)
     db_session.flush()
 
+    # One link per (claim, document): the other roles come from other documents.
+    supporter = Document(
+        title="Supporter", content="x", ingest_batch_id=batch.id, case_id=case.id
+    )
+    contester = Document(
+        title="Contester", content="x", ingest_batch_id=batch.id, case_id=case.id
+    )
+    db_session.add_all([supporter, contester])
+    db_session.flush()
+
     db_session.add_all(
         [
             ClaimEvidence(
@@ -54,12 +64,12 @@ def claim_with_evidence(db_session):
             ),
             ClaimEvidence(
                 claim_id=claim.id,
-                document_id=doc.id,
+                document_id=supporter.id,
                 role=ClaimEvidenceRole.SUPPORTS,
             ),
             ClaimEvidence(
                 claim_id=claim.id,
-                document_id=doc.id,
+                document_id=contester.id,
                 role=ClaimEvidenceRole.CONTESTS,
             ),
         ]
@@ -105,6 +115,12 @@ def test_delete_document_via_service_removes_dependent_claim_chain(
     claim, doc = claim_with_evidence
     doc_id = doc.id
     claim_id = claim.id
+    # A claim other documents also speak to survives (see the retry tests);
+    # this one is only ever referenced by its source.
+    db_session.query(ClaimEvidence).filter(
+        ClaimEvidence.claim_id == claim_id, ClaimEvidence.document_id != doc_id
+    ).delete()
+    db_session.commit()
     DocumentService(db_session).delete_document(doc_id)
 
     db_session.expire_all()

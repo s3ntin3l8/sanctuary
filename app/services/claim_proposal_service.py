@@ -4,7 +4,7 @@ Two flavors:
 
 - `confirm_merge(proposal_id)` — collapses `new_claim` into `existing_claim`.
   All ClaimEvidence rows pointing at the new claim are repointed to the
-  existing claim (deduped against same-document/same-role rows). The
+  existing claim (one link per document: the stronger role survives a collision). The
   new claim is then deleted; its embedding goes with it (same row).
 
 - `confirm_evidence(proposal_id)` — writes the proposed ClaimEvidence
@@ -31,6 +31,7 @@ from app.models.database import (
     ClaimMergeProposal,
 )
 from app.models.enums import (
+    EVIDENCE_ROLE_STRENGTH,
     ClaimEvidenceRole,
     ClaimStatus,
     ProposalStatus,
@@ -38,6 +39,15 @@ from app.models.enums import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _evidence_rank(ev: ClaimEvidence) -> tuple[int, int]:
+    """Ordering for competing rows on one (claim, document): user decisions
+    first, then role strength."""
+    return (
+        int(ev.confidence != RelationshipConfidence.AI_DETECTED),
+        EVIDENCE_ROLE_STRENGTH[ev.role],
+    )
 
 
 def _now() -> datetime:
@@ -65,10 +75,10 @@ def confirm_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
         db.flush()
         return prop
 
-    # Repoint evidence rows. Drop duplicates (same doc + same role on the
-    # existing claim already).
-    existing_keys = {
-        (ev.document_id, ev.role)
+    # Repoint evidence rows. A document holds one link per claim: on a
+    # collision the stronger role survives (a user-confirmed row beats an AI one).
+    existing_by_doc = {
+        ev.document_id: ev
         for ev in db.query(ClaimEvidence)
         .filter(ClaimEvidence.claim_id == existing.id)
         .all()
@@ -77,18 +87,26 @@ def confirm_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
         db.query(ClaimEvidence).filter(ClaimEvidence.claim_id == new_claim.id).all()
     )
     for ev in new_evidence:
-        if (ev.document_id, ev.role) in existing_keys:
-            db.delete(ev)
-        else:
+        kept = existing_by_doc.get(ev.document_id)
+        if kept is None:
             ev.claim_id = existing.id
-            existing_keys.add((ev.document_id, ev.role))
+            existing_by_doc[ev.document_id] = ev
+            continue
+        if _evidence_rank(ev) > _evidence_rank(kept):
+            # Move the winner over the loser's slot.
+            db.delete(kept)
+            db.flush()
+            ev.claim_id = existing.id
+            existing_by_doc[ev.document_id] = ev
+        else:
+            db.delete(ev)
 
     # Pending evidence proposals aimed at the absorbed claim follow the
     # survivor; left alone they would cascade away with it, silently dropping
     # the contest/refute decisions the user still has to make.
-    # A proposal the survivor already has (same document and role) is not repeated.
+    # A proposal the survivor already has from the same document is not repeated.
     already = {
-        (p.source_document_id, p.proposed_role)
+        p.source_document_id
         for p in db.query(ClaimEvidenceProposal).filter(
             ClaimEvidenceProposal.target_claim_id == existing.id,
             ClaimEvidenceProposal.status == ProposalStatus.PENDING,
@@ -97,13 +115,16 @@ def confirm_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
     for p in db.query(ClaimEvidenceProposal).filter(
         ClaimEvidenceProposal.target_claim_id == new_claim.id
     ):
-        if (
-            p.status == ProposalStatus.PENDING
-            and (p.source_document_id, p.proposed_role) in already
-        ):
+        if p.status == ProposalStatus.PENDING and p.source_document_id in already:
             db.delete(p)
         else:
             p.target_claim_id = existing.id
+
+    # Deleting the claim cascades over its evidence collection, which the ORM
+    # loads without autoflush: persist the repointing first so the survivors
+    # are no longer in that collection.
+    db.flush()
+    db.expire(new_claim, ["evidence"])
 
     # embedding lives on the claim row itself, so deleting it drops the vector too.
     db.delete(new_claim)
@@ -158,19 +179,20 @@ def confirm_evidence(proposal_id: int, db: Session) -> ClaimEvidenceProposal | N
         db.flush()
         return prop
 
-    # Skip if the same evidence row already exists (idempotency for
-    # double-clicks / retries).
+    # A document holds one link per claim. A row already there (double-click,
+    # retry, or an out-of-band AI write) is updated to the user's decision
+    # instead of duplicated; the originating ASSERTS row keeps its role.
     existing = (
         db.query(ClaimEvidence)
         .filter(
             ClaimEvidence.claim_id == prop.target_claim_id,
             ClaimEvidence.document_id == prop.source_document_id,
-            ClaimEvidence.role == prop.proposed_role,
         )
         .first()
     )
     if existing is not None:
-        # A row the AI wrote out-of-band must not pass for user-confirmed.
+        if existing.role != ClaimEvidenceRole.ASSERTS:
+            existing.role = prop.proposed_role
         existing.confidence = RelationshipConfidence.USER_CONFIRMED
         if prop.excerpt:
             existing.excerpt = prop.excerpt

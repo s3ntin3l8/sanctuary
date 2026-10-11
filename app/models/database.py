@@ -1046,6 +1046,11 @@ class ClaimEvidence(Base):
     """Link between a claim and a document that supports, contests, or refutes it."""
 
     __tablename__ = "claim_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "claim_id", "document_id", name="uq_claim_evidence_claim_document"
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     claim_id: Mapped[int] = mapped_column(
         Integer,
@@ -1146,6 +1151,13 @@ class ClaimEvidenceProposal(Base):
             postgresql_where=_sa_text("status = 'PENDING'"),
         ),
         Index("ix_claim_evidence_proposals_target_claim", "target_claim_id"),
+        Index(
+            "uq_claim_evidence_proposals_pending_pair",
+            "target_claim_id",
+            "source_document_id",
+            unique=True,
+            postgresql_where=_sa_text("status = 'PENDING'"),
+        ),
         Index(
             "ix_claim_evidence_proposals_source_document",
             "source_document_id",
