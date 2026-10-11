@@ -10,6 +10,8 @@ import { CountBadge, RailButton } from './RailButton'
 
 type Kind = Schemas['NotificationGroup']['kind']
 
+const COLLAPSED_ITEMS = 5
+
 const GROUPS: Record<Kind, { title: string; icon: string; tone: string }> = {
   overdue_deadline: { title: 'Overdue', icon: 'error', tone: 'text-danger' },
   upcoming_deadline: { title: 'Due this week', icon: 'schedule', tone: 'text-warning' },
@@ -22,6 +24,7 @@ const GROUPS: Record<Kind, { title: string; icon: string; tone: string }> = {
 export function NotificationsPanel() {
   const view = useNotifications().data
   const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState<Set<Kind>>(new Set())
   const total = view?.total ?? 0
   const groups = (view?.groups ?? []).filter((g) => g.count > 0)
 
@@ -55,12 +58,27 @@ export function NotificationsPanel() {
             {GROUPS[g.kind].title}
             <span className="ml-auto font-mono">{g.count}</span>
           </div>
-          {g.items.map((item) => (
+          {(expanded.has(g.kind) ? g.items : g.items.slice(0, COLLAPSED_ITEMS)).map((item) => (
             <Row key={`${g.kind}-${item.id}`} item={item} onClick={() => setOpen(false)} />
           ))}
+          {g.items.length > COLLAPSED_ITEMS && (
+            <button
+              type="button"
+              onClick={() =>
+                setExpanded((prev) => {
+                  const next = new Set(prev)
+                  if (!next.delete(g.kind)) next.add(g.kind)
+                  return next
+                })
+              }
+              className="px-2.5 pb-1.5 text-[10.5px] text-accent hover:underline"
+            >
+              {expanded.has(g.kind) ? 'Show less' : `+${g.items.length - COLLAPSED_ITEMS} more`}
+            </button>
+          )}
           {g.count > g.items.length && (
             <div className="px-2.5 pb-1.5 text-[10px] text-muted">
-              +{g.count - g.items.length} more
+              {g.count - g.items.length} more not listed
             </div>
           )}
         </section>

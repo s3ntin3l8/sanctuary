@@ -170,7 +170,7 @@ def test_full_retry_resets_draft_proceeding(app_client, db_session):
 
 @pytest.mark.integration
 def test_partial_reset_keeps_extract_and_stamp(db_session, sample_case):
-    """``retry-all`` resets with full=False: extraction and its stamp survive."""
+    """the batch retry resets with full=False: extraction and its stamp survive."""
     from app.services.triage_retry import reset_batch_for_retry
 
     batch = _make_batch(db_session, sample_case.id)

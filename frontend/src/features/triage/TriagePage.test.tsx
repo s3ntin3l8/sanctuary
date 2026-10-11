@@ -117,7 +117,7 @@ test('batch selection confirms every selected bundle', async () => {
   const user = userEvent.setup()
   await screen.findByText('Klageerwiderung')
   await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
-  // The stuck bundle can't be selected, just as it can't be confirmed on its own.
+  // The stuck bundle is selected too, but only confirmable bundles are confirmed.
   await user.click(screen.getByRole('button', { name: 'Confirm (1)' }))
   // Nothing is sent until the summary dialog is confirmed.
   const dialog = await screen.findByRole('dialog', { name: 'Confirm 1 bundles' })
@@ -140,12 +140,32 @@ test('batch selection archives every selected bundle after confirming', async ()
   const user = userEvent.setup()
   await screen.findByText('Klageerwiderung')
   await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
-  await user.click(screen.getByRole('button', { name: 'Archive (1)' }))
+  await user.click(screen.getByRole('button', { name: 'Archive (2)' }))
   expect(await postedJson(fetch, '/batch/dismiss')).toBeUndefined()
-  const dialog = await screen.findByRole('dialog', { name: 'Archive 1 bundle(s)?' })
+  const dialog = await screen.findByRole('dialog', { name: 'Archive 2 bundle(s)?' })
   await user.click(within(dialog).getByRole('button', { name: 'Archive' }))
   await waitFor(async () =>
-    expect(await postedJson(fetch, '/batch/dismiss')).toEqual({ keys: ['batch-42'] }),
+    expect(await postedJson(fetch, '/batch/dismiss')).toEqual({ keys: ['batch-42', 'batch-39'] }),
+  )
+})
+
+test('batch selection re-analyzes every selected bundle including stuck ones', async () => {
+  const fetch = stub({
+    'POST /api/v1/triage/batch/retry': {
+      body: { retried_keys: ['batch-42', 'batch-39'], skipped: [] },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await screen.findByText('Klageerwiderung')
+  expect(screen.queryByRole('button', { name: /Re-Analyze all/ })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
+  await user.click(screen.getByRole('button', { name: 'Re-analyze (2)' }))
+  expect(await postedJson(fetch, '/batch/retry')).toBeUndefined()
+  const dialog = await screen.findByRole('dialog', { name: 'Re-analyze 2 bundle(s)?' })
+  await user.click(within(dialog).getByRole('button', { name: 'Re-analyze' }))
+  await waitFor(async () =>
+    expect(await postedJson(fetch, '/batch/retry')).toEqual({ keys: ['batch-42', 'batch-39'] }),
   )
 })
 

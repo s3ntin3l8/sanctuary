@@ -36,7 +36,7 @@ from app.schemas.notifications import (
 from app.services import access_service
 from app.services.cost_service import SETTLED_STATUSES, costs_due
 
-ITEMS_PER_GROUP = 5
+ITEMS_PER_GROUP = 50
 DEADLINE_WINDOW = timedelta(days=7)
 HEARING_WINDOW = timedelta(days=30)
 
@@ -87,7 +87,7 @@ def build_notifications(db: Session, user: User) -> NotificationsView:
             due_at=b.received_at,
             case_id=None,
             case_title=None,
-            link="/triage",
+            link=f"/triage?bundle=batch-{b.id}",
         )
         for b in batches
     ]

@@ -151,10 +151,6 @@ class TriageView(BaseModel):
     slicing_queue: list[SlicingQueueItem]
 
 
-class RetryAllResult(BaseModel):
-    retried: int
-
-
 class TriageConfirm(BaseModel):
     """Route a bundle (or loose document) to a case.
 
@@ -195,6 +191,11 @@ class BatchAssign(BatchKeys):
 
 class BatchRemoveResult(BaseModel):
     removed_keys: list[str]
+    skipped: list[str]
+
+
+class BatchRetryResult(BaseModel):
+    retried_keys: list[str]
     skipped: list[str]
 
 

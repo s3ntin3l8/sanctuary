@@ -25,6 +25,7 @@ from app.schemas.triage import (
     BatchKeys,
     BatchRemoveResult,
     BatchResult,
+    BatchRetryResult,
     BundlePipeline,
     ConfirmedCase,
     CoverUpdate,
@@ -34,7 +35,6 @@ from app.schemas.triage import (
     PickerCase,
     PickerOption,
     PickerProceeding,
-    RetryAllResult,
     SlicingQueueItem,
     TitleUpdate,
     TriageActionDate,
@@ -434,39 +434,6 @@ def retry_bundle(
     return found
 
 
-@router.post("/retry-all", response_model=RetryAllResult)
-@limiter.limit("5/minute")
-def retry_all(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    bundles = get_triage_bundles(db, limit=500, enrich=False, owner_id=user.id)
-    batch_ids = {b.batch_id for b in bundles if b.batch_id is not None}
-    retried = 0
-    for batch in db.query(IngestBatch).filter(IngestBatch.id.in_(batch_ids)).all():
-
-        def _do_reset(b=batch):
-            res = reset_batch_for_retry(b, db, full=False)
-            if res == -1:
-                return -1
-            items, fallback = res
-            db.commit()
-            return items, fallback
-
-        try:
-            result = retry_on_db_locked(_do_reset, db)
-        except OperationalError:
-            logger.warning("retry-all: batch %s still locked; skipping", batch.id)
-            continue
-        if result == -1:
-            continue
-        items, fallback = result
-        dispatch_batch_retry(items, batch_fallback=fallback, batch_id=batch.id, db=db)
-        retried += 1
-    return RetryAllResult(retried=retried)
-
-
 # --- Routing to a case ---------------------------------------------------------
 
 
@@ -686,6 +653,54 @@ def batch_delete(
         (removed if ok else skipped).append(key)
     cleanup_orphaned_drafts(db)
     return BatchRemoveResult(removed_keys=removed, skipped=skipped)
+
+
+@router.post("/batch/retry", response_model=BatchRetryResult)
+@limiter.limit("30/minute")
+def batch_retry(
+    request: Request,
+    body: BatchKeys,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run every AI stage of each selected bundle (extraction is kept).
+
+    Loose documents, bundles with a stage actively running and bundles whose
+    row is still locked are skipped and reported.
+    """
+    retried: list[str] = []
+    skipped: list[str] = []
+    for key in body.keys:
+        batch_id, doc_id = _parse_key(key)
+        if batch_id is None or not _key_owned(db, user, batch_id, doc_id):
+            skipped.append(key)
+            continue
+        batch = db.get(IngestBatch, batch_id)
+        if batch is None:
+            skipped.append(key)
+            continue
+
+        def _do_reset(b=batch):
+            res = reset_batch_for_retry(b, db, full=False)
+            if res == -1:
+                return -1
+            items, fallback = res
+            db.commit()
+            return items, fallback
+
+        try:
+            result = retry_on_db_locked(_do_reset, db)
+        except OperationalError:
+            logger.warning("batch retry: batch %s still locked; skipping", batch_id)
+            skipped.append(key)
+            continue
+        if result == -1:
+            skipped.append(key)
+            continue
+        items, fallback = result
+        dispatch_batch_retry(items, batch_fallback=fallback, batch_id=batch_id, db=db)
+        retried.append(key)
+    return BatchRetryResult(retried_keys=retried, skipped=skipped)
 
 
 @router.post("/batch/assign", response_model=BatchResult)
