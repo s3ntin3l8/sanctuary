@@ -149,6 +149,26 @@ export function useBatchConfirm() {
   })
 }
 
+export function useBatchRemove() {
+  const queryClient = useQueryClient()
+  return useMutation<
+    S['BatchRemoveResult'],
+    ApiError,
+    { keys: string[]; action: 'dismiss' | 'delete' }
+  >({
+    mutationFn: ({ keys, action }) =>
+      unwrap(
+        action === 'dismiss'
+          ? api.POST('/api/v1/triage/batch/dismiss', { body: { keys } })
+          : api.POST('/api/v1/triage/batch/delete', { body: { keys } }),
+      ),
+    onSuccess: () => {
+      refreshReviewState(queryClient, { documents: true })
+      queryClient.invalidateQueries({ queryKey: ['shell'] })
+    },
+  })
+}
+
 export function useBatchAssign() {
   const queryClient = useQueryClient()
   return useMutation<S['BatchResult'], ApiError, S['BatchAssign']>({

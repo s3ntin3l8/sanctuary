@@ -186,6 +186,60 @@ def test_delete_refuses_in_flight_bundle(db_session):
     assert resp.json()["code"] == "in_flight"
 
 
+def test_batch_dismiss_archives_owned_and_skips_unknown(db_session):
+    admin = _admin(db_session)
+    a, docs_a = _batch(db_session, admin.id, "A")
+    b, _ = _batch(db_session, admin.id, "B")
+    body = client.post(
+        "/api/v1/triage/batch/dismiss",
+        json={"keys": [f"batch-{a.id}", f"batch-{b.id}", "batch-999999"]},
+    ).json()
+    assert set(body["removed_keys"]) == {f"batch-{a.id}", f"batch-{b.id}"}
+    assert body["skipped"] == ["batch-999999"]
+    db_session.expire_all()
+    assert db_session.get(IngestBatch, a.id).status == IngestBatchStatus.DISMISSED
+    assert db_session.get(Document, docs_a[0].id) is not None
+
+
+def test_batch_delete_skips_in_flight_and_cleans_orphan_drafts(db_session):
+    admin = _admin(db_session)
+    draft = Case(id="DRAFT-BULK", title="Draft", is_draft=True, owner_id=admin.id)
+    db_session.add(draft)
+    db_session.commit()
+    gone, _ = _batch(db_session, admin.id, "Gone", case_id=draft.id)
+    busy, busy_docs = _batch(db_session, admin.id, "Busy", state=PipelineState.RUNNING)
+    from app.models.database import DocumentPipelineStage
+    from app.models.enums import PipelineStage, StageStatus
+
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=busy_docs[0].id,
+            stage=PipelineStage.ENRICH,
+            status=StageStatus.RUNNING,
+        )
+    )
+    db_session.commit()
+    gone_id, busy_id = gone.id, busy.id
+    body = client.post(
+        "/api/v1/triage/batch/delete",
+        json={"keys": [f"batch-{gone_id}", f"batch-{busy_id}"]},
+    ).json()
+    assert body["removed_keys"] == [f"batch-{gone_id}"]
+    assert body["skipped"] == [f"batch-{busy_id}"]
+    db_session.expire_all()
+    assert db_session.get(IngestBatch, gone_id) is None
+    assert db_session.get(IngestBatch, busy_id) is not None
+    assert db_session.get(Case, "DRAFT-BULK") is None
+
+
+def test_feed_picker_lists_draft_cases(db_session):
+    admin = _admin(db_session)
+    db_session.add(Case(id="DRAFT-PICK", title="D", is_draft=True, owner_id=admin.id))
+    db_session.commit()
+    cases = {c["id"]: c for c in client.get("/api/v1/triage").json()["cases"]}
+    assert cases["DRAFT-PICK"]["is_draft"] is True
+
+
 def test_retry_all_counts_bundles(db_session):
     admin = _admin(db_session)
     _batch(db_session, admin.id, "A", state=PipelineState.FAILED)

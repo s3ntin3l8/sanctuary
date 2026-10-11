@@ -23,6 +23,7 @@ from app.repositories.case import CaseRepository
 from app.schemas.triage import (
     BatchAssign,
     BatchKeys,
+    BatchRemoveResult,
     BatchResult,
     BundlePipeline,
     ConfirmedCase,
@@ -59,6 +60,7 @@ from app.services.triage_bundles import (
     summary_awaits_approval,
 )
 from app.services.triage_confirmation import (
+    cleanup_orphaned_drafts,
     confirm_bundle,
     confirm_document,
     get_bundle_suggestion,
@@ -314,8 +316,10 @@ def triage(
             ],
         },
         cases=[
-            PickerCase(id=c.id, title=c.title)
-            for c in CaseRepository(db).list_for_picker(owner_id=user.id)
+            PickerCase(id=c.id, title=c.title, is_draft=c.is_draft)
+            for c in CaseRepository(db).list_for_picker(
+                owner_id=user.id, include_drafts=True
+            )
         ],
         proceedings=[
             PickerProceeding(
@@ -382,6 +386,7 @@ def _delete(db: Session, **target: int) -> None:
         raise ApiError(409, "in_flight", str(exc)) from exc
     if not ok:
         raise ApiError(404, "not_found", "Bundle not found.")
+    cleanup_orphaned_drafts(db)
 
 
 @router.delete("/bundles/{batch_id}", status_code=204, response_class=Response)
@@ -624,6 +629,53 @@ def batch_confirm(
             _route_document(db, doc_id or 0, case_id, proceeding_id, True)
         confirmed_keys.append(key)
     return _batch_result(db, user, confirmed_keys, skipped)
+
+
+@router.post("/batch/dismiss", response_model=BatchRemoveResult)
+@limiter.limit("30/minute")
+def batch_dismiss(
+    request: Request,
+    body: BatchKeys,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Archive every selected bundle; bundles that aren't the user's are skipped."""
+    removed: list[str] = []
+    skipped: list[str] = []
+    for key in body.keys:
+        batch_id, doc_id = _parse_key(key)
+        if not _key_owned(db, user, batch_id, doc_id):
+            skipped.append(key)
+            continue
+        dismiss_bundle(db, batch_id=batch_id, doc_id=doc_id)
+        removed.append(key)
+    return BatchRemoveResult(removed_keys=removed, skipped=skipped)
+
+
+@router.post("/batch/delete", response_model=BatchRemoveResult)
+@limiter.limit("30/minute")
+def batch_delete(
+    request: Request,
+    body: BatchKeys,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Permanently delete every selected bundle; in-flight ones are skipped."""
+    removed: list[str] = []
+    skipped: list[str] = []
+    for key in body.keys:
+        batch_id, doc_id = _parse_key(key)
+        if not _key_owned(db, user, batch_id, doc_id):
+            skipped.append(key)
+            continue
+        try:
+            ok = delete_bundle(db, batch_id=batch_id, doc_id=doc_id)
+        except ValueError:
+            skipped.append(key)
+            continue
+        (removed if ok else skipped).append(key)
+    cleanup_orphaned_drafts(db)
+    return BatchRemoveResult(removed_keys=removed, skipped=skipped)
 
 
 @router.post("/batch/assign", response_model=BatchResult)

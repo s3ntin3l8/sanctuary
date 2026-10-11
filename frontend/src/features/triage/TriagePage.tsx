@@ -9,6 +9,7 @@ import {
   type TriageBundle,
   type TriageFilters,
   defaultFilters,
+  useBatchRemove,
   useBundleAction,
   useDocumentAction,
   useRetryAll,
@@ -64,6 +65,8 @@ export function TriagePage() {
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
   const [retryTarget, setRetryTarget] = useState<TriageBundle | null>(null)
   const [retryAllOpen, setRetryAllOpen] = useState(false)
+  const [bulkDanger, setBulkDanger] = useState<'dismiss' | 'delete' | null>(null)
+  const batchRemove = useBatchRemove()
   const query = useTriage(filters)
   const retryAll = useRetryAll()
   const retry = useRetryBundle()
@@ -239,6 +242,12 @@ export function TriagePage() {
           >
             Assign to…
           </Button>
+          <Button size="sm" variant="secondary" onClick={() => setBulkDanger('dismiss')}>
+            Archive ({picked.length})
+          </Button>
+          <Button size="sm" variant="danger" onClick={() => setBulkDanger('delete')}>
+            Delete ({picked.length})
+          </Button>
           <button
             type="button"
             onClick={() => setSelected(new Set())}
@@ -395,6 +404,43 @@ export function TriagePage() {
         title="Retry bundle?"
         body="Extraction and every AI stage run again from the original files. Manual metadata edits are kept; AI suggestions are regenerated."
         label="Retry"
+      />
+      <ConfirmDialog
+        open={bulkDanger !== null}
+        onClose={() => setBulkDanger(null)}
+        onConfirm={() => {
+          const kind = bulkDanger
+          setBulkDanger(null)
+          if (!kind) return
+          batchRemove.mutate(
+            { keys: picked.map((b) => b.key), action: kind },
+            {
+              onSuccess: (r) => {
+                const done = kind === 'delete' ? 'deleted' : 'archived'
+                toast(
+                  r.skipped.length > 0
+                    ? `${r.removed_keys.length} ${done}, ${r.skipped.length} skipped`
+                    : `${r.removed_keys.length} ${done}`,
+                )
+                setSelected(new Set())
+              },
+              onError: (e) => toast(e.message, 'error'),
+            },
+          )
+        }}
+        title={
+          bulkDanger === 'delete'
+            ? `Delete ${picked.length} bundle(s)?`
+            : `Archive ${picked.length} bundle(s)?`
+        }
+        body={
+          bulkDanger === 'delete'
+            ? 'The documents, their files, reactions, pins and relationships are removed permanently. Bundles still being processed are skipped.'
+            : 'The bundles leave the inbox; their documents are kept as dismissed.'
+        }
+        label={bulkDanger === 'delete' ? 'Delete' : 'Archive'}
+        danger={bulkDanger === 'delete'}
+        pending={batchRemove.isPending}
       />
       <ConfirmDialog
         open={retryAllOpen}
@@ -735,7 +781,6 @@ function BundleRow({
           ) : (
             <span className="text-muted">no suggestion — route</span>
           )}
-          <span className="block text-[10px] text-muted">{STATUS_LABEL[b.status]}</span>
         </span>
         <span className="min-w-0">
           {b.proceeding ? (

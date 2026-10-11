@@ -121,6 +121,7 @@ class PickerOption(BaseModel):
 class PickerCase(BaseModel):
     id: str
     title: str
+    is_draft: bool = False
 
 
 class PickerProceeding(BaseModel):
@@ -190,6 +191,11 @@ class BatchAssign(BatchKeys):
     new_case_id: str | None = Field(default=None, max_length=64)
     new_case_title: str | None = Field(default=None, max_length=255)
     proceeding_id: int | None = None
+
+
+class BatchRemoveResult(BaseModel):
+    removed_keys: list[str]
+    skipped: list[str]
 
 
 class BatchResult(BaseModel):
