@@ -80,3 +80,59 @@ def test_ai_auto_triage_still_moves_doc_when_owner_can_edit_case(db_session, two
     enrich_document_with_ai(doc, {"internal_id": "ADV-111-A"}, db_session)
 
     assert doc.case_id == "ADV-111-A"
+
+
+def _family(db, owner_id):
+    from app.models.enums import DocumentRole, OriginatorType
+
+    motion = Document(
+        title="Antrag",
+        content="x",
+        owner_id=owner_id,
+        case_id="_TRIAGE",
+        role=DocumentRole.COVER_LETTER,
+        originator_type=OriginatorType.OPPOSING,
+    )
+    db.add(motion)
+    db.flush()
+    exhibit = Document(
+        title="Old ruling",
+        content="y",
+        owner_id=owner_id,
+        case_id="_TRIAGE",
+        parent_id=motion.id,
+        role=DocumentRole.ENCLOSURE,
+    )
+    db.add(exhibit)
+    db.commit()
+    return motion, exhibit
+
+
+@pytest.mark.unit
+def test_the_family_follows_a_documents_resolved_case(db_session, two_users):
+    a, _b = two_users
+    _make_case(db_session, "ADV-111-A", a.id)
+    motion, exhibit = _family(db_session, a.id)
+
+    enrich_document_with_ai(motion, {"internal_id": "ADV-111-A"}, db_session)
+
+    assert motion.case_id == "ADV-111-A"
+    assert exhibit.case_id == "ADV-111-A"
+    assert exhibit.extraction_confidence["case_id"] == "inherited"
+
+
+@pytest.mark.unit
+def test_an_exhibit_keeps_the_filings_case_over_its_own_reference(
+    db_session, two_users
+):
+    """The exhibit's own file reference points at another matter; as evidence it
+    belongs to the filing it is attached to, and must not move (or draft a case)."""
+    a, _b = two_users
+    _make_case(db_session, "ADV-111-A", a.id)
+    _make_case(db_session, "ADV-222-B", a.id)
+    motion, exhibit = _family(db_session, a.id)
+    enrich_document_with_ai(motion, {"internal_id": "ADV-111-A"}, db_session)
+
+    enrich_document_with_ai(exhibit, {"internal_id": "ADV-222-B"}, db_session)
+
+    assert exhibit.case_id == "ADV-111-A"

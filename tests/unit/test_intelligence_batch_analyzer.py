@@ -1087,3 +1087,79 @@ def test_batch_still_overrides_court_when_sender_is_party(db_session, sample_cas
 
     # Override is allowed — no confirmed-court signals.
     assert party_motion.originator_type == OriginatorType.OPPOSING
+
+
+def _triage_pair(db_session, sample_case):
+    """A cover letter already in a case and an enclosure still in triage."""
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.SCAN,
+        subject="packet.pdf",
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+    cover = Document(
+        title="Antrag",
+        content="Antrag auf ...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.OPPOSING,
+    )
+    enclosure = Document(
+        title="Arztbrief",
+        content="Befund ...",
+        case_id="_TRIAGE",
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.THIRD_PARTY,
+    )
+    db_session.add_all([cover, enclosure])
+    db_session.commit()
+    return batch, cover, enclosure
+
+
+@pytest.mark.unit
+def test_enclosures_inherit_the_covers_case(db_session, sample_case):
+    """The enclosure was just wired under the cover: it takes the cover's case
+    (the old cascade skipped exactly the docs it had just claimed)."""
+    batch, cover, enclosure = _triage_pair(db_session, sample_case)
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "Arztbrief",
+                        "enclosed_doc_id": enclosure.id,
+                        "matched_filename": None,
+                    }
+                ],
+            }
+        ]
+    }
+
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+
+    db_session.expire_all()
+    enclosure = db_session.get(Document, enclosure.id)
+    assert enclosure.parent_id == cover.id
+    assert enclosure.case_id == sample_case.id
+    assert enclosure.extraction_confidence["case_id"] == "inherited"
+
+
+@pytest.mark.unit
+def test_hand_made_groups_still_share_the_case(db_session, sample_case):
+    """Sliced scans arrive wired and grouped, so role assignment is skipped,
+    but the family must still share its case."""
+    batch, cover, enclosure = _triage_pair(db_session, sample_case)
+    enclosure.parent_id = cover.id
+    enclosure.role = DocumentRole.ENCLOSURE
+    db_session.commit()
+
+    _apply_batch_results(
+        batch.id, [cover, enclosure], {}, db_session, skip_role_assignment=True
+    )
+
+    db_session.expire_all()
+    assert db_session.get(Document, enclosure.id).case_id == sample_case.id

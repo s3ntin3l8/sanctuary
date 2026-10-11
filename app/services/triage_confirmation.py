@@ -26,6 +26,7 @@ from app.models.database import (
 from app.models.enums import DocumentStatus, IngestBatchStatus
 from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
+from app.services import family_context
 from app.services.pipeline_status import stages_dict
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,7 @@ def confirm_document(
             doc.title = title
         if case_id is not None:
             doc.case_id = case_id
+            family_context.mark_case(doc, "user_set")
         if originator_type is not None:
             doc.originator_type = originator_type
         if sender is not None:
@@ -189,6 +191,10 @@ def confirm_document(
             doc.confirmed_at = now_utc()
         if az_changed:
             rematch_proceeding(doc, db)
+        if case_id is not None or az_changed:
+            # The family follows: exhibits take the case, and members without
+            # an Aktenzeichen of their own follow the corrected proceeding.
+            family_context.propagate(db, doc)
         apply_review_reasons(doc)
         if az_court is not None:
             # "az_conflict" is a relation between bundle siblings.
@@ -300,8 +306,22 @@ def confirm_bundle(
 
         for doc in docs:
             doc.case_id = case_id
+            family_context.mark_case(doc, "user_set")
             if proceeding_id is not None:
-                doc.proceeding_id = proceeding_id
+                az = family_context.own_az(doc)
+                if az and proc is not None and proc.az_court and az != proc.az_court:
+                    # A document that prints another Aktenzeichen is not in
+                    # this proceeding just because the bundle was filed there.
+                    own = (
+                        db.get(Proceeding, doc.proceeding_id)
+                        if doc.proceeding_id
+                        else None
+                    )
+                    if own is None or own.az_court != az:
+                        doc.proceeding_id = None
+                    fill_proceeding_from_az(db, doc)
+                else:
+                    doc.proceeding_id = proceeding_id
             if finalize and doc.confirmed_at is None:
                 doc.confirmed_at = now_utc()
             apply_review_reasons(doc)

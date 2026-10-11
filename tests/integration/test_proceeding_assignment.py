@@ -138,3 +138,50 @@ def test_batch_follows_cover_letter_then_majority(setup):
     db.flush()
     sync_batch_proceeding(db, batch)
     assert batch.proceeding_id == second.id  # majority
+
+
+def test_an_exhibit_never_forks_or_closes_a_proceeding(setup):
+    """An exhibit's own Aktenzeichen belongs to whatever it copies; it must not
+    seed a proceeding or close the live one."""
+    db, proc, _batch, doc = setup
+    motion = doc(DocumentRole.COVER_LETTER, proc.id)
+    motion.originator_type = OriginatorType.OPPOSING
+    exhibit = doc(DocumentRole.ENCLOSURE, proc.id, az="3 F 1068/26")
+    exhibit.parent_id = motion.id
+    db.flush()
+
+    reason = _apply_proceeding_extraction(
+        exhibit,
+        {"is_court_document": True, "az_court": "3 F 1068/26", "court_level": "ag"},
+        db,
+    )
+    db.flush()
+
+    assert reason and reason.startswith("exhibit")
+    assert proc.status == ProceedingStatus.ACTIVE
+    assert db.query(Proceeding).filter_by(case_id="PA-1").count() == 1
+
+
+def test_a_new_instance_moves_its_family_not_the_whole_bundle(setup):
+    db, proc, _batch, doc = setup
+    cover = doc(DocumentRole.STANDALONE, proc.id)
+    enclosure = doc(DocumentRole.ENCLOSURE, proc.id, az=None)
+    enclosure.parent_id = cover.id
+    unrelated = doc(DocumentRole.STANDALONE, proc.id, az=None)
+    db.flush()
+
+    _apply_proceeding_extraction(
+        cover,
+        {
+            "is_court_document": True,
+            "az_court": "22 T 342/26",
+            "court_level": "lg",
+            "court_name": "Landgericht Ingolstadt",
+        },
+        db,
+    )
+    db.flush()
+
+    assert cover.proceeding_id != proc.id
+    assert enclosure.proceeding_id == cover.proceeding_id
+    assert unrelated.proceeding_id == proc.id

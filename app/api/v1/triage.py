@@ -53,7 +53,7 @@ from app.schemas.triage import (
     TriageSubGroup,
     TriageView,
 )
-from app.services import access_service
+from app.services import access_service, family_context
 from app.services.pipeline_status import retry_on_db_locked, stages_dict
 from app.services.triage_bundles import (
     BundleView,
@@ -549,10 +549,12 @@ def _route_document(
     )
 
     filled = proceeding_id is None and fill_proceeding_from_az(db, doc)
-    if proceeding_id is not None or filled:
+    # Members of the document's family without an AZ of their own follow it.
+    followed = family_context.propagate(db, doc)
+    if proceeding_id is not None or filled or followed:
         sync_batch_proceeding(db, doc.ingest_batch)
     # Otherwise confirm_document's own commit above already persisted everything.
-    if proceeding_id is not None or promoted or filled:
+    if proceeding_id is not None or promoted or filled or followed:
         db.commit()
         db.refresh(doc)
     if (not pre_case or pre_case == "_TRIAGE") and case_id != "_TRIAGE":

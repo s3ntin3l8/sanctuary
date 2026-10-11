@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.database import Document
 from app.models.enums import (
     DocumentRole,
+    DocumentStatus,
     OriginatorType,
     RelationshipType,
     SignificanceTier,
@@ -224,6 +225,22 @@ class CaseGraphService:
             doc.id for doc in all_docs if _is_potential_bundle_header(doc)
         }
         bundle_children: dict[int, list] = {}
+
+        # An exhibit that prints another proceeding's Aktenzeichen is not in
+        # this proceeding, but it is still part of the bundle it was attached to.
+        if candidate_header_ids:
+            loaded_ids = {doc.id for doc in all_docs}
+            all_docs = [
+                *all_docs,
+                *self.db.query(Document)
+                .filter(
+                    Document.parent_id.in_(candidate_header_ids),
+                    Document.id.notin_(loaded_ids),
+                    Document.status != DocumentStatus.DISMISSED,
+                )
+                .order_by(Document.id)
+                .all(),
+            ]
 
         for doc in all_docs:
             if doc.parent_id is not None and doc.parent_id in candidate_header_ids:
