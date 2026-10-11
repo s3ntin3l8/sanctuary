@@ -9756,6 +9756,10 @@
             "title": "Summaries Pending",
             "type": "integer"
           },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
           "to_confirm_count": {
             "title": "To Confirm Count",
             "type": "integer"
@@ -9771,6 +9775,7 @@
           "is_synthetic",
           "source_type",
           "subject",
+          "title",
           "sender_email",
           "received_at",
           "status",

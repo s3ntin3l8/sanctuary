@@ -79,6 +79,9 @@ class TriageBundle(BaseModel):
     is_synthetic: bool
     source_type: IngestBatchSourceType
     subject: str | None
+    # What the bundle row calls itself: the email subject, or for a scan/upload
+    # (whose subject is only a file name) the lead document's title.
+    title: str
     sender_email: str | None
     received_at: datetime
     status: BundleStatus

@@ -15,6 +15,7 @@ from app.models.enums import (
     DocumentRole,
     PipelineState,
 )
+from app.services.family_context import is_relay
 
 STATUS_STUCK = "stuck"
 STATUS_PROCESSING = "processing"
@@ -40,31 +41,49 @@ class SubBundleView:
         return len(self.docs)
 
 
+def _tier_rank(doc: Document) -> int:
+    if doc.significance_tier is None:
+        return 99
+    return _SIG_ORDER.get(doc.significance_tier, 99)
+
+
 def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document | None:
-    """Pick the substantive lead doc for a sub-group. None for empty group.
+    """Pick the lead doc of a sub-group. None for empty group.
 
-    Cover letters are wrappers ('cover letters are relays; collapse the wrapper').
-    The enclosed substantive doc owns the group's identity for both the bolded
-    label and the default HUD focus.
+    A group's identity is its structural root: the letter or motion that heads
+    it (``parent_id`` empty or pointing outside the group). In a sliced scan a
+    first slice is marked ``cover_letter`` merely because attachments follow it;
+    it is the document the packet is *about*, not a wrapper, so it leads.
+    Only a root that really is a relay (a court forwarding someone else's
+    filing, see ``family_context.is_relay``) hands the lead to its strongest
+    child ("cover letters are relays; collapse the wrapper").
 
-    Ranking key (lowest tuple wins):
-      1. significance_tier  — critical < significant < informational < administrative
-      2. is_cover_letter    — substantive beats wrapper within the same tier
-      3. id                 — stable tiebreak
+    A manually merged group can hold several roots; they rank non-relay first,
+    then by significance tier, a cover letter losing a tie to a standalone, then
+    position and id. Children only compete when every root is a relay, by tier
+    then id.
     """
     docs = [d for _, d in group]
     if not docs:
         return None
-    return min(
-        docs,
+    ids = {d.id for d in docs}
+    roots = [d for d in docs if d.parent_id is None or d.parent_id not in ids]
+    root = min(
+        roots or docs,
         key=lambda d: (
-            _SIG_ORDER.get(d.significance_tier, 99)
-            if d.significance_tier is not None
-            else 99,
+            1 if is_relay(d) else 0,
+            _tier_rank(d),
             1 if d.role == DocumentRole.COVER_LETTER else 0,
+            d.sub_group_sort_order or 0,
             d.id or 0,
         ),
     )
+    if not is_relay(root):
+        return root
+    children = [d for d in docs if d is not root]
+    if not children:
+        return root
+    return min(children, key=lambda d: (_tier_rank(d), d.id or 0))
 
 
 def _label_for_group(lead: Document | None, fallback_index: int) -> str:

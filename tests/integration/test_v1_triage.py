@@ -41,10 +41,11 @@ def _batch(
     docs=2,
     state=PipelineState.COMPLETED,
     case_id="_TRIAGE",
+    source_type=IngestBatchSourceType.EMAIL,
 ):
     batch = IngestBatch(
         owner_id=owner_id,
-        source_type=IngestBatchSourceType.EMAIL,
+        source_type=source_type,
         subject=subject,
         sender_email="kanzlei@example.com",
         status=IngestBatchStatus.PROCESSING,
@@ -110,6 +111,38 @@ def test_feed_lists_bundles_with_stats_and_pickers(db_session, sample_case):
     assert [c["id"] for c in body["cases"]] == [sample_case.id]
     assert body["proceedings"][0]["label"].startswith("AG Hamburg")
     assert body["filter_options"]["pipeline"]
+
+
+def test_bundle_title_is_the_subject_for_mail_and_the_lead_for_scans(db_session):
+    admin = _admin(db_session)
+    _batch(db_session, admin.id, subject="Mail subject", docs=1)
+    scan, (scanned,) = _batch(
+        db_session,
+        admin.id,
+        subject="2026-09-01 scan_0019.pdf",
+        docs=1,
+        source_type=IngestBatchSourceType.SCAN,
+    )
+    scanned.title = "Antrag auf Bewilligung von Verfahrenskostenhilfe"
+    scan2, _ = _batch(
+        db_session,
+        admin.id,
+        subject="two-letter-scan.pdf",
+        docs=2,
+        source_type=IngestBatchSourceType.SCAN,
+    )
+    db_session.commit()
+
+    titles = {
+        b["subject"]: b["title"] for b in client.get("/api/v1/triage").json()["bundles"]
+    }
+
+    assert titles["Mail subject"] == "Mail subject"
+    assert (
+        titles["2026-09-01 scan_0019.pdf"]
+        == "Antrag auf Bewilligung von Verfahrenskostenhilfe"
+    )
+    assert titles["two-letter-scan.pdf"].endswith("(+1 more)")
 
 
 def test_feed_filters_by_pipeline_state(db_session):

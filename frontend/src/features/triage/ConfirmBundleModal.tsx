@@ -91,7 +91,7 @@ function BatchConfirmDialog({
           return (
             <li key={b.key} className="flex items-start gap-2 rounded-lg border border-line p-2">
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold">{b.subject ?? b.key}</span>
+                <span className="block truncate font-semibold">{b.title}</span>
                 {open.length > 0 && <span className="block text-warning">{open.join(' · ')}</span>}
               </span>
               {caseOf(b) ? (

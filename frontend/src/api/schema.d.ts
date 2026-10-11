@@ -5878,6 +5878,8 @@ export interface components {
             suggestion: components["schemas"]["TriageCaseSuggestion"] | null;
             /** Summaries Pending */
             summaries_pending: number;
+            /** Title */
+            title: string;
             /** To Confirm Count */
             to_confirm_count: number;
             /** Total Pages */
