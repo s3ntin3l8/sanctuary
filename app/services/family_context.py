@@ -18,12 +18,14 @@ document's own reference resolved it).
 Nothing here commits.
 """
 
+from dataclasses import dataclass
 from typing import Literal
 
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, IngestBatch, Proceeding
 from app.models.enums import DocumentRole, DocumentStatus, DocumentType, OriginatorType
+from app.services.ingestion.extractors import normalize_az_court
 
 CaseSource = Literal["own", "inherited", "user"]
 
@@ -79,8 +81,6 @@ def mark_case(doc: Document, source: Literal["inherited", "user_set"] | None) ->
 
 
 def own_az(doc: Document) -> str | None:
-    from app.services.ingestion.extractors import normalize_az_court
-
     return normalize_az_court(doc.az_court)
 
 
@@ -305,3 +305,96 @@ def propagate_batch(db: Session, batch_id: int) -> list[Document]:
     db.flush()
     sync_batch_proceeding(db, batch)
     return list(changed.values())
+
+
+@dataclass(frozen=True)
+class ResolvedFamily:
+    """Where a document's case and proceeding come from, for display."""
+
+    case_id: str | None
+    case_source: CaseSource | None
+    proceeding: Proceeding | None
+    az_source: Literal["own", "inherited"] | None
+    inherited_from: Document | None
+    exhibit_to: Document | None
+
+
+def resolve(db: Session, doc: Document) -> ResolvedFamily:
+    """Read-only: the document's case and proceeding with their provenance.
+
+    ``Document.internal_id`` / ``az_court`` always mean "what this page says";
+    what the family supplies on top of that is reported here, never copied in.
+    """
+    source = case_source(doc)
+    inherited_from = None
+    if source == "inherited":
+        members = family_members(db, doc)
+        root_ids = {r.id for r in _roots(members)}
+        # The head of the family is the natural source, as in ``_family_case``.
+        inherited_from = next(
+            iter(
+                sorted(
+                    (
+                        m
+                        for m in members
+                        if m.id != doc.id
+                        and m.case_id == doc.case_id
+                        and case_source(m) in ("own", "user")
+                    ),
+                    key=lambda m: m.id not in root_ids,
+                )
+            ),
+            None,
+        )
+    proc = db.get(Proceeding, doc.proceeding_id) if doc.proceeding_id else None
+    # Both sides go through ``normalize_az_court``: a proceeding's AZ typed by a
+    # person may carry spacing or zero-padding the page's AZ does not.
+    az = own_az(doc)
+    proc_az = normalize_az_court(proc.az_court) if proc is not None else None
+    return ResolvedFamily(
+        case_id=doc.case_id if has_case(doc) else None,
+        case_source=source,
+        proceeding=proc,
+        az_source=(
+            None if proc is None else ("own" if az and az == proc_az else "inherited")
+        ),
+        inherited_from=inherited_from,
+        exhibit_to=doc.parent if is_exhibit(doc) else None,
+    )
+
+
+def _one_line(text: str, limit: int = 120) -> str:
+    return " ".join(text.split())[:limit]
+
+
+def filing_context(db: Session, doc: Document) -> str:
+    """Prompt block saying where the document was filed — not what it says.
+
+    Without it the model reads a stored proceeding AZ as a reference the page
+    should carry and reports the mismatch as a contradiction. Empty when the
+    document is not filed anywhere yet.
+    """
+    resolved = resolve(db, doc)
+    lines = []
+    if resolved.case_id:
+        lines.append(f"Case: {resolved.case_id}")
+    if resolved.proceeding is not None and resolved.proceeding.az_court:
+        lines.append(f"Proceeding Aktenzeichen: {resolved.proceeding.az_court}")
+    parent = doc.parent
+    if parent is not None and parent.title:
+        who = (
+            f" ({parent.originator_type.value})"
+            if parent.originator_type
+            and parent.originator_type != OriginatorType.UNKNOWN
+            else ""
+        )
+        # Truncate the title, not the originator that follows it.
+        lines.append(f"Enclosed in: '{_one_line(parent.title, 120 - len(who))}'{who}")
+    if not lines:
+        return ""
+    return (
+        "### Filing context (where this document was filed — not its own reference):\n"
+        + "\n".join(lines)
+        + "\nThis document may print a different Aktenzeichen or none at all; "
+        "that is expected and is not a contradiction.\n"
+    )

@@ -256,6 +256,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       page_count: 1,
       is_proof: false,
       sub_group_id: null,
+      reference_inherited: false,
     },
     {
       id: 2211,
@@ -271,6 +272,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       page_count: 12,
       is_proof: false,
       sub_group_id: null,
+      reference_inherited: false,
     },
     {
       id: 2212,
@@ -286,6 +288,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       page_count: 5,
       is_proof: true,
       sub_group_id: null,
+      reference_inherited: false,
     },
   ],
   sub_groups: [
@@ -370,6 +373,15 @@ export const documentReview: Schemas['DocumentReview'] = {
   case_id: '_TRIAGE',
   case: null,
   proceeding: null,
+  reference: {
+    case_id: null,
+    case_source: null,
+    az_court: null,
+    az_source: null,
+    inherited_from_doc_id: null,
+    inherited_from_title: null,
+    exhibit_to_title: null,
+  },
   originator_type: 'opposing',
   attributed_originator: null,
   court_relay: false,

@@ -345,3 +345,59 @@ def test_enrich_document_with_ai_ignores_confidence_of_empty_reference(
     conf = sample_document.extraction_confidence
     assert "internal_id" not in conf
     assert conf["sender"] == "high"
+
+
+@pytest.mark.unit
+def test_metadata_az_hint_is_the_pages_own_value_not_the_proceedings(db_session):
+    """An inherited proceeding AZ fed back as a "regex hint" makes the model
+    report the page's different AZ as a contradiction."""
+    from app.models.database import Case, Proceeding
+    from app.models.enums import (
+        CaseStatus,
+        ProceedingCourtLevel,
+        ProceedingStatus,
+    )
+
+    case = Case(id="HINT-1", title="Hint", status=CaseStatus.INTAKE)
+    db_session.add(case)
+    db_session.flush()
+    proc = Proceeding(
+        case_id=case.id,
+        court_name="Amtsgericht Ingolstadt",
+        court_level=ProceedingCourtLevel.AG,
+        az_court="3 F 1221/26",
+        status=ProceedingStatus.ACTIVE,
+    )
+    db_session.add(proc)
+    db_session.flush()
+    doc = Document(
+        title="Exhibit",
+        content="Beschluss 2 K 92/25 ...",
+        case_id=case.id,
+        proceeding_id=proc.id,
+        az_court=None,
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    captured = {}
+
+    def fake_call_json_ai(**kwargs):
+        from app.services.intelligence.schemas import Phase1Metadata
+
+        captured["user_prompt"] = kwargs.get("user_prompt", "")
+        return Phase1Metadata.model_validate({"confidence": {}})
+
+    with patch("app.services.ai_summary.call_json_ai", side_effect=fake_call_json_ai):
+        generate_summary_sync(doc, db=db_session)
+
+    prompt = captured["user_prompt"]
+    hints = (
+        prompt.split("### Heuristic Hints")[1].split("### Document")[0]
+        if ("### Heuristic Hints" in prompt)
+        else ""
+    )
+    assert "3 F 1221/26" not in hints
+    # ... but where it was filed is stated as filing context.
+    assert "### Filing context" in prompt
+    assert "Proceeding Aktenzeichen: 3 F 1221/26" in prompt

@@ -341,6 +341,30 @@ function Pipeline({ review }: { review: Review }) {
   )
 }
 
+/** What the family supplies on top of what the page itself says. */
+function ReferenceNote({ reference }: { reference: Review['reference'] }) {
+  const notes: string[] = []
+  if (reference.case_source === 'inherited') {
+    notes.push(
+      reference.inherited_from_title
+        ? `Case taken over from “${reference.inherited_from_title}”`
+        : 'Case taken over from its bundle',
+    )
+  }
+  if (reference.az_source === 'inherited' && reference.az_court) {
+    notes.push(`Proceeding ${reference.az_court} taken over from its bundle`)
+  }
+  if (reference.exhibit_to_title) {
+    notes.push(`Exhibit to “${reference.exhibit_to_title}”`)
+  }
+  if (notes.length === 0) return null
+  return (
+    <p data-testid="reference-note" className="mb-2 text-[10.5px] text-muted italic">
+      {notes.join(' · ')}
+    </p>
+  )
+}
+
 function CaseAndProceeding({ review, routing }: { review: Review; routing?: Routing }) {
   const draft = useDraftDecision()
   const toast = useToast()
@@ -354,6 +378,7 @@ function CaseAndProceeding({ review, routing }: { review: Review; routing?: Rout
           </span>
         )}
       </h4>
+      <ReferenceNote reference={review.reference} />
       {routing ? (
         <RoutingCards review={review} routing={routing} />
       ) : (

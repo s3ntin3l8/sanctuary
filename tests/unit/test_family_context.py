@@ -334,3 +334,46 @@ def test_a_draft_another_bundle_still_points_at_survives_the_exhibit_cleanup(env
     db.flush()
 
     assert db.get(Proceeding, draft.id) is not None
+
+
+def test_resolve_compares_azs_through_the_normaliser(env):
+    db, _batch, proc, doc = env
+    typed = proc(az=AZ)
+    typed.az_court = "3  F 1221/26"  # as a person might have typed it
+    d = doc("motion", case_id="FC-1", az="003 F 1221/26", proceeding=typed)
+
+    assert fc.resolve(db, d).az_source == "own"
+    assert fc.resolve(db, doc("other", case_id="FC-1", proceeding=typed)).az_source == (
+        "inherited"
+    )
+
+
+def test_resolve_names_the_family_head_as_the_source(env):
+    db, batch, _proc, doc = env
+    group = BatchSubGroup(batch_id=batch.id, label=None, sort_order=0)
+    db.add(group)
+    db.flush()
+    root = doc(
+        "motion",
+        case_id="FC-1",
+        role=DocumentRole.COVER_LETTER,
+        sub_group=group,
+        sub_group_sort_order=0,
+    )
+    side = doc("side letter", case_id="FC-1", sub_group=group, sub_group_sort_order=1)
+    child = doc("exhibit", case_id="FC-1", parent=root, sub_group=group)
+    fc.mark_case(child, "inherited")
+
+    assert fc.resolve(db, child).inherited_from.id == root.id
+    assert side.id != root.id
+
+
+def test_filing_context_keeps_the_originator_when_the_title_is_long(env):
+    db, _batch, _proc, doc = env
+    parent = doc("x" * 300, case_id="FC-1", role=DocumentRole.COVER_LETTER)
+    child = doc("exhibit", case_id="FC-1", parent=parent)
+
+    block = fc.filing_context(db, child)
+
+    assert "(opposing)" in block
+    assert len(block.split("Enclosed in: ")[1].splitlines()[0]) <= 140

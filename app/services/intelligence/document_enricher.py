@@ -73,6 +73,7 @@ def _call_enricher_sync(
     model: str = "",
     reactions_block: str = "",
     party_context: str = "",
+    filing_context: str = "",
     base_url: str | None = None,
 ) -> dict:
     """Synchronous AI call to enrich a single document. No DB session held."""
@@ -113,11 +114,12 @@ def _call_enricher_sync(
     )
 
     party_block = (party_context + "\n\n") if party_context else ""
+    filing_block = (filing_context + "\n") if filing_context else ""
 
     from app.services.intelligence.prompts import fence
 
     prompt = (
-        f"{party_block}{batch_context}{dates_context}{settled_context}"
+        f"{party_block}{filing_block}{batch_context}{dates_context}{settled_context}"
         f"{reactions_block}\n\n{fence(content_preview, 'document')}"
     ).lstrip("\n")
 
@@ -397,6 +399,8 @@ def enrich(doc_id: int) -> None:
             own_parties=party_identity.get("own_parties", []),
             opposing_parties=case_opposing,
         )
+        # Built while the session is open: it reads the parent and proceeding.
+        filing_context = family_context.filing_context(db, doc)
     finally:
         db.close()
 
@@ -406,6 +410,7 @@ def enrich(doc_id: int) -> None:
         model=model,
         reactions_block=reactions_block,
         party_context=party_context,
+        filing_context=filing_context,
     )
 
     # --- Phase 3: write ---

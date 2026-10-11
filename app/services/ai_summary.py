@@ -707,7 +707,10 @@ def generate_summary_sync(
             batch_subject, batch_sender_email = row
     content_for_hints = doc.content or ""
 
-    az_hint = doc.proceeding.az_court if doc.proceeding else None
+    # Only what the page itself carries: a proceeding's stored AZ (inherited by an
+    # exhibit from its filing, and in normalised form) is not a regex finding, and
+    # fed back as one it makes the model "contradict" the page.
+    az_hint = doc.az_court
     internal_id_hint = (
         doc.internal_id
         if doc.internal_id
@@ -746,6 +749,11 @@ def generate_summary_sync(
     )
     if party_block:
         prompt += party_block + "\n\n"
+
+    if db is not None:
+        filing_block = family_context.filing_context(db, doc)
+        if filing_block:
+            prompt += filing_block + "\n"
 
     if hints:
         prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"

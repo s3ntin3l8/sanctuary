@@ -110,6 +110,11 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                         className="text-muted"
                       />
                       <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                      {d.reference_inherited && (
+                        <span title="Case taken over from its bundle">
+                          <Icon name="link" size={12} className="text-muted2" />
+                        </span>
+                      )}
                       {d.pipeline_state === 'failed' && <Badge tone="danger">failed</Badge>}
                       {d.needs_review && d.pipeline_state === 'completed' && (
                         <span
