@@ -167,3 +167,174 @@ def test_purge_erases_doc_98_pattern(db_session, sample_case):
 
     assert purged == 1
     assert db_session.get(ActionItem, stale_id) is None
+
+
+# --- relays and exhibits through enrich() -----------------------------------
+
+
+def _enrich(db_session, doc, result):
+    from unittest.mock import patch
+
+    from app.services.intelligence.document_enricher import enrich
+
+    with (
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.document_enricher._call_enricher_sync",
+            return_value=result,
+        ),
+    ):
+        enrich(doc.id)
+    db_session.expire_all()
+
+
+def _items(db_session, doc):
+    return (
+        db_session.query(ActionItem)
+        .filter(ActionItem.source_document_id == doc.id)
+        .all()
+    )
+
+
+def _action(title, action_type, due, addressee):
+    return {
+        "title": title,
+        "action_type": action_type,
+        "due_date": due,
+        "addressee": addressee,
+        "confidence": "high",
+    }
+
+
+def _court_doc(db, case, *, relay=False, **kw):
+    doc = Document(
+        title="Court letter",
+        content="Das Gericht ... " * 20,
+        case_id=case.id,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        originator_type=OriginatorType.COURT,
+        sender="Amtsgericht Ingolstadt",
+        court_relay=relay,
+        issued_date=datetime(2026, 9, 1),
+        **kw,
+    )
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+@pytest.mark.unit
+def test_relay_keeps_the_courts_instruction_but_not_the_forwarded_demands(
+    db_session, sample_case
+):
+    relay = _court_doc(db_session, sample_case, relay=True)
+
+    _enrich(
+        db_session,
+        relay,
+        {
+            "document_type": "relay",
+            "court_relay": True,
+            "action_items": [
+                _action("Stellungnahme", "response_required", "2026-09-15", "user"),
+                _action("Attest vorlegen", "deadline", "2026-09-20", "opposing"),
+                _action("Gebühr zahlen", "payment_due", "2026-09-25", "user"),
+            ],
+        },
+    )
+
+    assert [i.title for i in _items(db_session, relay)] == ["Stellungnahme"]
+
+
+@pytest.mark.unit
+def test_an_exhibit_under_a_party_filing_sets_no_action_items(db_session, sample_case):
+    """A court letter copied into the opposing side's motion is evidence: its
+    old Frist is not a deadline for us."""
+    from app.models.enums import DocumentRole
+
+    motion = Document(
+        title="Antrag",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.OPPOSING,
+        role=DocumentRole.COVER_LETTER,
+    )
+    db_session.add(motion)
+    db_session.flush()
+    exhibit = _court_doc(
+        db_session, sample_case, parent_id=motion.id, role=DocumentRole.ENCLOSURE
+    )
+
+    _enrich(
+        db_session,
+        exhibit,
+        {
+            "document_type": "correspondence",
+            "action_items": [
+                _action("Attest einreichen", "deadline", "2026-09-20", "user")
+            ],
+        },
+    )
+
+    assert _items(db_session, exhibit) == []
+
+
+@pytest.mark.unit
+def test_a_ruling_a_court_relays_is_not_an_exhibit(db_session, sample_case):
+    from app.models.enums import DocumentRole
+
+    relay = _court_doc(
+        db_session, sample_case, relay=True, role=DocumentRole.COVER_LETTER
+    )
+    ruling = _court_doc(
+        db_session, sample_case, parent_id=relay.id, role=DocumentRole.ENCLOSURE
+    )
+
+    _enrich(
+        db_session,
+        ruling,
+        {
+            "document_type": "ruling",
+            "action_items": [
+                _action("Beschwerde einlegen", "deadline", "2026-09-20", "user")
+            ],
+        },
+    )
+
+    assert [i.title for i in _items(db_session, ruling)] == ["Beschwerde einlegen"]
+
+
+@pytest.mark.unit
+def test_a_relay_summary_is_one_line_and_other_documents_keep_three(
+    db_session, sample_case
+):
+    summary = {
+        "legal_significance": "Forwards the Antrag of the opposing side.",
+        "required_action": "Stellungnahme binnen 2 Wochen",
+        "financial_impact": "Keine direkten Kosten.",
+    }
+    relay = _court_doc(db_session, sample_case, relay=True)
+    plain = _court_doc(db_session, sample_case)
+
+    _enrich(
+        db_session,
+        relay,
+        {"document_type": "relay", "court_relay": True, "management_summary": summary},
+    )
+    _enrich(
+        db_session,
+        plain,
+        {
+            "document_type": "ruling",
+            "court_relay": False,
+            "management_summary": summary,
+        },
+    )
+
+    assert relay.ai_summary == {
+        "legal_significance": None,
+        "required_action": "Stellungnahme binnen 2 Wochen",
+        "financial_impact": None,
+    }
+    assert plain.ai_summary == summary
