@@ -244,6 +244,10 @@ def confirm_bundle(
     from app.models.database import ActionItem, Proceeding
     from app.services.ingestion.service import apply_review_reasons
     from app.services.pipeline_status import retry_on_db_locked
+    from app.services.proceeding_rematch import (
+        fill_proceeding_from_az,
+        sync_batch_proceeding,
+    )
 
     batch_repo = IngestBatchRepository(db)
     batch = batch_repo.get(batch_id)
@@ -311,6 +315,10 @@ def confirm_bundle(
         batch.case_id = case_id
         if proceeding_id is not None:
             batch.proceeding_id = proceeding_id
+        else:
+            for doc in docs:
+                fill_proceeding_from_az(db, doc)
+            sync_batch_proceeding(db, batch)
         if finalize:
             batch.status = IngestBatchStatus.COMPLETED
 

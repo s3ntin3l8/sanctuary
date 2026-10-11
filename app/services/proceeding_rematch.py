@@ -27,6 +27,62 @@ def _is_unused_draft(proc: Proceeding, db: Session, own_batch_id: int | None) ->
     return others.first() is None
 
 
+def fill_proceeding_from_az(db: Session, doc: Document) -> bool:
+    """Give a document without a proceeding the one its Aktenzeichen names.
+
+    Deterministic, no AI: only an existing proceeding of the document's case
+    with exactly that Aktenzeichen is used; nothing is created. Returns True
+    when the document was assigned. Does not commit.
+    """
+    from app.services.ingestion.extractors import normalize_az_court
+
+    if doc.proceeding_id or not doc.case_id or doc.case_id == "_TRIAGE":
+        return False
+    az = normalize_az_court(doc.az_court)
+    if not az:
+        return False
+    target = (
+        db.query(Proceeding)
+        .filter(Proceeding.case_id == doc.case_id, Proceeding.az_court == az)
+        .first()
+    )
+    if target is None:
+        return False
+    doc.proceeding_id = target.id
+    db.flush()
+    return True
+
+
+def sync_batch_proceeding(db: Session, batch: IngestBatch | None) -> None:
+    """Point the bundle at the proceeding its documents are in.
+
+    The cover letter's proceeding wins, else the most common one among the
+    active documents. A bundle whose documents have none keeps what it has.
+    Does not commit.
+    """
+    from collections import Counter
+
+    from app.models.enums import DocumentRole, DocumentStatus
+
+    if batch is None:
+        return
+    rows = (
+        db.query(Document.role, Document.proceeding_id)
+        .filter(
+            Document.ingest_batch_id == batch.id,
+            Document.status != DocumentStatus.DISMISSED,
+            Document.proceeding_id.isnot(None),
+        )
+        .all()
+    )
+    if not rows:
+        return
+    cover = [pid for role, pid in rows if role == DocumentRole.COVER_LETTER]
+    pool = cover or [pid for _, pid in rows]
+    batch.proceeding_id = Counter(pool).most_common(1)[0][0]
+    db.flush()
+
+
 def rematch_proceeding(doc: Document, db: Session) -> None:
     """Move ``doc`` — and only ``doc`` — to the proceeding of ``doc.az_court``.
 
@@ -70,6 +126,9 @@ def rematch_proceeding(doc: Document, db: Session) -> None:
 
     doc.proceeding_id = target.id
     db.flush()
+    sync_batch_proceeding(
+        db, db.get(IngestBatch, doc.ingest_batch_id) if doc.ingest_batch_id else None
+    )
 
     if (
         old is None

@@ -276,9 +276,6 @@ def _apply_proceeding_extraction(
             else:
                 return "no az extracted"
 
-        if doc.ingest_batch and not doc.ingest_batch.proceeding_id:
-            doc.ingest_batch.proceeding_id = doc.proceeding_id
-
         # Infer case type from the AZ letter code (e.g. "3 F 426/25" → FAMILY)
         if extracted_az and doc.case_id:
             from app.models.database import Case
@@ -296,23 +293,15 @@ def _apply_proceeding_extraction(
     if not current_proc:
         return "proceeding not found"
 
-    is_new_instance = False
-    levels = list(ProceedingCourtLevel)
-
-    if extracted_level and current_proc.court_level:
-        try:
-            if levels.index(extracted_level) > levels.index(current_proc.court_level):
-                is_new_instance = True
-        except ValueError:
-            pass
-
-    if (
+    # A new instance needs a different Aktenzeichen. The court level alone never
+    # forks one: the same AZ is the same proceeding, and a level the model
+    # misreads (or "other") must not close it and strand its documents.
+    is_new_instance = bool(
         extracted_az
         and current_proc.az_court
         and extracted_az != current_proc.az_court
         and not _is_department_misread(doc, current_proc, extracted_az, db)
-    ):
-        is_new_instance = True
+    )
 
     if is_new_instance:
         existing_match = None
@@ -370,9 +359,13 @@ def _apply_proceeding_extraction(
             current_proc.court_name = extracted_court_name
         if not current_proc.subject_matter and data.get("subject_matter"):
             current_proc.subject_matter = data.get("subject_matter")
-        if extracted_level and current_proc.court_level in (
-            ProceedingCourtLevel.AG,
-            ProceedingCourtLevel.OTHER,
+        if (
+            extracted_level
+            and extracted_level != ProceedingCourtLevel.OTHER
+            and (
+                current_proc.court_level == ProceedingCourtLevel.OTHER
+                or current_proc.court_name in ("Unknown Court", "General")
+            )
         ):
             current_proc.court_level = extracted_level
 
@@ -620,6 +613,15 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     skip_reason = _apply_proceeding_extraction(doc, summary_data, db)
     if skip_reason:
         logger.debug("Doc %d: proceeding extraction skipped: %s", doc.id, skip_reason)
+    # A letter the model didn't read as a court document (a Begleitschreiben)
+    # still carries the Aktenzeichen of a proceeding the case already has.
+    from app.services.proceeding_rematch import (
+        fill_proceeding_from_az,
+        sync_batch_proceeding,
+    )
+
+    fill_proceeding_from_az(db, doc)
+    sync_batch_proceeding(db, doc.ingest_batch)
 
     # 6. AI case_type fallback — only fires when AZ inference (step 5) left the
     #    case at the CIVIL default AND the AI extracted a non-CIVIL type from text.
@@ -689,8 +691,6 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
     batch = db.query(IngestBatch).filter(IngestBatch.id == doc.ingest_batch_id).first()
     if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
         batch.case_id = case.id
-        if proceeding and not batch.proceeding_id:
-            batch.proceeding_id = proceeding.id
 
 
 def generate_summary_sync(

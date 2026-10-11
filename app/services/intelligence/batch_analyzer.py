@@ -549,8 +549,17 @@ def _apply_batch_results(
         and (not batch.case_id or batch.case_id == "_TRIAGE")
     ):
         batch.case_id = first_cover.case_id
-        if first_cover.proceeding_id and not batch.proceeding_id:
-            batch.proceeding_id = first_cover.proceeding_id
+
+    # Cover letters and anything else the model didn't tie to a proceeding take
+    # the one their Aktenzeichen names; the bundle then follows its documents.
+    from app.services.proceeding_rematch import (
+        fill_proceeding_from_az,
+        sync_batch_proceeding,
+    )
+
+    for d in docs:
+        fill_proceeding_from_az(db, d)
+    sync_batch_proceeding(db, batch)
 
     # Single-relay fallback: when the AI didn't produce a bundle but exactly
     # one doc in the batch is flagged as a court relay (set in Phase 1 from

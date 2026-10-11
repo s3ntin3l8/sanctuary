@@ -545,8 +545,18 @@ def _route_document(
         proc = db.get(Proceeding, proceeding_id)
         if proc and proc.is_draft:
             proc.is_draft = False
+    # METADATA doesn't re-run when a case is assigned here, so a document whose
+    # Aktenzeichen names a proceeding of the case is attached to it now.
+    from app.services.proceeding_rematch import (
+        fill_proceeding_from_az,
+        sync_batch_proceeding,
+    )
+
+    filled = proceeding_id is None and fill_proceeding_from_az(db, doc)
+    if proceeding_id is not None or filled:
+        sync_batch_proceeding(db, doc.ingest_batch)
     # Otherwise confirm_document's own commit above already persisted everything.
-    if proceeding_id is not None or promoted:
+    if proceeding_id is not None or promoted or filled:
         db.commit()
         db.refresh(doc)
     if (not pre_case or pre_case == "_TRIAGE") and case_id != "_TRIAGE":
