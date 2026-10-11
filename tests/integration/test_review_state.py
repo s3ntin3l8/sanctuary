@@ -383,28 +383,49 @@ def test_claim_evidence_dedupe_migration_keeps_the_stronger_row(
     claim = _claim_asserted_in_case(db_session, sample_case, owner)
     db_session.commit()
 
-    # Recreate the pre-migration schema: no uniqueness on the pair.
+    # Recreate the pre-migration schema (no uniqueness on the pair), and put it
+    # back afterwards: the schema is shared by every later test in this worker.
     db_session.execute(
         text(
             "ALTER TABLE claim_evidence DROP CONSTRAINT uq_claim_evidence_claim_document"
         )
     )
     db_session.execute(text("DROP INDEX uq_claim_evidence_proposals_pending_pair"))
-    for role in (ClaimEvidenceRole.CONTESTS, ClaimEvidenceRole.REFUTES):
-        db_session.add(
-            ClaimEvidence(
-                claim_id=claim.id,
-                document_id=doc.id,
-                role=role,
-                confidence=RelationshipConfidence.AI_DETECTED,
+    db_session.commit()
+    try:
+        for role in (ClaimEvidenceRole.CONTESTS, ClaimEvidenceRole.REFUTES):
+            db_session.add(
+                ClaimEvidence(
+                    claim_id=claim.id,
+                    document_id=doc.id,
+                    role=role,
+                    confidence=RelationshipConfidence.AI_DETECTED,
+                )
+            )
+            _proposal(db_session, claim, doc, role=role)
+        db_session.commit()
+
+        db_session.execute(text(mig.DEDUPE_EVIDENCE))
+        db_session.execute(text(mig.DEDUPE_PENDING_PROPOSALS))
+        db_session.commit()
+    finally:
+        db_session.rollback()
+        db_session.execute(text(mig.DEDUPE_EVIDENCE))
+        db_session.execute(text(mig.DEDUPE_PENDING_PROPOSALS))
+        db_session.execute(
+            text(
+                "ALTER TABLE claim_evidence ADD CONSTRAINT "
+                "uq_claim_evidence_claim_document UNIQUE (claim_id, document_id)"
             )
         )
-        _proposal(db_session, claim, doc, role=role)
-    db_session.commit()
-
-    db_session.execute(text(mig.DEDUPE_EVIDENCE))
-    db_session.execute(text(mig.DEDUPE_PENDING_PROPOSALS))
-    db_session.commit()
+        db_session.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_claim_evidence_proposals_pending_pair "
+                "ON claim_evidence_proposals (target_claim_id, source_document_id) "
+                "WHERE status = 'PENDING'"
+            )
+        )
+        db_session.commit()
 
     roles = [
         ev.role
