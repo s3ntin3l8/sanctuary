@@ -81,6 +81,7 @@ const messages = {
       sender: 'lawyer@example.com',
       subject: 'Schriftsatz vom 2. Januar',
       sent_at: '2024-01-02T10:00:00+00:00',
+      outgoing: false,
       has_attachments: true,
       ingested: true,
       cached: true,
@@ -91,6 +92,7 @@ const messages = {
       sender: 'lawyer@example.com',
       subject: 'Ladung zur Verhandlung',
       sent_at: '2024-02-10T10:00:00+00:00',
+      outgoing: true,
       has_attachments: false,
       ingested: false,
       cached: false,
@@ -166,6 +168,8 @@ test('import: expanding a group shows its messages, already imported ones cannot
   await user.click(await screen.findByRole('button', { name: 'Expand 8372/25' }))
 
   expect(await screen.findByText('Ladung zur Verhandlung')).toBeVisible()
+  // Only the message sent by the user carries the marker.
+  expect(screen.getAllByText('Sent by you')).toHaveLength(1)
   expect(screen.getByRole('checkbox', { name: 'Select Schriftsatz vom 2. Januar' })).toBeDisabled()
   await user.click(screen.getByRole('checkbox', { name: 'Select Ladung zur Verhandlung' }))
   await user.click(screen.getByRole('button', { name: 'Import selected (1)' }))
@@ -361,6 +365,7 @@ const many = {
     sender: 'lawyer@example.com',
     subject: `Mail ${id}`,
     sent_at: `2024-01-0${i + 1}T10:00:00+00:00`,
+    outgoing: false,
     has_attachments: false,
     ingested: id === 'a',
     cached: false,

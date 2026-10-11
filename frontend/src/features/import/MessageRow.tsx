@@ -25,7 +25,15 @@ export function MessageRow({
         onChange={(e) => onToggle(m.gmail_id, (e.nativeEvent as MouseEvent).shiftKey === true)}
       />
       <span className="font-mono text-[11px] text-muted">{formatIsoDate(m.sent_at)}</span>
-      <span className="truncate text-muted">{m.sender}</span>
+      <span className="flex min-w-0 items-center gap-1 text-muted">
+        {m.outgoing && (
+          <span title="Sent by you">
+            <Icon name="north_east" size={13} />
+            <span className="sr-only">Sent by you</span>
+          </span>
+        )}
+        <span className="truncate">{m.sender}</span>
+      </span>
       <span className="truncate">{m.subject ?? '(no subject)'}</span>
       {m.has_attachments ? <Icon name="attach_file" size={14} className="text-muted" /> : <span />}
       {m.cached ? (

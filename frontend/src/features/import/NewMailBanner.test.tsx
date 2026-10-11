@@ -28,6 +28,7 @@ const message = (id: string, subject: string) => ({
   sender: 'lawyer@example.com',
   subject,
   sent_at: '2026-10-09T09:00:00+00:00',
+  outgoing: false,
   has_attachments: true,
   ingested: false,
   cached: false,

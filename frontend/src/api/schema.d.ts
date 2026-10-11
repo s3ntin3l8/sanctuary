@@ -4430,6 +4430,8 @@ export interface components {
             has_attachments: boolean;
             /** Ingested */
             ingested: boolean;
+            /** Outgoing */
+            outgoing: boolean;
             /** Sender */
             sender: string | null;
             /**

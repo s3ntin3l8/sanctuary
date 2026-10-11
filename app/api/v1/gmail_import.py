@@ -122,22 +122,32 @@ def messages(
     except ValueError as exc:
         raise ApiError(422, "invalid_cursor", "Invalid page cursor.") from exc
     cached = gmail_cache.cached_ids(user.id, [row.gmail_id for row, _ in rows])
+    own = _own_addresses(user_settings_service.get_gmail_config(db, user.id))
     return GmailMessagePage(
         items=[
-            _indexed_message(row, ingested, row.gmail_id in cached)
+            _indexed_message(row, ingested, row.gmail_id in cached, own)
             for row, ingested in rows
         ],
         next_cursor=next_cursor,
     )
 
 
-def _indexed_message(row, ingested: bool, cached: bool) -> GmailIndexedMessage:
+def _own_addresses(cfg: dict) -> set[str]:
+    return {a.lower() for a in cfg.get("gmail_own_addresses") or []}
+
+
+def _indexed_message(
+    row, ingested: bool, cached: bool, own_addresses: set[str]
+) -> GmailIndexedMessage:
     return GmailIndexedMessage(
         gmail_id=row.gmail_id,
         thread_id=row.thread_id,
         sender=row.sender,
         subject=row.subject,
         sent_at=row.sent_at,
+        # Sent by the user (derived, so changing "Your addresses" applies to
+        # already-indexed mail).
+        outgoing=(row.sender or "").lower() in own_addresses,
         has_attachments=row.has_attachments,
         ingested=ingested,
         cached=cached,
@@ -161,12 +171,15 @@ def _new_view(db: Session, user: User) -> GmailNewMessages:
         )
     count, rows = gmail_index_service.new_messages(db, user.id, since)
     cached = gmail_cache.cached_ids(user.id, [row.gmail_id for row in rows])
+    own = _own_addresses(cfg)
     return GmailNewMessages(
         count=count,
         sync_mode=mode,
         since=since,
         checked_at=checked_at,
-        items=[_indexed_message(row, False, row.gmail_id in cached) for row in rows],
+        items=[
+            _indexed_message(row, False, row.gmail_id in cached, own) for row in rows
+        ],
     )
 
 
