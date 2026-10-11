@@ -68,6 +68,8 @@ def case_source(doc: Document) -> CaseSource | None:
 
 def mark_case(doc: Document, source: Literal["inherited", "user_set"] | None) -> None:
     """Record the provenance of ``doc.case_id``; None clears it (own reference)."""
+    # Rebinding a fresh dict (not mutating in place) is what makes SQLAlchemy see
+    # the JSON column change; callers must re-read ``doc.extraction_confidence``.
     conf = dict(doc.extraction_confidence or {})
     if source is None:
         conf.pop("case_id", None)
@@ -96,6 +98,8 @@ def family_members(db: Session, doc: Document) -> list[Document]:
     """The documents that travel together with ``doc``: its sub-group, else the
     parent/child tree it is part of. Dismissed documents never take part."""
     root = family_root(doc)
+    # A sub-group is flat: its id may sit on the root or on any descendant, and
+    # the same id selects the same members whichever document we were asked about.
     anchor = root.sub_group_id or doc.sub_group_id
     if anchor is not None:
         members = (

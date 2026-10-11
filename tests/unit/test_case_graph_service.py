@@ -366,6 +366,36 @@ class TestCaseGraphServiceBuildPayload:
         assert len(bundle["children"]) == 2
 
     @pytest.mark.unit
+    def test_only_enclosures_outside_the_proceeding_join_a_bundle(
+        self, db_session, proceeding_with_graph
+    ):
+        cover = (
+            db_session.query(Document)
+            .filter_by(
+                proceeding_id=proceeding_with_graph.id,
+                title="Übersendung Gegenschrift",
+            )
+            .one()
+        )
+        db_session.add(
+            Document(
+                title="Nachfolger (kein Anhang)",
+                case_id=cover.case_id,
+                proceeding_id=None,
+                originator_type=OriginatorType.COURT,
+                parent_id=cover.id,
+                role=DocumentRole.STANDALONE,
+                significance_tier=SignificanceTier.SIGNIFICANT,
+            )
+        )
+        db_session.commit()
+
+        payload = CaseGraphService(db_session).build_payload(proceeding_with_graph.id)
+
+        (bundle,) = payload.bundles
+        assert len(bundle["children"]) == 1
+
+    @pytest.mark.unit
     def test_build_payload_emits_bundle_for_court_relay(
         self, db_session, proceeding_with_graph
     ):

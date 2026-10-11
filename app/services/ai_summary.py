@@ -658,6 +658,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     )
 
     fill_proceeding_from_az(db, doc)
+    # Deliberately not folded into the earlier calls: the proceeding extraction
+    # above may have created or matched a proceeding the family has not seen yet.
     family_context.propagate(db, doc)
     sync_batch_proceeding(db, doc.ingest_batch)
 

@@ -294,3 +294,43 @@ def test_batch_removes_a_draft_proceeding_only_an_exhibit_seeded(env):
     assert exhibit.proceeding_id is None
     assert db.get(Proceeding, draft.id) is None
     assert batch.proceeding_id == live.id
+
+
+def test_the_sub_group_anchor_may_sit_on_any_descendant(env):
+    """The root has no sub-group; a descendant does. Asking about that
+    descendant selects its sub-group, siblings included."""
+    db, batch, _proc, doc = env
+    group = BatchSubGroup(batch_id=batch.id, label=None, sort_order=0)
+    db.add(group)
+    db.flush()
+    root = doc("root", case_id="FC-1")
+    child = doc("child", parent=root, sub_group=group, sub_group_sort_order=0)
+    sibling = doc("sibling", sub_group=group, sub_group_sort_order=1)
+
+    members = fc.family_members(db, child)
+
+    assert {m.id for m in members} == {child.id, sibling.id}
+
+
+def test_a_draft_another_bundle_still_points_at_survives_the_exhibit_cleanup(env):
+    db, batch, proc, doc = env
+    live = proc(az=AZ)
+    draft = proc(az=OTHER_AZ, draft=True)
+    root = doc(
+        "motion", case_id="FC-1", az=AZ, proceeding=live, role=DocumentRole.COVER_LETTER
+    )
+    doc("old ruling", parent=root, az=OTHER_AZ, proceeding=draft)
+    other_batch = IngestBatch(
+        owner_id=batch.owner_id,
+        source_type=IngestBatchSourceType.SCAN,
+        status=IngestBatchStatus.PROCESSING,
+        received_at=datetime(2026, 10, 9, tzinfo=UTC),
+        proceeding_id=draft.id,
+    )
+    db.add(other_batch)
+    db.flush()
+
+    fc.propagate_batch(db, batch.id)
+    db.flush()
+
+    assert db.get(Proceeding, draft.id) is not None

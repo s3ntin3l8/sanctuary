@@ -226,8 +226,9 @@ class CaseGraphService:
         }
         bundle_children: dict[int, list] = {}
 
-        # An exhibit that prints another proceeding's Aktenzeichen is not in
+        # An enclosure that prints another proceeding's Aktenzeichen is not in
         # this proceeding, but it is still part of the bundle it was attached to.
+        # Only enclosures: anything else with a parent is not bundle content.
         if candidate_header_ids:
             loaded_ids = {doc.id for doc in all_docs}
             all_docs = [
@@ -235,6 +236,7 @@ class CaseGraphService:
                 *self.db.query(Document)
                 .filter(
                     Document.parent_id.in_(candidate_header_ids),
+                    Document.role == DocumentRole.ENCLOSURE,
                     Document.id.notin_(loaded_ids),
                     Document.status != DocumentStatus.DISMISSED,
                 )
