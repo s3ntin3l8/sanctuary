@@ -147,6 +147,18 @@ class ReactionView(BaseModel):
     created_at: datetime | None
 
 
+class ResolvedReference(BaseModel):
+    """What the document's family supplies on top of what its page says."""
+
+    case_id: str | None
+    case_source: Literal["own", "inherited", "user"] | None
+    az_court: str | None  # the proceeding's Aktenzeichen
+    az_source: Literal["own", "inherited"] | None
+    inherited_from_doc_id: int | None
+    inherited_from_title: str | None
+    exhibit_to_title: str | None
+
+
 class DocumentReview(BaseModel):
     id: int
     title: str
@@ -155,6 +167,7 @@ class DocumentReview(BaseModel):
     case_id: str | None
     case: CaseRef | None
     proceeding: ProceedingRef | None
+    reference: ResolvedReference
     originator_type: OriginatorType
     attributed_originator: str | None
     court_relay: bool

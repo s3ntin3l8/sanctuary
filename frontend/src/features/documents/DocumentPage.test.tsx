@@ -192,3 +192,34 @@ test('the Aktenzeichen is editable and saved with the metadata', async () => {
     expect((await put.clone().json()).az_court).toBe('3 F 2022/23')
   })
 })
+
+test('says where the case and proceeding were taken over from', async () => {
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        reference: {
+          case_id: 'ADV-024-A',
+          case_source: 'inherited',
+          az_court: '3 F 1221/26',
+          az_source: 'inherited',
+          inherited_from_doc_id: 2210,
+          inherited_from_title: 'Antrag auf Bewilligung',
+          exhibit_to_title: 'Antrag auf Bewilligung',
+        },
+      },
+    },
+  })
+  page()
+  const note = await screen.findByTestId('reference-note')
+  expect(note).toHaveTextContent('Case taken over from “Antrag auf Bewilligung”')
+  expect(note).toHaveTextContent('Proceeding 3 F 1221/26 taken over from its bundle')
+  expect(note).toHaveTextContent('Exhibit to “Antrag auf Bewilligung”')
+})
+
+test('shows no reference note for a document that carries its own', async () => {
+  stub()
+  page()
+  await screen.findByRole('heading', { name: 'Klageerwiderung.pdf' })
+  expect(screen.queryByTestId('reference-note')).not.toBeInTheDocument()
+})

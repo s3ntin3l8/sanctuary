@@ -4066,6 +4066,7 @@ export interface components {
             reactions: components["schemas"]["ReactionView"][];
             /** Received Date */
             received_date: string | null;
+            reference: components["schemas"]["ResolvedReference"];
             /** Relationships */
             relationships: components["schemas"]["RelationshipView"][];
             /** Review Reasons */
@@ -4141,6 +4142,7 @@ export interface components {
             reactions: components["schemas"]["ReactionView"][];
             /** Received Date */
             received_date: string | null;
+            reference: components["schemas"]["ResolvedReference"];
             /** Relationships */
             relationships: components["schemas"]["RelationshipView"][];
             /** Review Reasons */
@@ -5477,6 +5479,26 @@ export interface components {
             title: string;
         };
         /**
+         * ResolvedReference
+         * @description What the document's family supplies on top of what its page says.
+         */
+        ResolvedReference: {
+            /** Az Court */
+            az_court: string | null;
+            /** Az Source */
+            az_source: ("own" | "inherited") | null;
+            /** Case Id */
+            case_id: string | null;
+            /** Case Source */
+            case_source: ("own" | "inherited" | "user") | null;
+            /** Exhibit To Title */
+            exhibit_to_title: string | null;
+            /** Inherited From Doc Id */
+            inherited_from_doc_id: number | null;
+            /** Inherited From Title */
+            inherited_from_title: string | null;
+        };
+        /**
          * RoleHealthView
          * @description Live health per role; a separate call because it talks to the endpoints.
          */
@@ -5942,6 +5964,8 @@ export interface components {
             /** Page Count */
             page_count: number;
             pipeline_state: components["schemas"]["PipelineState"];
+            /** Reference Inherited */
+            reference_inherited: boolean;
             /** Review Reasons */
             review_reasons: string[];
             role: components["schemas"]["DocumentRole"];

@@ -512,3 +512,58 @@ def test_apply_enrichment_respects_user_set_fields(doc_with_content):
     assert doc_with_content.title == "My title"
     assert doc_with_content.significance_tier == SignificanceTier.CRITICAL
     assert doc_with_content.document_type == DocumentType.MOTION
+
+
+def _prompt_for(doc, **kwargs):
+    captured = {}
+
+    def fake_call_json_ai(*args, **kw):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
+        captured["user_prompt"] = kw.get("user_prompt", "")
+        return DocumentEnrichment.model_validate({})
+
+    with patch(
+        "app.services.intelligence.document_enricher.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_enricher_sync(doc, **kwargs)
+    return captured["user_prompt"]
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_carries_the_filing_context(doc_with_content):
+    block = "### Filing context (where this document was filed — not its own reference):\nCase: X\n"
+    assert block in _prompt_for(doc_with_content, filing_context=block)
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_has_no_filing_block_without_context(doc_with_content):
+    assert "Filing context" not in _prompt_for(doc_with_content)
+
+
+@pytest.mark.unit
+def test_enrich_builds_the_filing_context_for_an_enclosure(
+    db_session, doc_with_content
+):
+    """The enricher hands the model where the exhibit was filed, so a different
+    Aktenzeichen on the page is not reported as a contradiction."""
+    from app.models.database import Document
+    from app.services import family_context
+
+    parent = Document(
+        title="Antrag auf Bewilligung",
+        content="x",
+        case_id=doc_with_content.case_id,
+        originator_type=OriginatorType.OPPOSING,
+    )
+    db_session.add(parent)
+    db_session.flush()
+    doc_with_content.parent_id = parent.id
+    db_session.commit()
+
+    block = family_context.filing_context(db_session, doc_with_content)
+
+    assert f"Case: {doc_with_content.case_id}" in block
+    assert "Enclosed in: 'Antrag auf Bewilligung' (opposing)" in block
+    assert "not a contradiction" in block

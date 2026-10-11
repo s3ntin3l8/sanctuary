@@ -723,3 +723,61 @@ def test_non_extract_stage_retry_leaves_batch_barriers_alone(db_session):
     db_session.refresh(batch)
     assert batch.metadata_phase_queued_at is not None
     assert batch.analysis_queued_at is not None
+
+
+def test_review_reference_reports_what_the_family_supplies(db_session, sample_case):
+    from app.models.database import Proceeding
+    from app.models.enums import (
+        DocumentRole,
+        OriginatorType,
+        ProceedingCourtLevel,
+        ProceedingStatus,
+    )
+    from app.services import family_context
+
+    admin = _admin(db_session)
+    proc = Proceeding(
+        case_id=sample_case.id,
+        court_name="Amtsgericht Ingolstadt",
+        court_level=ProceedingCourtLevel.AG,
+        az_court="3 F 1221/26",
+        status=ProceedingStatus.ACTIVE,
+    )
+    db_session.add(proc)
+    db_session.flush()
+    motion = _doc(
+        db_session,
+        admin.id,
+        case_id=sample_case.id,
+        title="Antrag auf Bewilligung",
+        az_court="3 F 1221/26",
+        proceeding_id=proc.id,
+        role=DocumentRole.COVER_LETTER,
+        originator_type=OriginatorType.OPPOSING,
+    )
+    exhibit = _doc(
+        db_session,
+        admin.id,
+        case_id=sample_case.id,
+        title="Arztbrief",
+        parent_id=motion.id,
+        role=DocumentRole.ENCLOSURE,
+        proceeding_id=proc.id,
+    )
+    family_context.mark_case(exhibit, "inherited")
+    db_session.commit()
+
+    own = client.get(f"/api/v1/documents/{motion.id}/review").json()["reference"]
+    assert own["case_source"] == "own" and own["az_source"] == "own"
+    assert own["az_court"] == "3 F 1221/26" and own["exhibit_to_title"] is None
+
+    inherited = client.get(f"/api/v1/documents/{exhibit.id}/review").json()["reference"]
+    assert inherited["case_id"] == sample_case.id
+    assert inherited["case_source"] == "inherited"
+    assert inherited["az_source"] == "inherited"
+    assert inherited["inherited_from_doc_id"] == motion.id
+    assert inherited["inherited_from_title"] == "Antrag auf Bewilligung"
+    assert inherited["exhibit_to_title"] == "Antrag auf Bewilligung"
+    # Nothing is copied into what the page says.
+    body = client.get(f"/api/v1/documents/{exhibit.id}/review").json()
+    assert body["az_court"] is None and body["internal_id"] is None

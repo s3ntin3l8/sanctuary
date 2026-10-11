@@ -63,12 +63,13 @@ from app.schemas.document_review import (
     ReactionView,
     ReaderNav,
     RelationshipView,
+    ResolvedReference,
     StageView,
     SummaryAction,
     SummaryBullet,
     SummaryView,
 )
-from app.services import access_service
+from app.services import access_service, family_context
 from app.services.case_dashboard_service import key_passages_for_template
 from app.services.hud_context import build_hud_context
 from app.services.markdown_render import render_highlighted
@@ -212,6 +213,19 @@ def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
     )
 
 
+def _resolved_reference(db: Session, doc: Document) -> ResolvedReference:
+    fam = family_context.resolve(db, doc)
+    return ResolvedReference(
+        case_id=fam.case_id,
+        case_source=fam.case_source,
+        az_court=fam.proceeding.az_court if fam.proceeding else None,
+        az_source=fam.az_source,
+        inherited_from_doc_id=fam.inherited_from.id if fam.inherited_from else None,
+        inherited_from_title=fam.inherited_from.title if fam.inherited_from else None,
+        exhibit_to_title=fam.exhibit_to.title if fam.exhibit_to else None,
+    )
+
+
 def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
     cases = list(CaseRepository(db).list_for_picker(owner_id=user.id))
     ctx = build_hud_context(
@@ -231,6 +245,7 @@ def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
         "case_id": doc.case_id,
         "case": _case_ref(ctx["current_case"]) if ctx.get("current_case") else None,
         "proceeding": _proceeding_ref(doc.proceeding) if doc.proceeding else None,
+        "reference": _resolved_reference(db, doc),
         "originator_type": doc.originator_type,
         "attributed_originator": doc.attributed_originator,
         "court_relay": bool(doc.court_relay),

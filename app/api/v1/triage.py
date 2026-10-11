@@ -227,6 +227,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
                 page_count=d.page_count or 0,
                 is_proof=d.id in bundle.proof_doc_ids,
                 sub_group_id=d.sub_group_id,
+                reference_inherited=family_context.case_source(d) == "inherited",
             )
             for d in bundle.documents
         ],

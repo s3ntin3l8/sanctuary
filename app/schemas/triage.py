@@ -34,6 +34,7 @@ class TriageDocument(BaseModel):
     page_count: int
     is_proof: bool
     sub_group_id: int | None
+    reference_inherited: bool
 
 
 class TriageSubGroup(BaseModel):

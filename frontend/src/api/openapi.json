@@ -3950,6 +3950,9 @@
             ],
             "title": "Received Date"
           },
+          "reference": {
+            "$ref": "#/components/schemas/ResolvedReference"
+          },
           "relationships": {
             "items": {
               "$ref": "#/components/schemas/RelationshipView"
@@ -4005,6 +4008,7 @@
           "case_id",
           "case",
           "proceeding",
+          "reference",
           "originator_type",
           "attributed_originator",
           "court_relay",
@@ -4303,6 +4307,9 @@
             ],
             "title": "Received Date"
           },
+          "reference": {
+            "$ref": "#/components/schemas/ResolvedReference"
+          },
           "relationships": {
             "items": {
               "$ref": "#/components/schemas/RelationshipView"
@@ -4354,6 +4361,7 @@
           "case_id",
           "case",
           "proceeding",
+          "reference",
           "originator_type",
           "attributed_originator",
           "court_relay",
@@ -8479,6 +8487,108 @@
         "title": "RelationshipView",
         "type": "object"
       },
+      "ResolvedReference": {
+        "description": "What the document's family supplies on top of what its page says.",
+        "properties": {
+          "az_court": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
+          "az_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "inherited"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Source"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "case_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "inherited",
+                  "user"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Source"
+          },
+          "exhibit_to_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exhibit To Title"
+          },
+          "inherited_from_doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited From Doc Id"
+          },
+          "inherited_from_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited From Title"
+          }
+        },
+        "required": [
+          "case_id",
+          "case_source",
+          "az_court",
+          "az_source",
+          "inherited_from_doc_id",
+          "inherited_from_title",
+          "exhibit_to_title"
+        ],
+        "title": "ResolvedReference",
+        "type": "object"
+      },
       "RoleHealthView": {
         "description": "Live health per role; a separate call because it talks to the endpoints.",
         "properties": {
@@ -9970,6 +10080,10 @@
           "pipeline_state": {
             "$ref": "#/components/schemas/PipelineState"
           },
+          "reference_inherited": {
+            "title": "Reference Inherited",
+            "type": "boolean"
+          },
           "review_reasons": {
             "items": {
               "type": "string"
@@ -10023,7 +10137,8 @@
           "summary_pending",
           "page_count",
           "is_proof",
-          "sub_group_id"
+          "sub_group_id",
+          "reference_inherited"
         ],
         "title": "TriageDocument",
         "type": "object"
