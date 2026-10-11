@@ -1543,7 +1543,7 @@ export interface paths {
         /**
          * V1 Notifications
          * @description Overdue and upcoming deadlines, hearings, the caller's pending triage
-         *     bundles and overdue costs, each group counted in full and capped at five
+         *     bundles and overdue costs, each group counted in full and listing up to 50
          *     rows.
          */
         get: operations["v1_notifications_api_v1_notifications_get"];

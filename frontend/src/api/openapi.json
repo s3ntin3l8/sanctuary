@@ -13996,7 +13996,7 @@
     },
     "/api/v1/notifications": {
       "get": {
-        "description": "Overdue and upcoming deadlines, hearings, the caller's pending triage\nbundles and overdue costs, each group counted in full and capped at five\nrows.",
+        "description": "Overdue and upcoming deadlines, hearings, the caller's pending triage\nbundles and overdue costs, each group counted in full and listing up to 50\nrows.",
         "operationId": "v1_notifications_api_v1_notifications_get",
         "responses": {
           "200": {
