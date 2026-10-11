@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRef, useState } from 'react'
 import { expect, test } from 'vitest'
@@ -38,6 +38,16 @@ test('closes on outside click', async () => {
   render(<Harness />)
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'trigger' }))
-  await user.click(screen.getByRole('button', { name: 'Close menu' }))
+  await user.click(screen.getByLabelText('Close menu'))
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+})
+
+test('scrolling the page closes the menu, scrolling inside it does not', async () => {
+  render(<Harness />)
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'trigger' }))
+  fireEvent.scroll(screen.getByRole('menuitem', { name: 'Archive' }))
+  expect(screen.getByRole('menu')).toBeInTheDocument()
+  fireEvent.scroll(document.body)
   expect(screen.queryByRole('menu')).not.toBeInTheDocument()
 })

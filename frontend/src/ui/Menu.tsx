@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useLayoutEffect, useEffect, useState } from 'react'
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 type Props = {
@@ -32,6 +32,7 @@ export function Menu({
   className = '',
   children,
 }: Props) {
+  const panel = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>()
 
   useLayoutEffect(() => {
@@ -54,11 +55,15 @@ export function Menu({
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', onClose)
-    window.addEventListener('scroll', onClose, true)
+    // A scrolling panel must not close itself; anything else moving the page does.
+    const onScroll = (event: Event) => {
+      if (!panel.current?.contains(event.target as Node)) onClose()
+    }
+    window.addEventListener('scroll', onScroll, true)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', onClose)
-      window.removeEventListener('scroll', onClose, true)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [open, onClose])
 
@@ -68,10 +73,13 @@ export function Menu({
       <button
         type="button"
         aria-label="Close menu"
+        tabIndex={-1}
+        aria-hidden="true"
         onClick={onClose}
         className="fixed inset-0 z-190 cursor-default"
       />
       <div
+        ref={panel}
         role={role}
         aria-label={label}
         style={pos}

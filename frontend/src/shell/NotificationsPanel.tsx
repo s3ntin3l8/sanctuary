@@ -67,7 +67,8 @@ export function NotificationsPanel() {
               onClick={() =>
                 setExpanded((prev) => {
                   const next = new Set(prev)
-                  if (!next.delete(g.kind)) next.add(g.kind)
+                  if (next.has(g.kind)) next.delete(g.kind)
+                  else next.add(g.kind)
                   return next
                 })
               }

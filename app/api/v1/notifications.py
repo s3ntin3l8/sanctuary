@@ -18,6 +18,6 @@ def notifications(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     """Overdue and upcoming deadlines, hearings, the caller's pending triage
-    bundles and overdue costs, each group counted in full and capped at five
+    bundles and overdue costs, each group counted in full and listing up to 50
     rows."""
     return build_notifications(db, user)
