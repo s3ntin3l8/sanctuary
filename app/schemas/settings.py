@@ -267,7 +267,6 @@ class DataView(BaseModel):
     claim_count: int
     cost_count: int
     db_size_mb: float
-    ai_debug_redact: bool
 
 
 class MaintenanceResult(BaseModel):
@@ -280,14 +279,32 @@ class DebugLogRow(BaseModel):
     scope_id: str | None
     stage: str | None
     model: str | None
+    provider: str | None
     duration_ms: int | None
+    ttfb_ms: int | None
     status: str | None
+    error: str | None
+    doc_id: int | None
+    batch_id: int | None
+    case_id: str | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    reasoning_tokens: int | None
+    watchdog: str | None
     path: str | None
+
+
+class DebugLogFacets(BaseModel):
+    kind: list[str]
+    stage: list[str]
+    model: list[str]
 
 
 class DebugLogList(BaseModel):
     rows: list[DebugLogRow]
+    facets: DebugLogFacets
     log_root: str
+    ai_debug_redact: bool
 
 
 class DebugLogView(BaseModel):

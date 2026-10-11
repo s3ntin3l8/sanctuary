@@ -7,6 +7,7 @@ import { renderAt, stubApi } from '../../test/render'
 import { AdminUsersPage } from '../admin/AdminUsersPage'
 import { AccountPage } from './AccountPage'
 import { AiPage } from './AiPage'
+import { AiLogsPage } from './AiLogsPage'
 import { DataPage } from './DataPage'
 import { IdentityPage } from './IdentityPage'
 import { SettingsLayout } from './SettingsLayout'
@@ -131,10 +132,8 @@ test('data: clearing the workspace needs a confirmation and reports the result',
         claim_count: 63,
         cost_count: 27,
         db_size_mb: 84,
-        ai_debug_redact: true,
       },
     },
-    'GET /api/v1/settings/data/debug-logs': { body: { rows: [], log_root: '/data/ai_debug' } },
     'POST /api/v1/settings/data/clear-all-data': {
       body: { message: 'Cleared 300 database rows; 12 disk artifacts removed.' },
     },
@@ -238,10 +237,6 @@ test('settings pages explain a 403 instead of rendering nothing', async () => {
       status: 403,
       body: { detail: 'Admin access required', code: 'forbidden' },
     },
-    'GET /api/v1/settings/data/debug-logs': {
-      status: 403,
-      body: { detail: 'Admin access required', code: 'forbidden' },
-    },
   })
   renderAt('/settings/data', <DataPage />)
   expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -287,5 +282,85 @@ test('identity: own-side parties split on lines as well as commas', async () => 
       'Andreas Funk',
       'Kanzlei X',
     ]),
+  )
+})
+
+const logRow = {
+  ts: '2026-10-11T00:16:53+02:00',
+  kind: 'doc',
+  scope_id: '64',
+  stage: 'claims-p1',
+  model: 'gemma',
+  provider: 'lmstudio',
+  duration_ms: 60000,
+  ttfb_ms: 1200,
+  status: 'ok',
+  error: null,
+  doc_id: 64,
+  batch_id: 12,
+  case_id: null,
+  prompt_tokens: 3000,
+  completion_tokens: 900,
+  reasoning_tokens: null,
+  watchdog: null,
+  path: 'ib-0012/doc_64.md',
+}
+const logList = {
+  rows: [
+    logRow,
+    { ...logRow, ts: '2026-10-11T00:15:00+02:00', stage: 'embed', status: 'error', path: null },
+  ],
+  facets: { kind: ['doc'], stage: ['claims-p1', 'embed'], model: ['gemma'] },
+  log_root: '/data/ai_debug',
+  ai_debug_redact: true,
+}
+
+test('ai logs: a call expands right under its row and shows only that call', async () => {
+  stubApi({
+    'GET /api/v1/settings/ai/logs': { body: logList },
+    'GET /api/v1/settings/ai/logs/view': {
+      body: { path: 'ib-0012/doc_64.md', body: '# call: doc_64 | stage=claims-p1' },
+    },
+  })
+  renderAt('/settings/ai/logs', <AiLogsPage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'View call' }))
+  const detail = await screen.findByText('# call: doc_64 | stage=claims-p1')
+  const row = within(screen.getByRole('table')).getByText('claims-p1').closest('tr')
+  expect(row?.nextElementSibling).toContainElement(detail)
+  expect(screen.getByRole('link', { name: 'Bundle #12' })).toHaveAttribute(
+    'href',
+    '/triage?bundle=batch-12',
+  )
+  // The call without a log file has nothing to expand.
+  expect(screen.getAllByRole('button', { name: 'Hide call' })).toHaveLength(1)
+  expect(screen.queryByRole('button', { name: 'View call' })).not.toBeInTheDocument()
+})
+
+test('ai logs: filters are sent to the server', async () => {
+  const fetch = stubApi({ 'GET /api/v1/settings/ai/logs': { body: logList } })
+  renderAt('/settings/ai/logs', <AiLogsPage />)
+  const user = userEvent.setup()
+  await user.selectOptions(await screen.findByRole('combobox', { name: 'Status' }), 'error')
+  await user.type(screen.getByRole('textbox', { name: 'Bundle id' }), '12')
+  await waitFor(() => {
+    const last = fetch.mock.calls.map(([r]) => r.url).at(-1) ?? ''
+    expect(last).toContain('status=error')
+    expect(last).toContain('batch_id=12')
+  })
+})
+
+test('ai logs: the redaction toggle lives here', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/ai/logs': { body: logList },
+    'PUT /api/v1/settings/ai/debug-redact': { body: { enabled: false } },
+  })
+  renderAt('/settings/ai/logs', <AiLogsPage />)
+  const user = userEvent.setup()
+  const toggle = await screen.findByRole('switch', { name: 'Redact PII in AI debug logs' })
+  expect(toggle).toBeChecked()
+  await user.click(toggle)
+  await waitFor(async () =>
+    expect(await postedJson(fetch, 'PUT', '/debug-redact')).toEqual({ enabled: false }),
   )
 })

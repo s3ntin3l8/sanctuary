@@ -18,7 +18,8 @@ const GROUPS: Group[] = [
   {
     label: 'Intelligence',
     items: [
-      { to: '/settings/ai', icon: 'model_training', label: 'AI & Models', admin: true },
+      { to: '/settings/ai', icon: 'model_training', label: 'AI & Models', admin: true, end: true },
+      { to: '/settings/ai/logs', icon: 'receipt_long', label: 'AI call log', admin: true },
       { to: '/settings/identity', icon: 'groups', label: 'Identity & Context', admin: true },
     ],
   },
@@ -41,8 +42,8 @@ const GROUPS: Group[] = [
 
 export function SettingsLayout() {
   const isAdmin = useShell().data?.user.role === 'admin'
-  // The import table needs room; every other settings page is a narrow form.
-  const wide = useLocation().pathname === '/settings/gmail/import'
+  // The import and log tables need room; every other settings page is a narrow form.
+  const wide = ['/settings/gmail/import', '/settings/ai/logs'].includes(useLocation().pathname)
   useEffect(() => {
     document.title = 'Settings | The Sanctuary'
   }, [])

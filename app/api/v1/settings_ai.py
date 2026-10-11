@@ -7,7 +7,7 @@ import shutil
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,10 @@ from app.schemas.settings import (
     AiSettingsView,
     ConcurrencyResult,
     ConcurrencyUpdate,
+    DebugLogFacets,
+    DebugLogList,
+    DebugLogRow,
+    DebugLogView,
     DebugRedactUpdate,
     EmbedIndex,
     ExtractionEngineUpdate,
@@ -49,19 +53,25 @@ from app.services.ai_config import (
 )
 from app.services.ai_provider import chat_provider, embed_provider, ocr_provider
 from app.services.ai_settings_service import (
+    AI_DEBUG_ROOT,
     ROLE_FIELD,
     ROLE_HINT,
     ROLE_LABEL,
     ROLES,
+    debug_log_path,
+    extract_call_section,
     fetch_models,
     probe_embed_dim,
     probe_instance,
     probe_role_health,
     provider_for,
+    query_runs,
+    read_debug_log,
     resolve_roles,
 )
 from app.services.embeddings import verify_embedding_dim
 from app.services.user_settings_service import (
+    get_ai_debug_redact,
     get_extraction_engine,
     get_ocr_concurrency,
     get_reindex_job,
@@ -409,3 +419,79 @@ def ocr_concurrency(body: ConcurrencyUpdate, db: Session = Depends(get_db)):
 def debug_redact(body: DebugRedactUpdate, db: Session = Depends(get_db)):
     set_ai_debug_redact(db, body.enabled)
     return body
+
+
+def _opt_int(value: Any) -> int | None:
+    return value if isinstance(value, int) else None
+
+
+@router.get("/logs", response_model=DebugLogList)
+def ai_logs(
+    limit: int = Query(100, ge=1, le=500),
+    kind: str | None = None,
+    stage: str | None = None,
+    model: str | None = None,
+    status: str | None = Query(None, pattern="^(ok|error)$"),
+    doc_id: int | None = None,
+    batch_id: int | None = None,
+    q: str | None = Query(None, max_length=200),
+    db: Session = Depends(get_db),
+):
+    """Recent AI calls from the local runs index, newest first, optionally filtered."""
+    rows, facets = query_runs(
+        AI_DEBUG_ROOT / "runs.jsonl",
+        limit=limit,
+        kind=kind,
+        stage=stage,
+        model=model,
+        status=status,
+        doc_id=doc_id,
+        batch_id=batch_id,
+        q=q,
+    )
+    return DebugLogList(
+        rows=[
+            DebugLogRow(
+                ts=r.get("ts"),
+                kind=r.get("kind"),
+                scope_id=None if r.get("scope_id") is None else str(r.get("scope_id")),
+                stage=r.get("stage"),
+                model=r.get("model"),
+                provider=r.get("provider"),
+                duration_ms=_opt_int(r.get("duration_ms")),
+                ttfb_ms=_opt_int(r.get("ttfb_ms")),
+                status=r.get("status"),
+                error=r.get("error"),
+                doc_id=_opt_int(r.get("doc_id")),
+                batch_id=_opt_int(r.get("batch_id")),
+                case_id=r.get("case_id"),
+                prompt_tokens=_opt_int(r.get("prompt_tokens")),
+                completion_tokens=_opt_int(r.get("completion_tokens")),
+                reasoning_tokens=_opt_int(r.get("reasoning_tokens")),
+                watchdog=r.get("watchdog"),
+                path=debug_log_path(r),
+            )
+            for r in rows
+        ],
+        facets=DebugLogFacets(**facets),
+        log_root=str(AI_DEBUG_ROOT),
+        ai_debug_redact=get_ai_debug_redact(db),
+    )
+
+
+@router.get("/logs/view", response_model=DebugLogView)
+def ai_log_view(
+    path: str = Query(min_length=1, max_length=500),
+    stage: str | None = Query(None, max_length=100),
+    ts: str | None = Query(None, max_length=64),
+):
+    """A call's debug log. With ``stage`` and ``ts`` only that call's block is returned."""
+    try:
+        body = read_debug_log(path)
+    except ValueError as exc:
+        raise ApiError(422, "invalid_path", str(exc)) from exc
+    if body is None:
+        raise ApiError(404, "not_found", "Log file not found.")
+    if stage and ts:
+        body = extract_call_section(body, stage, ts) or body
+    return DebugLogView(path=path, body=body)

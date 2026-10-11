@@ -1910,6 +1910,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/ai/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Ai Logs
+         * @description Recent AI calls from the local runs index, newest first, optionally filtered.
+         */
+        get: operations["v1_ai_logs_api_v1_settings_ai_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ai/logs/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Ai Log View
+         * @description A call's debug log. With ``stage`` and ``ts`` only that call's block is returned.
+         */
+        get: operations["v1_ai_log_view_api_v1_settings_ai_logs_view_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ai/ocr-concurrency": {
         parameters: {
             query?: never;
@@ -2120,40 +2160,6 @@ export interface paths {
         put?: never;
         /** V1 Clear All Data */
         post: operations["v1_clear_all_data_api_v1_settings_data_clear_all_data_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/settings/data/debug-logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** V1 Debug Logs */
-        get: operations["v1_debug_logs_api_v1_settings_data_debug_logs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/settings/data/debug-logs/view": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** V1 Debug Log */
-        get: operations["v1_debug_log_api_v1_settings_data_debug_logs_view_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3836,8 +3842,6 @@ export interface components {
         };
         /** DataView */
         DataView: {
-            /** Ai Debug Redact */
-            ai_debug_redact: boolean;
             /** Case Count */
             case_count: number;
             /** Claim Count */
@@ -3849,8 +3853,20 @@ export interface components {
             /** Doc Count */
             doc_count: number;
         };
+        /** DebugLogFacets */
+        DebugLogFacets: {
+            /** Kind */
+            kind: string[];
+            /** Model */
+            model: string[];
+            /** Stage */
+            stage: string[];
+        };
         /** DebugLogList */
         DebugLogList: {
+            /** Ai Debug Redact */
+            ai_debug_redact: boolean;
+            facets: components["schemas"]["DebugLogFacets"];
             /** Log Root */
             log_root: string;
             /** Rows */
@@ -3858,14 +3874,30 @@ export interface components {
         };
         /** DebugLogRow */
         DebugLogRow: {
+            /** Batch Id */
+            batch_id: number | null;
+            /** Case Id */
+            case_id: string | null;
+            /** Completion Tokens */
+            completion_tokens: number | null;
+            /** Doc Id */
+            doc_id: number | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Error */
+            error: string | null;
             /** Kind */
             kind: string | null;
             /** Model */
             model: string | null;
             /** Path */
             path: string | null;
+            /** Prompt Tokens */
+            prompt_tokens: number | null;
+            /** Provider */
+            provider: string | null;
+            /** Reasoning Tokens */
+            reasoning_tokens: number | null;
             /** Scope Id */
             scope_id: string | null;
             /** Stage */
@@ -3874,6 +3906,10 @@ export interface components {
             status: string | null;
             /** Ts */
             ts: string | null;
+            /** Ttfb Ms */
+            ttfb_ms: number | null;
+            /** Watchdog */
+            watchdog: string | null;
         };
         /** DebugLogView */
         DebugLogView: {
@@ -9465,6 +9501,77 @@ export interface operations {
             };
         };
     };
+    v1_ai_logs_api_v1_settings_ai_logs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                kind?: string | null;
+                stage?: string | null;
+                model?: string | null;
+                status?: string | null;
+                doc_id?: number | null;
+                batch_id?: number | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebugLogList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_ai_log_view_api_v1_settings_ai_logs_view_get: {
+        parameters: {
+            query: {
+                path: string;
+                stage?: string | null;
+                ts?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebugLogView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_ocr_concurrency_api_v1_settings_ai_ocr_concurrency_put: {
         parameters: {
             query?: never;
@@ -9826,68 +9933,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MaintenanceResult"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    v1_debug_logs_api_v1_settings_data_debug_logs_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DebugLogList"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    v1_debug_log_api_v1_settings_data_debug_logs_view_get: {
-        parameters: {
-            query: {
-                path: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DebugLogView"];
                 };
             };
             /** @description Error */
