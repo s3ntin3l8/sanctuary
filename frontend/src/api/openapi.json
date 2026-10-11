@@ -1566,6 +1566,33 @@
         "title": "CaseDocument",
         "type": "object"
       },
+      "CaseMerge": {
+        "properties": {
+          "target_id": {
+            "maxLength": 64,
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "CaseMerge",
+        "type": "object"
+      },
+      "CaseMergeResult": {
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id"
+        ],
+        "title": "CaseMergeResult",
+        "type": "object"
+      },
       "CasePurge": {
         "properties": {
           "confirm": {
@@ -7225,6 +7252,19 @@
         "title": "ProceedingCourtLevel",
         "type": "string"
       },
+      "ProceedingMerge": {
+        "properties": {
+          "target_id": {
+            "title": "Target Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "ProceedingMerge",
+        "type": "object"
+      },
       "ProceedingRef": {
         "properties": {
           "az_court": {
@@ -11166,6 +11206,59 @@
         ]
       }
     },
+    "/api/v1/cases/{case_id}/merge": {
+      "post": {
+        "description": "Fold this case into another the user can edit, then delete it.",
+        "operationId": "v1_merge_case_api_v1_cases__case_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseMergeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Merge Case",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
     "/api/v1/cases/{case_id}/opposing-parties": {
       "put": {
         "operationId": "v1_save_opposing_parties_api_v1_cases__case_id__opposing_parties_put",
@@ -13903,6 +13996,59 @@
           }
         },
         "summary": "V1 Update Proceeding",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/proceedings/{proceeding_id}/merge": {
+      "post": {
+        "description": "Fold this proceeding into another of the same case, then delete it.",
+        "operationId": "v1_merge_proceeding_api_v1_proceedings__proceeding_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proceeding_id",
+            "required": true,
+            "schema": {
+              "title": "Proceeding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProceedingMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProceedingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Merge Proceeding",
         "tags": [
           "cases"
         ]

@@ -334,4 +334,6 @@ class AuditEventType(enum.StrEnum):
     MAINTENANCE_REINDEX_DOCUMENTS = "maintenance_reindex_documents"
     AI_DEBUG_REDACT_TOGGLED = "ai_debug_redact_toggled"
     CASE_PURGED = "case_purged"
+    CASE_MERGED = "case_merged"
+    PROCEEDING_MERGED = "proceeding_merged"
     DATA_EXPORTED = "data_exported"

@@ -179,6 +179,18 @@ class ProceedingUpdate(BaseModel):
     status: ProceedingStatus | None = None
 
 
+class ProceedingMerge(BaseModel):
+    target_id: int
+
+
+class CaseMerge(BaseModel):
+    target_id: str = Field(max_length=64)
+
+
+class CaseMergeResult(BaseModel):
+    case_id: str
+
+
 # --- Graph -------------------------------------------------------------------
 
 
