@@ -5,13 +5,14 @@ SPA graph (frontend/src/features/cases/dashboard/GraphTab.tsx) is pure rendering
 """
 
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.database import Document
+from app.models.database import Document, DocumentRelationship
 from app.models.enums import (
     DocumentRole,
     DocumentStatus,
@@ -273,6 +274,25 @@ class CaseGraphService:
             child.id for children in bundle_children.values() for child in children
         }
 
+        # A document filed again (an exhibit that copies an earlier letter) is
+        # not a second row: it folds onto its original, which counts its copies.
+        proceeding_doc_ids = {doc.id for doc in all_docs}
+        copy_originals = {
+            copy_id: original_id
+            for copy_id, original_id in self.db.query(
+                DocumentRelationship.from_document_id,
+                DocumentRelationship.to_document_id,
+            )
+            .filter(
+                DocumentRelationship.relationship_type == RelationshipType.COPY_OF,
+                DocumentRelationship.from_document_id.in_(proceeding_doc_ids),
+            )
+            .all()
+            if original_id in proceeding_doc_ids
+        }
+        copy_counts = Counter(copy_originals.values())
+        child_doc_ids |= set(copy_originals)
+
         # ------------------------------------------------------------------
         # Apply significance filter; exclude bundle children (they live inside
         # their bundle node, not as standalone rows).
@@ -400,6 +420,7 @@ class CaseGraphService:
                     "originator_type": doc.originator_type.value
                     if doc.originator_type
                     else "unknown",
+                    "copy_count": 0,
                 }
             else:
                 # Determine max title length based on available flags to prevent overlap
@@ -445,6 +466,7 @@ class CaseGraphService:
                     "originator_type": doc.originator_type.value
                     if doc.originator_type
                     else "unknown",
+                    "copy_count": copy_counts.get(doc.id, 0),
                 }
             nodes.append(node)
             node_by_id[doc.id] = node

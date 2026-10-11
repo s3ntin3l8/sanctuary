@@ -4585,6 +4585,8 @@ export interface components {
         };
         /** GraphNode */
         GraphNode: {
+            /** Copy Count */
+            copy_count: number;
             /** Cross Proceeding */
             cross_proceeding: boolean;
             /** Date Short */
@@ -5458,7 +5460,7 @@ export interface components {
          * @description How one document relates to another.
          * @enum {string}
          */
-        RelationshipType: "replies_to" | "references" | "attaches_as_proof" | "supersedes" | "cited_by" | "encloses";
+        RelationshipType: "replies_to" | "references" | "attaches_as_proof" | "supersedes" | "cited_by" | "encloses" | "copy_of";
         /** RelationshipView */
         RelationshipView: {
             confidence: components["schemas"]["RelationshipConfidence"];
@@ -5768,6 +5770,8 @@ export interface components {
             amount_eur: number | null;
             /** Claim Count */
             claim_count: number;
+            /** Copy Count */
+            copy_count: number;
             /**
              * Date
              * Format: date-time

@@ -8,6 +8,7 @@ No persistence — pure aggregation + sort.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -28,6 +29,7 @@ from app.models.enums import (
     CostCategory,
     CostStatus,
     DocumentType,
+    RelationshipType,
 )
 from app.services.case_graph_service import _lane_for
 
@@ -82,6 +84,7 @@ class TimelineEvent:
     is_future: bool  # date > today
     claim_count: int = 0  # distinct claims linked to this document
     rel_count: int = 0  # document relationships (from + to)
+    copy_count: int = 0  # later copies of this document folded into the event
     status: str | None = None  # ActionItem: open | completed | dismissed
 
 
@@ -203,7 +206,28 @@ class CaseTimelineService:
             if doc.parent_id is not None:
                 children_by_parent.setdefault(doc.parent_id, []).append(doc)
 
-        seen_ids: set[int] = set()
+        # A document filed again (an exhibit copying an earlier letter) is not a
+        # second event: it folds onto its original, which counts its copies.
+        copy_originals: dict[int, int] = (
+            {
+                copy_id: original_id
+                for copy_id, original_id in self.db.query(
+                    DocumentRelationship.from_document_id,
+                    DocumentRelationship.to_document_id,
+                )
+                .filter(
+                    DocumentRelationship.relationship_type == RelationshipType.COPY_OF,
+                    DocumentRelationship.from_document_id.in_(doc_ids),
+                )
+                .all()
+                if original_id in set(doc_ids)
+            }
+            if doc_ids
+            else {}
+        )
+        copy_counts = Counter(copy_originals.values())
+
+        seen_ids: set[int] = set(copy_originals)
 
         for doc in docs:
             if doc.id in seen_ids:
@@ -232,6 +256,7 @@ class CaseTimelineService:
                         is_future=date > today,
                         claim_count=claim_counts.get(doc.id, 0),
                         rel_count=rel_counts.get(doc.id, 0),
+                        copy_count=copy_counts.get(doc.id, 0),
                     )
                 )
                 # Emit each non-trivial child with its own actor/kind
@@ -259,6 +284,7 @@ class CaseTimelineService:
                             is_future=child_date > today,
                             claim_count=claim_counts.get(child.id, 0),
                             rel_count=rel_counts.get(child.id, 0),
+                            copy_count=copy_counts.get(child.id, 0),
                         )
                     )
             else:
@@ -280,6 +306,7 @@ class CaseTimelineService:
                         is_future=date > today,
                         claim_count=claim_counts.get(doc.id, 0),
                         rel_count=rel_counts.get(doc.id, 0),
+                        copy_count=copy_counts.get(doc.id, 0),
                     )
                 )
 

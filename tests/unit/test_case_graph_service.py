@@ -396,6 +396,47 @@ class TestCaseGraphServiceBuildPayload:
         assert len(bundle["children"]) == 1
 
     @pytest.mark.unit
+    def test_a_copy_folds_onto_its_original_node(
+        self, db_session, proceeding_with_graph
+    ):
+        from app.models.database import DocumentRelationship
+
+        original = (
+            db_session.query(Document)
+            .filter_by(
+                proceeding_id=proceeding_with_graph.id,
+                title="Unsere Klageerwiderung",
+            )
+            .one()
+        )
+        copy = Document(
+            title="Unsere Klageerwiderung (Anlage)",
+            case_id=original.case_id,
+            proceeding_id=proceeding_with_graph.id,
+            originator_type=OriginatorType.OWN,
+            role=DocumentRole.STANDALONE,
+            significance_tier=SignificanceTier.SIGNIFICANT,
+            received_date=datetime(2025, 3, 1),
+        )
+        db_session.add(copy)
+        db_session.flush()
+        db_session.add(
+            DocumentRelationship(
+                from_document_id=copy.id,
+                to_document_id=original.id,
+                relationship_type=RelationshipType.COPY_OF,
+            )
+        )
+        db_session.commit()
+
+        payload = CaseGraphService(db_session).build_payload(proceeding_with_graph.id)
+
+        titles = {n["full_title"] for n in payload.nodes}
+        assert "Unsere Klageerwiderung (Anlage)" not in titles
+        (node,) = [n for n in payload.nodes if n["id"] == original.id]
+        assert node["copy_count"] == 1
+
+    @pytest.mark.unit
     def test_build_payload_emits_bundle_for_court_relay(
         self, db_session, proceeding_with_graph
     ):

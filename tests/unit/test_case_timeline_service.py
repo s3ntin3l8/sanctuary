@@ -207,3 +207,39 @@ def test_document_type_to_kind_mapping(db_session, sample_case):
         assert kind_map[f"Doc {i}"] == expected_kind, (
             f"Expected {expected_kind} for {doc_type}"
         )
+
+
+@pytest.mark.unit
+def test_a_copy_folds_onto_its_original(db_session, sample_case):
+    from app.models.database import DocumentRelationship
+    from app.models.enums import RelationshipConfidence, RelationshipType
+
+    original = Document(
+        case_id=sample_case.id,
+        title="Beschluss",
+        issued_date=datetime(2025, 6, 1),
+        originator_type=OriginatorType.COURT,
+    )
+    copy = Document(
+        case_id=sample_case.id,
+        title="Beschluss (Anlage)",
+        issued_date=datetime(2025, 6, 1),
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add_all([original, copy])
+    db_session.flush()
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=copy.id,
+            to_document_id=original.id,
+            relationship_type=RelationshipType.COPY_OF,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
+    )
+    db_session.commit()
+
+    payload = CaseTimelineService(db_session).build_payload(sample_case.id)
+
+    (event,) = payload["events"]
+    assert event.source_document_id == original.id
+    assert event.copy_count == 1

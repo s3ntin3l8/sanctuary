@@ -262,12 +262,19 @@ def enrich_document_task(self, doc_id: int):
     finally:
         db.close()
 
+    copy_of = _link_copies(doc_id)
+
     logger.info("Doc #%d: enrich complete — dispatching downstream stages", doc_id)
 
-    _dispatch_relationships(doc_id)
-    # CLAIMS and ENTITIES need only ENRICH's output; neither waits on the
-    # relationships gate.
-    _dispatch_if_pending(doc_id, PipelineStage.CLAIMS)
+    if copy_of is None:
+        _dispatch_relationships(doc_id)
+        # CLAIMS and ENTITIES need only ENRICH's output; neither waits on the
+        # relationships gate.
+        _dispatch_if_pending(doc_id, PipelineStage.CLAIMS)
+    else:
+        logger.info(
+            "Doc #%d: copy of #%d — relationships and claims skipped", doc_id, copy_of
+        )
     _dispatch_if_pending(doc_id, PipelineStage.ENTITIES)
     # Later documents of this case may have been waiting for this one's ENRICH.
     release_relationship_gate(doc_id)
@@ -275,6 +282,37 @@ def enrich_document_task(self, doc_id: int):
     _trigger_cost_rollup(doc_id)
 
     return {"status": "success", "doc_id": doc_id}
+
+
+def _link_copies(doc_id: int) -> int | None:
+    """Link this document to the earlier one it copies (and any earlier-processed
+    copies of it) and take the copies out of the analysis. Returns the original's
+    id when this document is itself a copy. Best effort: a failure here must not
+    fail an enrichment that already succeeded."""
+    from app.dependencies import get_db_session
+    from app.models.database import Document
+    from app.services.intelligence.copy_detector import detect_and_link, quiet_copy
+
+    db = get_db_session()
+    try:
+        doc = db.get(Document, doc_id)
+        if doc is None:
+            return None
+        outcome = detect_and_link(db, doc)
+        if outcome.original_id is not None:
+            quiet_copy(db, doc)
+        for copy_id in outcome.copy_ids:
+            copy = db.get(Document, copy_id)
+            if copy is not None:
+                quiet_copy(db, copy)
+        db.commit()
+        return outcome.original_id
+    except Exception:
+        logger.warning("Doc #%d: copy detection failed", doc_id, exc_info=True)
+        db.rollback()
+        return None
+    finally:
+        db.close()
 
 
 def _task_for_stage(stage: PipelineStage):

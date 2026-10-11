@@ -846,6 +846,7 @@ const REL_GLYPH: Record<string, string> = {
   supersedes: '⇒',
   cited_by: '⇐',
   encloses: '⊃',
+  copy_of: '≈',
 }
 
 const DECISION_TONE = {
