@@ -108,6 +108,14 @@ class _LazyService:
         return self._service
 
 
+def _include_sent(sj: dict) -> bool:
+    return bool(sj.get("gmail_include_sent"))
+
+
+def _own_addresses(sj: dict) -> list[str]:
+    return list(sj.get("gmail_own_addresses") or [])
+
+
 def _settings_json(db: Session, user_id: int) -> dict:
     settings = _get_user_settings(db, user_id)
     return (settings.settings_json or {}) if settings else {}
@@ -123,13 +131,14 @@ def _ingest_messages(
     """
     succeeded = 0
     failed_ids: list[str] = []
+    own = _own_addresses(_settings_json(db, user_id))
     for msg_id in message_ids:
         # Unlike the history import, a dead grant is not re-raised per message
         # here: sync_gmail_for_user connects (and so detects a revoked token)
         # before it gets this far, and ends the run with "Reconnect required".
         try:
             raw_bytes = _raw_message(user_id, msg_id, lambda: service)
-            ingest_raw_email(db, raw_bytes, owner_id=user_id)
+            ingest_raw_email(db, raw_bytes, owner_id=user_id, own_addresses=own)
             succeeded += 1
         except Exception:
             db.rollback()
@@ -384,6 +393,7 @@ def sync_gmail_for_user(self, user_id: int):
             query = build_query(
                 allowlist,
                 sj.get("gmail_label_filter", ""),
+                include_sent=_include_sent(sj),
                 after=int(datetime.fromisoformat(last_sync).timestamp()),
             )
 
@@ -506,6 +516,7 @@ def check_gmail_new(self, user_id: int):
             query = build_query(
                 allowlist,
                 sj.get("gmail_label_filter", ""),
+                include_sent=_include_sent(sj),
                 after=int(datetime.fromisoformat(last_sync).timestamp()),
             )
             known = gmail_index_service.indexed_gmail_ids(db, user_id)
@@ -567,7 +578,11 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
                 return "Not configured"
 
             service = connect_gmail(db, user_id, sj)
-            query = build_query(allowlist, sj.get("gmail_label_filter", ""))
+            query = build_query(
+                allowlist,
+                sj.get("gmail_label_filter", ""),
+                include_sent=_include_sent(sj),
+            )
             known = gmail_index_service.indexed_gmail_ids(db, user_id)
             new_ids = [i for i in list_message_ids(service, query) if i not in known]
             # A retry starts from a clean slate: clears the previous attempt's error.
@@ -657,7 +672,12 @@ def _merge_import_outcome(
 
 
 def _import_one(
-    db: Session, get_service, user_id: int, work: dict, gmail_id: str
+    db: Session,
+    get_service,
+    user_id: int,
+    work: dict,
+    gmail_id: str,
+    own_addresses: list[str],
 ) -> None:
     """Ingest one message, updating ``work`` in place."""
     work["current"] = {
@@ -666,7 +686,10 @@ def _import_one(
     }
     try:
         ingest_raw_email(
-            db, _raw_message(user_id, gmail_id, get_service), owner_id=user_id
+            db,
+            _raw_message(user_id, gmail_id, get_service),
+            owner_id=user_id,
+            own_addresses=own_addresses,
         )
     except (GmailReconnectRequired, SecretsError):
         raise  # not this message's fault: end the run and ask for a reconnect
@@ -761,8 +784,11 @@ def import_gmail_messages(self, user_id: int, run_id: str):
             get_service = _LazyService(
                 lambda: connect_gmail(db, user_id, _settings_json(db, user_id))
             )
+            own = _own_addresses(_settings_json(db, user_id))
             while work["remaining"]:
-                _import_one(db, get_service, user_id, work, work["remaining"].pop(0))
+                _import_one(
+                    db, get_service, user_id, work, work["remaining"].pop(0), own
+                )
                 if (
                     gmail_runs.update_run("import", user_id, run_id, _progress(work))
                     is None

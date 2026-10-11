@@ -198,6 +198,20 @@ def test_build_query():
     )
 
 
+def test_build_query_include_sent_adds_the_users_replies():
+    assert build_query(["a@x.de", "b.de"], include_sent=True) == (
+        "((from:a@x.de OR from:b.de) OR "
+        "(from:me (to:a@x.de OR cc:a@x.de OR to:b.de OR cc:b.de)))"
+    )
+    assert build_query(["a@x.de"], "S", after=5, include_sent=True) == (
+        '((from:a@x.de) OR (from:me (to:a@x.de OR cc:a@x.de))) label:"S" after:5'
+    )
+
+
+def test_build_query_include_sent_is_inert_without_an_allowlist():
+    assert build_query([], "S", include_sent=True) == 'label:"S"'
+
+
 def test_build_query_label_alone_is_a_filter():
     assert build_query([], "Sanctuary") == 'label:"Sanctuary"'
     assert build_query([], "Sanctuary", after=5) == 'label:"Sanctuary" after:5'

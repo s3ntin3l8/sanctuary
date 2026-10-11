@@ -5,6 +5,9 @@
 > all substantive correspondence from the lawyer arrives as attached PDF
 > letters. Do not "fix" this.
 
+The one exception is the user's own mail (sender in ``own_addresses``): their
+text is the substance, so its body is kept next to the attachments.
+
 This test pins that contract so a future "improvement" that creates a body
 document for emails with attachments fails loudly.
 """
@@ -49,6 +52,38 @@ def test_body_discarded_when_email_has_attachments(db_session):
         f"attachments are present (CLAUDE.md invariant)."
     )
     assert docs[0].title == "schriftsatz.pdf"
+
+
+@pytest.mark.integration
+def test_body_kept_for_own_mail_with_attachments(db_session):
+    """The user's own mail is their writing: its body is kept next to the PDF."""
+    raw = _build_email(
+        body="Anbei meine Stellungnahme zu Ihrem Entwurf.",
+        attachments=[("stellungnahme.pdf", b"%PDF-1.4 dummy pdf content")],
+    ).replace(b"lawyer@example.com", b"Me@Example.com", 1)
+
+    batch = ingest_raw_email(db_session, raw, own_addresses=["me@example.com"])
+
+    assert batch is not None
+    titles = {
+        d.title
+        for d in db_session.query(Document).filter(Document.ingest_batch_id == batch.id)
+    }
+    assert len(titles) == 2 and "stellungnahme.pdf" in titles
+
+
+@pytest.mark.integration
+def test_body_still_discarded_for_other_senders_with_own_addresses_set(db_session):
+    raw = _build_email(
+        body="Cover note.",
+        attachments=[("schriftsatz.pdf", b"%PDF-1.4 dummy pdf content")],
+    )
+    batch = ingest_raw_email(db_session, raw, own_addresses=["me@example.com"])
+    assert batch is not None
+    assert (
+        db_session.query(Document).filter(Document.ingest_batch_id == batch.id).count()
+        == 1
+    )
 
 
 @pytest.mark.integration

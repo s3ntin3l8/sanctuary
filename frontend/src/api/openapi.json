@@ -4845,10 +4845,23 @@
             "title": "Allowlist",
             "type": "array"
           },
+          "include_sent": {
+            "default": false,
+            "title": "Include Sent",
+            "type": "boolean"
+          },
           "label_filter": {
             "default": "",
             "title": "Label Filter",
             "type": "string"
+          },
+          "own_addresses": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Own Addresses",
+            "type": "array"
           }
         },
         "required": [
@@ -5379,6 +5392,10 @@
             "title": "Failed Count",
             "type": "integer"
           },
+          "include_sent": {
+            "title": "Include Sent",
+            "type": "boolean"
+          },
           "label_filter": {
             "title": "Label Filter",
             "type": "string"
@@ -5431,6 +5448,13 @@
             "title": "Oauth Start Url",
             "type": "string"
           },
+          "own_addresses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Own Addresses",
+            "type": "array"
+          },
           "reconnect_required": {
             "title": "Reconnect Required",
             "type": "boolean"
@@ -5451,6 +5475,8 @@
           "last_sync_at",
           "allowlist",
           "label_filter",
+          "include_sent",
+          "own_addresses",
           "oauth_start_url",
           "sync_mode",
           "last_check_at",

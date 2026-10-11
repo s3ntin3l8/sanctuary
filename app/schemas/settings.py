@@ -48,6 +48,8 @@ class GmailView(BaseModel):
     last_sync_at: str | None
     allowlist: list[str]
     label_filter: str
+    include_sent: bool
+    own_addresses: list[str]
     oauth_start_url: str
     sync_mode: SyncMode
     # When the last new-mail check (notify mode) reached Gmail.
@@ -86,9 +88,17 @@ _DOMAIN = r"([A-Za-z0-9-]+\.)+[A-Za-z]{2,}"
 _SENDER_RE = re.compile(rf"^(@?{_DOMAIN}|[A-Za-z0-9._%+-]+@{_DOMAIN})$")
 
 
+_OWN_ADDRESS_RE = re.compile(rf"^[A-Za-z0-9._%+-]+@{_DOMAIN}$")
+
+
 class GmailFilters(BaseModel):
     allowlist: list[str]
     label_filter: str = ""
+    # Also match mail the user sent to the allowlisted senders. ``own_addresses``
+    # are the addresses they send from: that mail keeps its body even with
+    # attachments.
+    include_sent: bool = False
+    own_addresses: list[str] = []
 
     @model_validator(mode="after")
     def _clean_and_require_a_filter(self) -> GmailFilters:
@@ -106,6 +116,16 @@ class GmailFilters(BaseModel):
             raise ValueError("The label can't contain quotes or line breaks")
         if not self.allowlist and not self.label_filter:
             raise ValueError("Set a sender allowlist or a label — or both")
+        self.own_addresses = [
+            e.strip().lower() for e in self.own_addresses if e.strip()
+        ]
+        for entry in self.own_addresses:
+            if not _OWN_ADDRESS_RE.match(entry):
+                raise ValueError(f"'{entry}' isn't an email address")
+        if self.include_sent and self.allowlist and not self.own_addresses:
+            raise ValueError(
+                "Add the address(es) you send from, or turn off importing your sent mail"
+            )
         return self
 
 

@@ -13,6 +13,7 @@ from app.services.ingestion.email_parser import (
     parse_email_date,
     parse_message_ids,
     parse_rfc822,
+    strip_quoted_history,
 )
 
 
@@ -391,3 +392,59 @@ def test_parse_rfc822_without_threading_headers():
     result = parse_rfc822(_simple_email())
     assert result["in_reply_to"] is None
     assert result["thread_refs"] == []
+
+
+def _plain_email(body: bytes, charset: str, cte: str = "8bit") -> bytes:
+    return (
+        b"From: a@example.com\r\nMessage-ID: <cs@mail>\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b'Content-Type: text/plain; charset="' + charset.encode() + b'"\r\n'
+        b"Content-Transfer-Encoding: " + cte.encode() + b"\r\n\r\n" + body
+    )
+
+
+@pytest.mark.parametrize("charset", ["iso-8859-1", "windows-1252"])
+def test_parse_rfc822_keeps_umlauts_in_declared_charset(charset):
+    raw = _plain_email("Bußgeld für Müller äöü".encode(charset), charset)
+    assert parse_rfc822(raw)["body"] == "Bußgeld für Müller äöü"
+
+
+def test_parse_rfc822_unknown_charset_does_not_drop_characters():
+    raw = _plain_email("Grüße".encode("latin-1"), "x-bogus")
+    assert parse_rfc822(raw)["body"] == "Grüße"
+
+
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        "Am 03.05.2026 um 10:00 schrieb Dr. Vogt <v@firm.de>:\n> alt\n> mehr",
+        "On Mon, May 4, 2026 at 9:00 AM Vogt <v@firm.de> wrote:\n> old",
+        "-----Original Message-----\nFrom: v@firm.de\nold",
+        "-----Ursprüngliche Nachricht-----\nVon: v@firm.de\nalt",
+        "Von: Vogt\nGesendet: Montag, 4. Mai 2026\nAn: ich\nalt",
+    ],
+)
+def test_strip_quoted_history_cuts_the_thread_below_the_reply(quoted):
+    assert strip_quoted_history(f"Danke, passt.\n\n{quoted}") == "Danke, passt."
+
+
+def test_strip_quoted_history_drops_inline_quote_lines_only():
+    assert (
+        strip_quoted_history("zu Punkt 1:\n> Frage\nAntwort") == "zu Punkt 1:\nAntwort"
+    )
+
+
+def test_strip_quoted_history_keeps_a_pure_forward():
+    body = "> weitergeleitet\n> Text"
+    assert strip_quoted_history(body) == body
+
+
+def test_manifest_is_read_from_below_the_quoted_header():
+    body = (
+        "Anbei.\n\nAm 03.05.2026 schrieb Gericht <g@j.de>:\n"
+        'Anlagen:\nSCHR_1.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt"\n'
+    )
+    raw = f"From: a@b.de\r\nMessage-ID: <m@x>\r\n\r\n{body}".encode()
+    result = parse_rfc822(raw)
+    assert result["body"] == "Anbei."
+    assert [e["filename"] for e in result["attachment_manifest"]] == ["SCHR_1.PDF"]

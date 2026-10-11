@@ -21,6 +21,7 @@ import type { Schemas } from '../../api/client'
 import { Icon } from '../../ui/Icon'
 import { Modal } from '../../ui/Modal'
 import { SettingsCard } from '../../ui/SettingsCard'
+import { Toggle } from '../../ui/Toggle'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
@@ -33,6 +34,8 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
   const toast = useToast()
   const [allowlist, setAllowlist] = useState(gmail.allowlist.join(', '))
   const [label, setLabel] = useState(gmail.label_filter)
+  const [includeSent, setIncludeSent] = useState(gmail.include_sent)
+  const [ownAddresses, setOwnAddresses] = useState(gmail.own_addresses.join(', '))
   const [estimate, setEstimate] = useState<number | null>(null)
 
   const body = {
@@ -41,6 +44,11 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
       .map((s) => s.trim())
       .filter(Boolean),
     label_filter: label.trim(),
+    include_sent: includeSent,
+    own_addresses: ownAddresses
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   }
   const empty = body.allowlist.length === 0 && body.label_filter === ''
 
@@ -52,7 +60,7 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
   return (
     <SettingsCard
       title="What Sanctuary reads"
-      description="Only mail matching these filters is ever indexed or imported. Set a sender allowlist, a label, or both."
+      description="Only mail matching these filters is ever indexed or imported — mail from the senders and, optionally, your replies to them. Set a sender allowlist, a label, or both."
     >
       <form
         className="space-y-3"
@@ -95,6 +103,30 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
             value={label}
             placeholder="Sanctuary"
             onChange={(e) => edit(() => setLabel(e.target.value))}
+            className={inputClass}
+          />
+        </Field>
+        <div className="flex items-center gap-3">
+          <Toggle
+            checked={includeSent}
+            onChange={(next) => edit(() => setIncludeSent(next))}
+            label="Also import mail I sent to these senders"
+          />
+          <span aria-hidden="true" className="text-[12px] text-ink">
+            Also import mail I sent to these senders
+          </span>
+        </div>
+        <Field
+          label="Your addresses"
+          htmlFor="own-addresses"
+          hint="Addresses you write to your lawyer from, e.g. you@gmail.com. Your own mail keeps its text even when it has attachments. Used only when sent mail is imported."
+        >
+          <input
+            id="own-addresses"
+            value={ownAddresses}
+            placeholder="you@gmail.com"
+            disabled={!includeSent}
+            onChange={(e) => edit(() => setOwnAddresses(e.target.value))}
             className={inputClass}
           />
         </Field>

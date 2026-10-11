@@ -75,6 +75,8 @@ def _view(db: Session, user: User) -> GmailView:
         last_sync_at=cfg.get("gmail_last_sync_at"),
         allowlist=list(cfg.get("gmail_allowlist") or []),
         label_filter=cfg.get("gmail_label_filter") or "",
+        include_sent=bool(cfg.get("gmail_include_sent")),
+        own_addresses=list(cfg.get("gmail_own_addresses") or []),
         oauth_start_url=OAUTH_START_URL,
         sync_mode=cfg.get("gmail_sync_mode") or "off",
         last_check_at=cfg.get("gmail_last_check_at"),
@@ -120,6 +122,8 @@ def save_filters(
         user.id,
         allowlist=body.allowlist,
         label_filter=body.label_filter,
+        include_sent=body.include_sent,
+        own_addresses=body.own_addresses,
     )
     _audit(db, user, "filters")
     db.commit()
@@ -141,7 +145,10 @@ def preview_filters(
     try:
         service = connect_gmail(db, user.id, sj)
         estimate = estimate_matches(
-            service, build_query(body.allowlist, body.label_filter)
+            service,
+            build_query(
+                body.allowlist, body.label_filter, include_sent=body.include_sent
+            ),
         )
     except GmailReconnectRequired as exc:
         raise ApiError(409, "gmail_reconnect_required", str(exc)) from exc

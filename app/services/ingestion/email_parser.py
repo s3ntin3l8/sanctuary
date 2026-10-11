@@ -151,6 +151,63 @@ def _extract_email_note(body: str) -> str:
     return note
 
 
+def _decode_text(part) -> str:
+    """Decode a text part with its declared charset.
+
+    Falls back to Latin-1 (never drops characters) for an unknown charset or
+    bytes that don't fit the declared one.
+    """
+    payload = part.get_payload(decode=True)
+    if not isinstance(payload, bytes) or not payload:
+        return ""
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset)
+    except (LookupError, UnicodeDecodeError):
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return payload.decode("latin-1")
+
+
+# First line of the quoted history of a reply: "Am … schrieb …:", "On … wrote:",
+# a divider, or the start of an Outlook "Von: / Gesendet:" header block.
+_REPLY_HEADER_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:am|on)\b.{0,200}\b(?:schrieb|wrote)\b.*:?\s*$"
+    r"|-{2,}\s*(?:original message|ursprüngliche nachricht|urspr\.? nachricht|"
+    r"weitergeleitete nachricht|forwarded message)\s*-{2,}"
+    r"|_{10,}\s*$"
+    r")",
+    re.IGNORECASE,
+)
+_OUTLOOK_HEADER_RE = re.compile(r"^\s*(?:von|from)\s*:", re.IGNORECASE)
+_OUTLOOK_FOLLOW_RE = re.compile(r"^\s*(?:gesendet|sent|datum|date)\s*:", re.IGNORECASE)
+
+
+def strip_quoted_history(body: str) -> str:
+    """The new text of a reply, without the quoted thread below it.
+
+    Cuts at the first reply-header line (or Outlook From/Sent block) and drops
+    ``>``-quoted lines. Returns ``body`` unchanged when nothing is left, so a
+    pure forward isn't emptied.
+    """
+    lines = body.splitlines()
+    kept: list[str] = []
+    for i, line in enumerate(lines):
+        if _REPLY_HEADER_RE.match(line):
+            break
+        if _OUTLOOK_HEADER_RE.match(line) and any(
+            _OUTLOOK_FOLLOW_RE.match(nxt) for nxt in lines[i + 1 : i + 4]
+        ):
+            break
+        if line.lstrip().startswith(">"):
+            continue
+        kept.append(line)
+    stripped = "\n".join(kept).strip()
+    return stripped or body
+
+
 def parse_rfc822(raw_bytes: bytes) -> dict:
     msg = email.message_from_bytes(raw_bytes, policy=default)
 
@@ -189,17 +246,12 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     }
                 )
             elif part.get_content_type() == "text/plain" and not is_explicit_attachment:
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes) and payload:
-                    body += payload.decode(errors="ignore")
+                body += _decode_text(part)
             elif part.get_content_type() == "text/html" and not is_explicit_attachment:
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes) and payload:
-                    html_body += payload.decode(errors="ignore")
+                html_body += _decode_text(part)
     else:
-        payload = msg.get_payload(decode=True)
-        if isinstance(payload, bytes) and payload:
-            decoded = payload.decode(errors="ignore")
+        decoded = _decode_text(msg)
+        if decoded:
             if msg.get_content_type() == "text/html":
                 html_body = decoded
             else:
@@ -239,7 +291,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         "message_id": msg.get("Message-ID", ""),
         "date": msg.get("Date", ""),
         "received_date": parse_email_date(msg.get("Date", "")),
-        "body": body,
+        # New text only; the manifest and note above were read from the full body.
+        "body": strip_quoted_history(body) if body else "",
         "attachments": attachments,
         "reply_to": msg.get("Reply-To", ""),
         "in_reply_to": in_reply_to,
