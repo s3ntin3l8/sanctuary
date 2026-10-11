@@ -16,6 +16,7 @@ from app.services.ingestion.extractors import (
     infer_court_level,
     normalize_az_court,
     normalize_internal_id,
+    reference_format_only,
 )
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
@@ -448,6 +449,11 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     ai_conf = summary_data.get("confidence")
     if ai_conf and isinstance(ai_conf, dict):
         new_conf = dict(doc.extraction_confidence or {})
+        # A grade on a field the model left empty says nothing; drop it rather
+        # than let "low" on an absent reference raise a review flag.
+        empty_keys = {
+            key for key in ("az_court", "internal_id") if not summary_data.get(key)
+        }
         for key, val in ai_conf.items():
             if not isinstance(val, str):
                 continue
@@ -456,12 +462,20 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 continue
             if key not in _KNOWN_CONF_KEYS or key in user_set:
                 continue
+            if key in empty_keys:
+                new_conf.pop(key, None)
+                continue
             new_conf[key] = v
         doc.extraction_confidence = new_conf
 
     # Update intelligence flags in meta
     new_meta = dict(doc.meta or {})
-    contradictions = summary_data.get("contradictions", [])
+    # Code compares references: "3 F 1221/26" vs "003 F 1221/26" is formatting.
+    contradictions = [
+        n
+        for n in summary_data.get("contradictions") or []
+        if not reference_format_only(str(n))
+    ]
     if contradictions:
         new_meta["contradiction_notes"] = contradictions
         # The user dismissed these notes; only genuinely new ones re-raise it.

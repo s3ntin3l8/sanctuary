@@ -284,3 +284,64 @@ def test_phase1_metadata_system_has_banks_third_party_rule():
     # "which side benefits".
     assert "credentialing institution" in PHASE1_METADATA_SYSTEM
     assert "third_party" in PHASE1_METADATA_SYSTEM
+
+
+@pytest.mark.unit
+def test_enrich_document_with_ai_drops_formatting_only_contradictions(
+    db_session, sample_document
+):
+    from app.services.ai_summary import enrich_document_with_ai
+
+    enrich_document_with_ai(
+        sample_document,
+        {
+            "contradictions": [
+                "Hint provided AZ '3 F 1221/26' whereas document shows '003 F 1221/26'"
+            ],
+            "confidence": {},
+        },
+        db_session,
+    )
+    assert sample_document.meta["ai_contradiction"] is False
+    assert not sample_document.meta.get("contradiction_notes")
+
+
+@pytest.mark.unit
+def test_enrich_document_with_ai_keeps_substantive_contradictions(
+    db_session, sample_document
+):
+    from app.services.ai_summary import enrich_document_with_ai
+
+    note = (
+        "Letter is dated 01.09.2026 but refers to a hearing on 15.08.2026 as upcoming"
+    )
+    enrich_document_with_ai(
+        sample_document,
+        {
+            "contradictions": [
+                "Hint '3 F 1221/26' vs '003 F 1221/26'",
+                note,
+            ],
+            "confidence": {},
+        },
+        db_session,
+    )
+    assert sample_document.meta["ai_contradiction"] is True
+    assert sample_document.meta["contradiction_notes"] == [note]
+
+
+@pytest.mark.unit
+def test_enrich_document_with_ai_ignores_confidence_of_empty_reference(
+    db_session, sample_document
+):
+    from app.services.ai_summary import enrich_document_with_ai
+
+    sample_document.extraction_confidence = {"internal_id": "low"}
+    enrich_document_with_ai(
+        sample_document,
+        {"internal_id": None, "confidence": {"internal_id": "low", "sender": "high"}},
+        db_session,
+    )
+    conf = sample_document.extraction_confidence
+    assert "internal_id" not in conf
+    assert conf["sender"] == "high"

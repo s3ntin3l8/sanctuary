@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-10-10.1"
+PROMPT_VERSION = "2026-10-11.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -253,7 +253,7 @@ Extract these fields (these are the exact JSON keys the output must use):
 - appeal_deadline_days: formal appeal period in days only when this document is a ruling that states one (e.g. 14, 28). Null otherwise.
 - case_type: classify the legal domain as "family" when you see Familiensache, Sorgerecht, Umgangsrecht, Unterhalt, Kindesunterhalt, Ehesache, Scheidung, § 1671/1684 BGB, or FamFG keywords; "administrative" for Verwaltungsgericht/VwGO; "criminal" for Strafkammer/StPO; "civil" for all other civil proceedings. Null when content is insufficient to classify.
 - confidence: per-field reliability scores as a JSON object with keys `az_court`, `internal_id`, `case_title`, `sender`, `issued_date`, `originator_type`. Each value is "high" | "medium" | "low" or omitted.
-- contradictions: list of any factual/procedural contradictions you noticed with the hint context. Empty list when none."""
+- contradictions: list of substantive factual/procedural contradictions with the hint context (dates, parties, amounts, outcomes). Never report how a reference is written (leading zeros, spacing, "/" vs "-", case) or party order. Empty list when none."""
 
 
 DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the provided document and return structured intelligence.
