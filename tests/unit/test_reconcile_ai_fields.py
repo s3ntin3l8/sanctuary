@@ -1,9 +1,10 @@
 """Unit tests for `reconcile_ai_fields`.
 
-The reconciler resolves three AI self-contradictions:
+The reconciler resolves four AI self-contradictions:
 - R1: is_court_document=false ∧ originator_type=court  → originator_type=unknown
 - R2: court_relay=true ∧ sender is not a court name → court_relay=false
 - R3: doc_type ∈ {MOTION, STATEMENT} ∧ originator_type=court → originator_type=unknown
+- R4: doc_type=relay ∧ party originator → doc_type=correspondence
 
 These rules fire only when the AI's own output internally contradicts itself
 (or contradicts the system prompt's explicit rules). They are not judgment
@@ -180,3 +181,36 @@ def test_multiple_rules_fire_in_one_pass(db_session, sample_case):
     assert "R2_court_relay_but_non_court_sender" in fired
     assert ai_output["originator_type"] == "unknown"
     assert ai_output["court_relay"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("originator", ["opposing", "own", "third_party"])
+def test_r4_relay_type_with_party_originator(db_session, sample_case, originator):
+    """A party letter typed `relay` (first slice of a scanned packet) is
+    correspondence; only a court can relay."""
+    doc = _make_doc(
+        db_session,
+        sample_case,
+        sender="Haidl Funk Rechtsanwälte",
+        originator_type=OriginatorType(originator),
+    )
+    ai_output = {"document_type": "relay", "court_relay": False}
+
+    fired = reconcile_ai_fields(doc, ai_output)
+
+    assert "R4_relay_type_but_party_originator" in fired
+    assert ai_output["document_type"] == "correspondence"
+
+
+@pytest.mark.unit
+def test_r4_court_relay_passes(db_session, sample_case):
+    doc = _make_doc(
+        db_session,
+        sample_case,
+        sender="Amtsgericht Ingolstadt",
+        originator_type=OriginatorType.COURT,
+    )
+    ai_output = {"document_type": "relay", "court_relay": True}
+
+    assert reconcile_ai_fields(doc, ai_output) == []
+    assert ai_output["document_type"] == "relay"

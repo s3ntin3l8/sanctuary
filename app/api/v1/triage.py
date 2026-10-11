@@ -18,7 +18,12 @@ from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, Document, IngestBatch, Proceeding, User
-from app.models.enums import IngestBatchStatus, PipelineState, StageStatus
+from app.models.enums import (
+    IngestBatchSourceType,
+    IngestBatchStatus,
+    PipelineState,
+    StageStatus,
+)
 from app.repositories.case import CaseRepository
 from app.schemas.triage import (
     BatchAssign,
@@ -132,6 +137,24 @@ def _failed_error(bundle: BundleView) -> str | None:
     return None
 
 
+def _bundle_title(bundle: BundleView) -> str:
+    """Email subject, else (scan / upload, where the subject is a file name)
+    the first group's lead title, noting how many more groups follow."""
+    if bundle.source_type == IngestBatchSourceType.EMAIL and bundle.subject:
+        return bundle.subject
+    groups = bundle.sub_bundles
+    if bundle.source_type != IngestBatchSourceType.EMAIL and groups:
+        first = groups[0]
+        if first.lead_doc is not None and first.lead_doc.title:
+            more = len(groups) - 1
+            return f"{first.label} (+{more} more)" if more else first.label
+    return (
+        bundle.subject
+        or (bundle.documents[0].title if bundle.documents else None)
+        or "Untitled bundle"
+    )
+
+
 def bundle_dto(bundle: BundleView) -> TriageBundle:
     summary = bundle.pipeline_summary
     counts = {state: summary.get(state.value, 0) for state in PipelineState}
@@ -144,6 +167,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
         is_synthetic=bundle.is_synthetic,
         source_type=bundle.source_type,
         subject=bundle.subject,
+        title=_bundle_title(bundle),
         sender_email=bundle.sender_email,
         received_at=bundle.received_at,
         status=bundle.mock_status,  # type: ignore[arg-type]

@@ -188,6 +188,20 @@ def reconcile_ai_fields(doc: Document, ai_output: dict) -> list[str]:
             doc.originator_type = OriginatorType.UNKNOWN
         fired.append("R3_party_authored_type_but_court_originator")
 
+    # Rule 4 — a relay is a court transmitting someone else's filing. A party
+    # letter that the model typed `relay` (typically the first slice of a
+    # scanned packet) is correspondence; keeping `relay` would make the group
+    # lead and the summary treat the party's own motion as an empty wrapper.
+    if ai_output.get(
+        "document_type"
+    ) == DocumentType.RELAY.value and effective_originator in {
+        "opposing",
+        "own",
+        "third_party",
+    }:
+        ai_output["document_type"] = DocumentType.CORRESPONDENCE.value
+        fired.append("R4_relay_type_but_party_originator")
+
     for rule in fired:
         logger.warning(
             "Doc %s: AI self-contradiction reconciled — %s "

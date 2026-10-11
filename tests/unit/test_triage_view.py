@@ -9,6 +9,7 @@ from app.models.database import Case, Document
 from app.models.enums import (
     CaseStatus,
     DocumentRole,
+    DocumentType,
     IngestBatchSourceType,
     PipelineState,
     SignificanceTier,
@@ -50,6 +51,9 @@ def _make_doc(
     case_id=None,
     parent_id=None,
     extraction_confidence=None,
+    document_type=None,
+    court_relay=False,
+    sub_group_sort_order=None,
 ) -> Document:
     doc = Document(
         title=title,
@@ -59,6 +63,9 @@ def _make_doc(
         case_id=case_id,
         parent_id=parent_id,
         extraction_confidence=extraction_confidence,
+        document_type=document_type,
+        court_relay=court_relay,
+        sub_group_sort_order=sub_group_sort_order,
     )
     db_session.add(doc)
     db_session.flush()
@@ -81,9 +88,7 @@ def test_build_sub_bundles_single_root_returns_one(db_session):
     sub_bundles = build_sub_bundles(bundle)
 
     assert len(sub_bundles) == 1
-    assert (
-        sub_bundles[0].lead_doc.id == enc.id
-    )  # enclosure beats same-tier cover wrapper
+    assert sub_bundles[0].lead_doc.id == cover.id  # the structural root leads
     assert [d.id for _, d in sub_bundles[0].docs] == [cover.id, enc.id]
 
 
@@ -101,28 +106,84 @@ def test_build_sub_bundles_two_roots_returns_two(db_session):
 
 
 @pytest.mark.unit
-def test_lead_doc_prefers_substantive_when_more_significant(db_session):
-    """CRITICAL substantive doc outranks INFORMATIONAL cover letter."""
-    annex = _make_doc(
-        db_session,
-        title="Anlage",
-        role=DocumentRole.ENCLOSURE,
-        significance=SignificanceTier.CRITICAL,
-    )
+def test_lead_doc_is_the_root_even_when_an_exhibit_is_more_significant(db_session):
+    """In a sliced scan a "cover letter" is just the first slice of a letter
+    group; the motion that heads the group owns its identity, not its exhibit."""
     cover = _make_doc(
         db_session,
-        title="Cover",
+        title="Antrag auf Bewilligung",
         role=DocumentRole.COVER_LETTER,
-        significance=SignificanceTier.INFORMATIONAL,
+        significance=SignificanceTier.SIGNIFICANT,
+        document_type=DocumentType.MOTION,
     )
-    cover.parent_id = None
-    annex.parent_id = cover.id
-    db_session.flush()
+    annex = _make_doc(
+        db_session,
+        title="Erklärung über die Verhältnisse",
+        role=DocumentRole.ENCLOSURE,
+        significance=SignificanceTier.CRITICAL,
+        parent_id=cover.id,
+    )
     bundle = _bundle([cover, annex])
 
     sub_bundles = build_sub_bundles(bundle)
 
-    assert sub_bundles[0].lead_doc.id == annex.id
+    assert sub_bundles[0].lead_doc.id == cover.id
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "relay_kwargs",
+    [{"document_type": DocumentType.RELAY}, {"court_relay": True}],
+)
+def test_lead_doc_of_a_relay_is_its_strongest_child(db_session, relay_kwargs):
+    """Only a real relay (court wrapper) hands the group's identity to the
+    document it forwards."""
+    relay = _make_doc(
+        db_session,
+        title="Begleitschreiben AG",
+        role=DocumentRole.COVER_LETTER,
+        significance=SignificanceTier.ADMINISTRATIVE,
+        **relay_kwargs,
+    )
+    minor = _make_doc(
+        db_session,
+        title="Übertragungsnachweis",
+        role=DocumentRole.ENCLOSURE,
+        significance=SignificanceTier.INFORMATIONAL,
+        parent_id=relay.id,
+    )
+    motion = _make_doc(
+        db_session,
+        title="Antrag",
+        role=DocumentRole.ENCLOSURE,
+        significance=SignificanceTier.SIGNIFICANT,
+        parent_id=relay.id,
+    )
+    bundle = _bundle([relay, minor, motion])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert sub_bundles[0].lead_doc.id == motion.id
+
+
+@pytest.mark.unit
+def test_lead_doc_in_a_manual_group_follows_group_order(db_session):
+    """Manual groups hold flat (depth 0) docs; roots are found by parent_id and
+    ties between roots go to the earlier position in the group."""
+    second = _make_doc(db_session, title="Second", sub_group_sort_order=1)
+    first = _make_doc(db_session, title="First", sub_group_sort_order=0)
+    child = _make_doc(
+        db_session,
+        title="Child",
+        role=DocumentRole.ENCLOSURE,
+        significance=SignificanceTier.CRITICAL,
+        parent_id=first.id,
+        sub_group_sort_order=2,
+    )
+
+    lead = _pick_lead_doc([(0, second), (0, first), (0, child)])
+
+    assert lead.id == first.id
 
 
 @pytest.mark.unit
@@ -328,8 +389,12 @@ def _make_mock_doc(
     parent_id=None,
     ingest_batch_id=1,
     case_id=None,
+    document_type=None,
+    court_relay=False,
 ):
     d = MagicMock()
+    d.document_type = document_type
+    d.court_relay = court_relay
     d.id = id
     d.title = title
     d.role = role
@@ -376,8 +441,8 @@ def test_pick_lead_doc_substantive_wins_over_lower_significance_cover():
 
 
 @pytest.mark.unit
-def test_pick_lead_doc_high_significance_cover_still_wins():
-    """Lawyer scenario: CRITICAL cover (analysis letter) > INFORMATIONAL exhibit."""
+def test_pick_lead_doc_root_leads_over_its_exhibit():
+    """The root (the letter itself) leads; its exhibit does not take over."""
     cover = _make_mock_doc(
         id=1,
         role=DocumentRole.COVER_LETTER,
@@ -426,6 +491,8 @@ def make_doc(
 ):
     """Create a minimal Document-like mock for manual-mode tests."""
     d = MagicMock()
+    d.document_type = None
+    d.court_relay = False
     d.id = id
     d.title = f"Doc {id}"
     d.role = role

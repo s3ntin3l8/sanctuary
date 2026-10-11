@@ -704,7 +704,7 @@ function BundleRow({
       >
         <input
           type="checkbox"
-          aria-label={`Select ${b.subject ?? b.key}`}
+          aria-label={`Select ${b.title}`}
           checked={selected}
           disabled={processing}
           onClick={(e) => e.stopPropagation()}
@@ -741,9 +741,7 @@ function BundleRow({
           </span>
         </span>
         <span className="min-w-0">
-          <span className="block truncate font-semibold">
-            {b.subject ?? b.documents[0]?.title ?? 'Untitled bundle'}
-          </span>
+          <span className="block truncate font-semibold">{b.title}</span>
           <span className="flex flex-wrap items-center gap-1 text-[10.5px] text-muted">
             {b.action_dates.map(
               (a) =>
