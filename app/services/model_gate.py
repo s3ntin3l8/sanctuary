@@ -501,3 +501,27 @@ def model_gate(
                 _get_client().delete(sentinel_key)
             except (redis.RedisError, OSError) as exc:
                 _maybe_warn(exc)
+
+
+def gate_snapshot() -> dict | None:
+    """Who holds the GPU gate right now: ``{"holders": [family, ...], "waiting": n}``.
+
+    Read-only, for the processing-queue status strip. None when Redis is
+    unreachable (the gate fails open there, so there is nothing to show).
+    """
+    try:
+        client = _get_client()
+        holders = sorted(
+            {
+                family
+                for key in client.scan_iter(match=_CALL_KEY_PREFIX + "*", count=100)
+                if (family := client.get(key))
+            }
+        )
+        waiting = sum(
+            1 for _ in client.scan_iter(match=_WAIT_KEY_PREFIX + "*", count=100)
+        )
+    except (redis.RedisError, OSError) as exc:
+        _maybe_warn(exc)
+        return None
+    return {"holders": holders, "waiting": waiting}

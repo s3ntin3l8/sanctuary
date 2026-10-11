@@ -413,3 +413,179 @@ def test_failed_slicing_prep_is_queued_with_a_retry_note(app_client, db_session)
     (item,) = body["queued"]
     assert item["note"] == "Preparation failed — open to retry"
     assert item["label"] == "Scan #" + str(item["batch_id"]) + " — stack.pdf"
+
+
+def _doc(db_session, case_id, title, state):
+    doc = Document(
+        title=title,
+        content="x",
+        case_id=case_id,
+        originator_type=OriginatorType.COURT,
+        pipeline_state=state,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    return doc
+
+
+@pytest.mark.unit
+def test_failed_doc_lists_every_failed_stage_root_cause_first(
+    app_client, db_session, sample_case
+):
+    doc = _doc(db_session, sample_case.id, "Broken", PipelineState.FAILED)
+    for stage, error in (
+        (PipelineStage.CLAIMS, "upstream enrich failed"),
+        (PipelineStage.ENRICH, "LLM timeout after 600s " + "x" * 200),
+    ):
+        db_session.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=stage.value,
+                status=StageStatus.FAILED.value,
+                error=error,
+                attempt=3,
+            )
+        )
+    db_session.commit()
+
+    [failed] = app_client.get("/api/v1/worker-queue").json()["failed"]
+    assert [s["stage"] for s in failed["stages"]] == ["enrich", "claims"]
+    # Not truncated server-side: the full error reaches the UI.
+    assert failed["stages"][0]["error"].endswith("x" * 200)
+    assert failed["stages"][0]["attempt"] == 3
+
+
+@pytest.mark.unit
+def test_failed_count_is_true_even_when_the_list_is_capped(
+    app_client, db_session, sample_case, monkeypatch
+):
+    import app.services.worker_queue as wq
+
+    monkeypatch.setattr(wq, "FAILED_DOC_LIMIT", 1)
+    for n in range(3):
+        _doc(db_session, sample_case.id, f"F{n}", PipelineState.FAILED)
+    db_session.commit()
+
+    body = app_client.get("/api/v1/worker-queue").json()
+    assert body["counts"]["failed"] == 3
+    assert len(body["failed"]) == 1
+
+
+@pytest.mark.unit
+def test_executing_and_retrying_items_carry_timing(app_client, db_session, sample_case):
+    from datetime import timedelta
+
+    started = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=90)
+    retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=40)
+    running = _doc(db_session, sample_case.id, "Run", PipelineState.RUNNING)
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=running.id,
+            stage=PipelineStage.ENRICH.value,
+            status=StageStatus.RUNNING.value,
+            started_at=started,
+        )
+    )
+    retrying = _doc(db_session, sample_case.id, "Retry", PipelineState.PARTIAL)
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=retrying.id,
+            stage=PipelineStage.CLAIMS.value,
+            status=StageStatus.RETRYING.value,
+            attempt=2,
+            max_attempts=3,
+            next_at=retry_at,
+        )
+    )
+    db_session.commit()
+
+    body = app_client.get("/api/v1/worker-queue").json()
+    [run_item] = body["executing"]
+    assert run_item["started_at"].endswith("Z") or "+00:00" in run_item["started_at"]
+    [retry_item] = body["queued"]
+    assert (retry_item["attempt"], retry_item["max_attempts"]) == (2, 3)
+    assert retry_item["next_at"] is not None
+
+
+@pytest.mark.unit
+def test_recent_lists_completed_stages_newest_first_within_a_day(
+    app_client, db_session, sample_case
+):
+    from datetime import timedelta
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    doc = _doc(db_session, sample_case.id, "Done", PipelineState.COMPLETED)
+    for stage, ago, took in (
+        (PipelineStage.EXTRACT, timedelta(hours=2), 30),
+        (PipelineStage.METADATA, timedelta(minutes=5), 12),
+        (PipelineStage.ENRICH, timedelta(days=3), 9),  # outside the window
+    ):
+        db_session.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=stage.value,
+                status=StageStatus.COMPLETED.value,
+                started_at=now - ago - timedelta(seconds=took),
+                completed_at=now - ago,
+            )
+        )
+    db_session.commit()
+
+    recent = app_client.get("/api/v1/worker-queue").json()["recent"]
+    assert [r["stage"] for r in recent] == ["metadata", "extract"]
+    assert recent[0]["duration_ms"] == 12_000
+
+
+@pytest.mark.unit
+def test_system_strip_degrades_to_nulls(app_client, monkeypatch):
+    import app.api.v1.worker_queue as wq_route
+
+    monkeypatch.setattr(
+        wq_route,
+        "system_snapshot",
+        lambda: {"workers": None, "queue_depth": None, "gpu_gate": None},
+    )
+    body = app_client.get("/api/v1/worker-queue").json()
+    assert body["system"] == {"workers": None, "queue_depth": None, "gpu_gate": None}
+    assert body["ai_calls"] == [] or isinstance(body["ai_calls"], list)
+
+
+@pytest.mark.unit
+def test_system_status_skips_worker_inspect_without_a_broker(monkeypatch):
+    import redis
+
+    from app.services import system_status
+
+    def boom(*a, **k):
+        raise redis.ConnectionError("down")
+
+    monkeypatch.setattr(system_status.redis.Redis, "from_url", boom)
+    monkeypatch.setattr(system_status, "gate_snapshot", lambda: None)
+    monkeypatch.setattr(
+        system_status,
+        "_inspect_workers",
+        lambda: pytest.fail("must not inspect workers without a broker"),
+    )
+    system_status._worker_cache = None
+    assert system_status.system_snapshot() == {
+        "workers": None,
+        "queue_depth": None,
+        "gpu_gate": None,
+    }
+
+
+@pytest.mark.unit
+def test_worker_status_is_cached(monkeypatch):
+    from app.services import system_status
+
+    calls = []
+
+    def fake():
+        calls.append(1)
+        return [{"name": "ai", "up": True, "concurrency": 2}]
+
+    monkeypatch.setattr(system_status, "_inspect_workers", fake)
+    system_status._worker_cache = None
+    assert system_status.worker_status() == system_status.worker_status()
+    assert len(calls) == 1
+    system_status._worker_cache = None

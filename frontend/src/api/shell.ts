@@ -32,6 +32,24 @@ export function useRetryFailed() {
   })
 }
 
+/** Re-run one failed stage of a document (and what hangs off it) from the queue. */
+export function useRetryStage() {
+  const queryClient = useQueryClient()
+  return useMutation<
+    Schemas['PipelineView'],
+    ApiError,
+    { docId: number; stage: Schemas['PipelineStage'] }
+  >({
+    mutationFn: ({ docId, stage }) =>
+      unwrap(
+        api.POST('/api/v1/documents/{doc_id}/pipeline/{stage}/retry', {
+          params: { path: { doc_id: docId, stage } },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['worker-queue'] }),
+  })
+}
+
 export function useSearch(q: string, limit = 30) {
   return useQuery<Schemas['SearchResults'], ApiError>({
     queryKey: ['search', q, limit],

@@ -4683,13 +4683,12 @@
             "title": "Doc Id",
             "type": "integer"
           },
-          "error": {
-            "title": "Error",
-            "type": "string"
-          },
-          "stage": {
-            "title": "Stage",
-            "type": "string"
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/FailedStage"
+            },
+            "title": "Stages",
+            "type": "array"
           },
           "title": {
             "title": "Title",
@@ -4700,10 +4699,38 @@
           "doc_id",
           "batch_id",
           "title",
+          "stages"
+        ],
+        "title": "FailedDoc",
+        "type": "object"
+      },
+      "FailedStage": {
+        "properties": {
+          "attempt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
           "stage",
           "error"
         ],
-        "title": "FailedDoc",
+        "title": "FailedStage",
         "type": "object"
       },
       "FinancialsSummary": {
@@ -4773,6 +4800,27 @@
           "signal_docs"
         ],
         "title": "FinancialsView",
+        "type": "object"
+      },
+      "GateStatus": {
+        "properties": {
+          "holders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Holders",
+            "type": "array"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "holders",
+          "waiting"
+        ],
+        "title": "GateStatus",
         "type": "object"
       },
       "GmailFilterPreview": {
@@ -7814,8 +7862,42 @@
         "title": "QueueCounts",
         "type": "object"
       },
+      "QueueDepth": {
+        "properties": {
+          "ai": {
+            "title": "Ai",
+            "type": "integer"
+          },
+          "ingest": {
+            "title": "Ingest",
+            "type": "integer"
+          },
+          "maintenance": {
+            "title": "Maintenance",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ingest",
+          "ai",
+          "maintenance"
+        ],
+        "title": "QueueDepth",
+        "type": "object"
+      },
       "QueueItem": {
         "properties": {
+          "attempt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
           "batch_id": {
             "anyOf": [
               {
@@ -7855,6 +7937,29 @@
             "title": "Label",
             "type": "string"
           },
+          "max_attempts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Attempts"
+          },
+          "next_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next At"
+          },
           "note": {
             "anyOf": [
               {
@@ -7875,6 +7980,18 @@
                 "type": "null"
               }
             ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
           }
         },
         "required": [
@@ -7890,6 +8007,13 @@
       },
       "QueueView": {
         "properties": {
+          "ai_calls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Calls",
+            "type": "array"
+          },
           "counts": {
             "$ref": "#/components/schemas/QueueCounts"
           },
@@ -7923,13 +8047,26 @@
             },
             "title": "Queued",
             "type": "array"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/RecentStage"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "system": {
+            "$ref": "#/components/schemas/SystemStatus"
           }
         },
         "required": [
           "counts",
           "executing",
           "queued",
-          "failed"
+          "failed",
+          "recent",
+          "ai_calls",
+          "system"
         ],
         "title": "QueueView",
         "type": "object"
@@ -8098,6 +8235,59 @@
           "bundle_next_id"
         ],
         "title": "ReaderNav",
+        "type": "object"
+      },
+      "RecentStage": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id",
+          "batch_id",
+          "title",
+          "stage",
+          "completed_at",
+          "duration_ms"
+        ],
+        "title": "RecentStage",
         "type": "object"
       },
       "ReenrichResult": {
@@ -9094,6 +9284,52 @@
           "enrich_status"
         ],
         "title": "SummaryView",
+        "type": "object"
+      },
+      "SystemStatus": {
+        "description": "Each part is None when it can't be read (Redis or the workers are down).",
+        "properties": {
+          "gpu_gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "queue_depth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueueDepth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WorkerStatus"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workers"
+          }
+        },
+        "required": [
+          "workers",
+          "queue_depth",
+          "gpu_gate"
+        ],
+        "title": "SystemStatus",
         "type": "object"
       },
       "ThemeUpdate": {
@@ -10230,6 +10466,29 @@
         ],
         "title": "UserRole",
         "type": "string"
+      },
+      "WorkerStatus": {
+        "properties": {
+          "concurrency": {
+            "title": "Concurrency",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "up": {
+            "title": "Up",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "up",
+          "concurrency"
+        ],
+        "title": "WorkerStatus",
+        "type": "object"
       }
     }
   },

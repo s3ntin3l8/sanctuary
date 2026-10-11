@@ -151,3 +151,18 @@ def count_inflight() -> int:
     except (redis.RedisError, OSError) as exc:
         _maybe_warn(exc)
         return 0
+
+
+def list_inflight() -> list[str]:
+    """The labels of the currently active AI calls (e.g. ``enrich:doc:42``), sorted.
+
+    Empty (not raising) if Redis is unreachable, like :func:`count_inflight`.
+    """
+    try:
+        client = _get_sync_client()
+        keys = list(client.scan_iter(match=_KEY_PREFIX + "*", count=100))
+        labels = client.mget(keys) if keys else []
+    except (redis.RedisError, OSError) as exc:
+        _maybe_warn(exc)
+        return []
+    return sorted(label for label in labels if label)
