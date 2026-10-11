@@ -32,3 +32,7 @@ jobs:
       push-release: true
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       platforms: linux/amd64
+      build-args: |
+        SANCTUARY_VERSION=${{ needs.release-please.outputs.tag_name }}
+        SANCTUARY_GIT_SHA=${{ github.sha }}
+        SANCTUARY_BUILD_DATE=${{ github.event.head_commit.timestamp }}

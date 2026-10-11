@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "AboutView": {
+        "properties": {
+          "build_date": {
+            "title": "Build Date",
+            "type": "string"
+          },
+          "db_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Revision"
+          },
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "git_sha",
+          "build_date",
+          "db_revision"
+        ],
+        "title": "AboutView",
+        "type": "object"
+      },
       "AccountView": {
         "properties": {
           "display_name": {
@@ -10193,6 +10228,38 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/about": {
+      "get": {
+        "description": "Build identity plus the applied database migration.",
+        "operationId": "v1_about_api_v1_about_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AboutView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 About",
+        "tags": [
+          "about"
+        ]
+      }
+    },
     "/api/v1/action-items/{item_id}": {
       "patch": {
         "operationId": "v1_set_action_item_status_api_v1_action_items__item_id__patch",

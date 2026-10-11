@@ -8,6 +8,7 @@ schema (``frontend/src/api/openapi.json``) is the client's source of truth.
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    about,
     admin_users,
     auth,
     case_detail,
@@ -40,6 +41,7 @@ API_V1_PREFIX = "/api/v1"
 router = APIRouter(prefix=API_V1_PREFIX, responses=ERROR_RESPONSES)
 for _module in (
     auth,
+    about,
     shell,
     home,
     notifications,

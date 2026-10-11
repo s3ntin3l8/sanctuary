@@ -52,6 +52,7 @@ from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
 from app.core.secrets import SecretsError
 from app.spa import ImmutableStaticFiles, spa_index
+from app.version import get_build_info
 
 
 # --- Logging Configuration ---
@@ -721,7 +722,7 @@ class AuthGateMiddleware:
 app = FastAPI(
     title="The Sanctuary",
     description="Privacy-first legal case management.",
-    version="1.0.0",
+    version=get_build_info().version,
     lifespan=lifespan,
 )
 

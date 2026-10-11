@@ -58,6 +58,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the prebuilt venv from the builder stage (same path keeps shebangs valid).
 COPY --from=py-builder /opt/venv /opt/venv
 
+# Build identity shown in Settings → About (set by the publish workflows).
+ARG SANCTUARY_VERSION=""
+ARG SANCTUARY_GIT_SHA=""
+ARG SANCTUARY_BUILD_DATE=""
+ENV SANCTUARY_VERSION=$SANCTUARY_VERSION \
+    SANCTUARY_GIT_SHA=$SANCTUARY_GIT_SHA \
+    SANCTUARY_BUILD_DATE=$SANCTUARY_BUILD_DATE
+
 # Copy application code
 COPY . .
 

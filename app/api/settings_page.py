@@ -12,7 +12,16 @@ from app.spa import spa_index
 
 router = APIRouter(tags=["pages"], include_in_schema=False)
 
-SETTINGS_TABS = ("account", "gmail", "identity", "ai", "appearance", "data", "export")
+SETTINGS_TABS = (
+    "account",
+    "gmail",
+    "identity",
+    "ai",
+    "appearance",
+    "data",
+    "export",
+    "about",
+)
 ADMIN_TABS = ("identity", "ai", "data", "export")
 
 

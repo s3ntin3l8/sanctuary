@@ -21,3 +21,7 @@ jobs:
       # transformers, docling, onnxruntime), and emulated arm64 builds risk the
       # reusable workflow's 20-min cap. Add linux/arm64 once amd64 is validated.
       platforms: linux/amd64
+      build-args: |
+        SANCTUARY_VERSION=edge
+        SANCTUARY_GIT_SHA=${{ github.sha }}
+        SANCTUARY_BUILD_DATE=${{ github.event.head_commit.timestamp }}

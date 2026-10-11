@@ -50,3 +50,11 @@ export function useNotifications() {
     refetchInterval: 60_000,
   })
 }
+
+export function useAbout() {
+  return useQuery<Schemas['AboutView'], ApiError>({
+    queryKey: ['about'],
+    queryFn: () => unwrap(api.GET('/api/v1/about')),
+    staleTime: Infinity,
+  })
+}

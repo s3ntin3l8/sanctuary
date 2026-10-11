@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/about": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 About
+         * @description Build identity plus the applied database migration.
+         */
+        get: operations["v1_about_api_v1_about_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/action-items/{item_id}": {
         parameters: {
             query?: never;
@@ -2855,6 +2875,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AboutView */
+        AboutView: {
+            /** Build Date */
+            build_date: string;
+            /** Db Revision */
+            db_revision: string | null;
+            /** Git Sha */
+            git_sha: string;
+            /** Version */
+            version: string;
+        };
         /** AccountView */
         AccountView: {
             /** Display Name */
@@ -5981,6 +6012,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    v1_about_api_v1_about_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AboutView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_set_action_item_status_api_v1_action_items__item_id__patch: {
         parameters: {
             query?: never;
