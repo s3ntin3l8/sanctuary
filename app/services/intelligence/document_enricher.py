@@ -20,6 +20,7 @@ from app.models.schemas import (
     CostDeltaSchema,
     KeyPassageSchema,
 )
+from app.services import family_context
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.content_text import condense_image_descriptions
@@ -55,6 +56,9 @@ def _is_placeholder(s: str | None) -> bool:
     """Return True if `s` is a known AI placeholder rather than real content."""
     return not s or s.strip().lower() in _PLACEHOLDER_VALUES or len(s.strip()) < 4
 
+
+# What a court relay may still set: its own instruction to the user's side.
+_RELAY_ACTION_TYPES = {"response_required", "deadline", "filing_required", "court_date"}
 
 THREAD_OPEN_TYPES = {
     DocumentType.STATEMENT,
@@ -303,6 +307,10 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     legal_sig = mgmt.get("legal_significance")
     req_action = mgmt.get("required_action")
     fin_impact = mgmt.get("financial_impact")
+    if family_context.is_relay(doc):
+        # A relay's substance lives in what it forwards; all it adds is the
+        # court's instruction ("zur Kenntnisnahme", "Stellungnahme binnen X").
+        legal_sig = fin_impact = None
 
     if all(_is_placeholder(v) for v in (legal_sig, req_action, fin_impact)):
         logger.warning(
@@ -420,9 +428,21 @@ def enrich(doc_id: int) -> None:
         # may quote court-set deadlines but the source isn't authoritative,
         # so we don't persist their action items. On rejection, also erase
         # any stale non-superseded items from prior runs (tombstones stay).
-        is_court_source = (
-            doc.originator_type == OriginatorType.COURT and not doc.court_relay
-        )
+        # An exhibit is evidence a party attached to its filing, whoever wrote
+        # it: a court letter inside the opposing side's motion sets no deadline
+        # for us. (What a court *relays* is not an exhibit: see is_exhibit.)
+        exhibit = family_context.is_exhibit(doc)
+        is_court_source = doc.originator_type == OriginatorType.COURT and not exhibit
+        action_payload = result.get("action_items") or []
+        if doc.court_relay:
+            # A relay keeps only the court's own instruction to us, not the
+            # demands and dates quoted from the filing it forwards.
+            action_payload = [
+                a
+                for a in action_payload
+                if a.get("addressee") == "user"
+                and a.get("action_type") in _RELAY_ACTION_TYPES
+            ]
         if is_court_source:
             # create_from_payload no-ops for a falsy case_id anyway (docs not
             # yet assigned to a case have nothing to attach action items to);
@@ -432,7 +452,7 @@ def enrich(doc_id: int) -> None:
                     case_id,
                     doc_id,
                     proceeding_id,
-                    result.get("action_items") or [],
+                    action_payload,
                     db,
                     source_doc_date=issued_date,
                 )
@@ -441,11 +461,11 @@ def enrich(doc_id: int) -> None:
             if purged:
                 logger.info(
                     "Doc %s: purged %d stale action item(s) — non-court "
-                    "source (originator=%s, court_relay=%s)",
+                    "source (originator=%s, exhibit=%s)",
                     doc_id,
                     purged,
                     doc.originator_type,
-                    doc.court_relay,
+                    exhibit,
                 )
 
         db.commit()

@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-10-11.1"
+PROMPT_VERSION = "2026-10-12.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -317,7 +317,8 @@ Extract these fields:
   - direction: "incoming" = money owed to us / received, "outgoing" = money we must pay, "ruling" = allocation decision, "none" = no direction.
 - management_summary: three-bullet executive summary:
   {"legal_significance": "1-2 sentences on legal meaning", "required_action": "what needs to be done and by when", "financial_impact": "direct financial implications or 'None'"}
-- action_items: REQUIRED list (use [] if none). Extract every deadline or required action the document establishes — regardless of whom it targets. The `addressee` field labels whom each item is for; downstream code filters the user's default view to addressee="user". Patterns to capture:
+  For a relay (document_type "relay": a court transmitting someone else's filing) write ONLY required_action, one line stating the court's instruction ("zur Kenntnisnahme", "Stellungnahme binnen 2 Wochen", "Verfügung vom ..."), and set legal_significance and financial_impact to null — the forwarded filing carries the substance.
+- action_items: REQUIRED list (use [] if none). Extract every deadline or required action the document establishes — regardless of whom it targets. For a relay, extract only what the court itself instructs in this cover letter, never demands or dates quoted from the forwarded filing. The `addressee` field labels whom each item is for; downstream code filters the user's default view to addressee="user". Patterns to capture:
   * Court deadlines: filing, response (Stellungnahme), appeal, objection (Beschwerde, Erinnerung)
   * Court hearing dates (Verhandlungstermin, Anhörung)
   * Court directives addressed to a party role: "wird dem Gläubiger aufgegeben …", "der Antragsteller wird aufgefordert …", "die Antragsgegnerin hat … einzureichen". Resolve the role to the explicit party (see Party perspective below) and set `addressee` accordingly: "user" when the role maps to the user/own-side, "opposing" when it maps to the opposing party, "third_party" for experts/Sachverständiger/Jugendamt/etc., "court" for items the court itself owes (rare).
