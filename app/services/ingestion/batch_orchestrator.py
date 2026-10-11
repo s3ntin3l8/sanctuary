@@ -1,7 +1,9 @@
 import hashlib
 import logging
 import unicodedata
+from collections.abc import Iterable
 from datetime import UTC, datetime
+from email.utils import parseaddr
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -116,14 +118,26 @@ def _try_assign_case_from_subject(
             )
 
 
+def _is_outgoing(sender: str, own_addresses: Iterable[str]) -> bool:
+    own = {a.strip().lower() for a in own_addresses if a.strip()}
+    return bool(own) and parseaddr(sender or "")[1].lower() in own
+
+
 def ingest_raw_email(
     db: Session,
     raw_bytes: bytes,
     source_type: IngestBatchSourceType = IngestBatchSourceType.EMAIL,
     owner_id: int | None = None,
+    own_addresses: Iterable[str] = (),
 ) -> IngestBatch | None:
+    """Ingest one RFC822 email as a batch.
+
+    ``own_addresses`` are the addresses the user sends from: mail from one of
+    them is the user's own writing, so its body is kept even with attachments.
+    """
     owner_id = _resolve_owner_id(db, owner_id)
     parsed = parse_rfc822(raw_bytes)
+    outgoing = _is_outgoing(parsed["sender"], own_addresses)
     msg_id = parsed["message_id"]
     sender = parsed["sender"] or "unknown"
     subject = parsed["subject"] or "No Subject"
@@ -287,6 +301,7 @@ def ingest_raw_email(
             received_date,
             case_dir,
             has_attachments,
+            outgoing,
             docs_to_process,
             written_paths,
         )
@@ -324,15 +339,18 @@ def _ingest_email_docs_and_commit(
     received_date,
     case_dir: Path,
     has_attachments: bool,
+    outgoing: bool,
     docs_to_process: list[Document],
     written_paths: list[Path],
 ) -> None:
     """Body/attachment document creation and the final commit for
     ingest_raw_email — split out purely so the caller can wrap every raise
     point between here and the commit in one try/except for file cleanup."""
-    # Create a body document only when the email itself is the content (no attachments).
-    # With attachments the body is a transport cover note; metadata lives on the batch.
-    if parsed["body"].strip() and not has_attachments:
+    # Create a body document only when the email itself is the content: no
+    # attachments, or the user's own mail (their text is the substance). With
+    # inbound attachments the body is a transport cover note; metadata lives on
+    # the batch.
+    if parsed["body"].strip() and (not has_attachments or outgoing):
         body_hash = hashlib.sha256(parsed["body"].encode()).hexdigest()
         body_path = case_dir / f"email_body_{batch.id}.txt"
         with open(body_path, "w") as f:

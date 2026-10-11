@@ -11,6 +11,8 @@ const gmail = {
   last_sync_at: '2026-10-07T08:00:00+00:00',
   allowlist: ['lawyer@example.com'],
   label_filter: '',
+  include_sent: true,
+  own_addresses: ['me@example.com'],
   oauth_start_url: '/api/ingest/gmail/oauth/start',
   sync_mode: 'notify',
   last_check_at: null,
@@ -168,7 +170,12 @@ test('gmail: previewing the filters shows how many messages they match', async (
   expect(await screen.findByText('214')).toBeVisible()
   expect(
     await sentTo(fetch, 'POST', '/api/v1/settings/gmail/filters/preview')?.clone().json(),
-  ).toEqual({ allowlist: ['lawyer@example.com'], label_filter: '' })
+  ).toEqual({
+    allowlist: ['lawyer@example.com'],
+    label_filter: '',
+    include_sent: true,
+    own_addresses: ['me@example.com'],
+  })
 
   // Editing invalidates the count.
   await user.type(screen.getByLabelText('Label'), 'x')
@@ -198,4 +205,34 @@ test('gmail: preview explains why it is disabled when not connected', async () =
   renderAt('/settings/gmail', <GmailPage />)
   expect(await screen.findByRole('button', { name: 'Preview matches' })).toBeDisabled()
   expect(screen.getAllByText('Connect Gmail first').length).toBeGreaterThan(0)
+})
+
+test('gmail: filters save the sent-mail option and own addresses', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/gmail': { body: gmail },
+    'PUT /api/v1/settings/gmail/filters': { body: gmail },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  const user = userEvent.setup()
+  const own = await screen.findByLabelText('Your addresses')
+  expect(own).toHaveValue('me@example.com')
+  await user.clear(own)
+  await user.type(own, 'me@example.com, alias@example.com')
+  await user.click(screen.getByRole('button', { name: 'Save filters' }))
+  await waitFor(() => expect(sentTo(fetch, 'PUT', '/api/v1/settings/gmail/filters')).toBeDefined())
+  expect(await sentTo(fetch, 'PUT', '/api/v1/settings/gmail/filters')?.clone().json()).toEqual({
+    allowlist: ['lawyer@example.com'],
+    label_filter: '',
+    include_sent: true,
+    own_addresses: ['me@example.com', 'alias@example.com'],
+  })
+})
+
+test('gmail: turning off sent mail hides the address field', async () => {
+  stubApi({ 'GET /api/v1/settings/gmail': { body: gmail } })
+  renderAt('/settings/gmail', <GmailPage />)
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('switch', { name: /Also import mail I sent/ }))
+  expect(screen.queryByLabelText('Your addresses')).toBeNull()
 })

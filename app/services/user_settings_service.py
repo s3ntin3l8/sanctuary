@@ -161,6 +161,8 @@ _GMAIL_KEYS = (
     "gmail_credentials_json",
     "gmail_allowlist",
     "gmail_label_filter",
+    "gmail_include_sent",
+    "gmail_own_addresses",
     "gmail_connected_at",
     "gmail_last_sync_at",
     "gmail_sync_mode",
@@ -218,10 +220,21 @@ def _update_gmail(db, user_id: int, **changes) -> None:
 
 
 def set_gmail_inbox_filters(
-    db, user_id: int, *, allowlist: list[str], label_filter: str
+    db,
+    user_id: int,
+    *,
+    allowlist: list[str],
+    label_filter: str,
+    include_sent: bool = False,
+    own_addresses: list[str] | None = None,
 ) -> None:
     _update_gmail(
-        db, user_id, gmail_allowlist=allowlist, gmail_label_filter=label_filter
+        db,
+        user_id,
+        gmail_allowlist=allowlist,
+        gmail_label_filter=label_filter,
+        gmail_include_sent=include_sent,
+        gmail_own_addresses=own_addresses or [],
     )
 
 

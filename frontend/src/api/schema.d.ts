@@ -4314,10 +4314,20 @@ export interface components {
             /** Allowlist */
             allowlist: string[];
             /**
+             * Include Sent
+             * @default false
+             */
+            include_sent: boolean;
+            /**
              * Label Filter
              * @default
              */
             label_filter: string;
+            /**
+             * Own Addresses
+             * @default []
+             */
+            own_addresses: string[];
         };
         /** GmailGroup */
         GmailGroup: {
@@ -4483,6 +4493,8 @@ export interface components {
             connected_at: string | null;
             /** Failed Count */
             failed_count: number;
+            /** Include Sent */
+            include_sent: boolean;
             /** Label Filter */
             label_filter: string;
             /** Last Check At */
@@ -4495,6 +4507,8 @@ export interface components {
             last_sync_result: string | null;
             /** Oauth Start Url */
             oauth_start_url: string;
+            /** Own Addresses */
+            own_addresses: string[];
             /** Reconnect Required */
             reconnect_required: boolean;
             /**

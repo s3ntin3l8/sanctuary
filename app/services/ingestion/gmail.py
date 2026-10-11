@@ -137,6 +137,7 @@ def build_query(
     allowlist: list[str],
     label_filter: str = "",
     *,
+    include_sent: bool = False,
     after: int | None = None,
     before: int | None = None,
 ) -> str:
@@ -145,6 +146,9 @@ def build_query(
     ``after``/``before`` are epoch seconds (Gmail's ``after:``/``before:``
     operators accept them), so callers need no date formatting. Needs a sender
     or a label; an unbounded query is refused here as the last line of defence.
+
+    ``include_sent`` also matches mail the account itself sent *to* an allowlisted
+    address (``from:me`` resolves to the account and its aliases in Gmail).
     """
     label = (label_filter or "").strip()
     if any(c in label for c in LABEL_FORBIDDEN):
@@ -153,7 +157,12 @@ def build_query(
         raise ValueError("Gmail query needs a sender allowlist or a label")
     parts = []
     if allowlist:
-        parts.append("(" + " OR ".join(f"from:{e}" for e in allowlist) + ")")
+        incoming = " OR ".join(f"from:{e}" for e in allowlist)
+        if include_sent:
+            recipients = " OR ".join(f"to:{e} OR cc:{e}" for e in allowlist)
+            parts.append(f"(({incoming}) OR (from:me ({recipients})))")
+        else:
+            parts.append(f"({incoming})")
     if label:
         # Quoted so a label can't smuggle extra operators into the search.
         parts.append(f'label:"{label}"')
@@ -199,7 +208,7 @@ def revoke_token(credentials_json: str) -> bool:
 
 # --- Metadata-only access (for the history import page) ----------------------
 
-_METADATA_HEADERS = ["From", "Subject", "Date", "Message-ID"]
+_METADATA_HEADERS = ["From", "To", "Subject", "Date", "Message-ID"]
 # Gmail's per-user quota is 250 units/s and messages.get costs 5 units, so 50
 # gets per batch with a ~1s pause keeps a full-mailbox index inside the limit.
 _METADATA_BATCH = 50

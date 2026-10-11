@@ -485,6 +485,29 @@ def test_filters_accept_a_sender_a_label_or_both(db_session, body):
     assert resp.json()["allowlist"] == body["allowlist"]
 
 
+def test_filters_sent_mail_needs_an_own_address(db_session):
+    body = {"allowlist": ["info@firm.de"], "include_sent": True}
+    resp = client.put("/api/v1/settings/gmail/filters", json=body)
+    assert resp.status_code == 422
+    assert "address(es) you send from" in resp.text
+
+    bad = {**body, "own_addresses": ["not an address"]}
+    assert client.put("/api/v1/settings/gmail/filters", json=bad).status_code == 422
+
+
+def test_filters_save_sent_mail_and_own_addresses(db_session):
+    body = {
+        "allowlist": ["info@firm.de"],
+        "include_sent": True,
+        "own_addresses": [" Me@Example.com "],
+    }
+    resp = client.put("/api/v1/settings/gmail/filters", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["include_sent"] is True
+    assert resp.json()["own_addresses"] == ["me@example.com"]
+    assert client.get("/api/v1/settings/gmail").json()["include_sent"] is True
+
+
 def test_filter_preview_counts_matches_without_saving(db_session):
     uid = _admin(db_session)
     _connect(db_session, uid)

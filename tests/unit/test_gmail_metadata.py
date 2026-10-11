@@ -133,6 +133,7 @@ def test_fetch_metadata_batches_requests_and_skips_failures():
     assert get.call_args.kwargs["format"] == "metadata"
     assert get.call_args.kwargs["metadataHeaders"] == [
         "From",
+        "To",
         "Subject",
         "Date",
         "Message-ID",
