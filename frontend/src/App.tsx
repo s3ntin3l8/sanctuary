@@ -15,6 +15,7 @@ import { ImportPage } from './features/import/ImportPage'
 import { HomePage } from './features/home/HomePage'
 import { NotFoundPage } from './features/NotFoundPage'
 import { AccountPage } from './features/settings/AccountPage'
+import { AboutPage } from './features/settings/AboutPage'
 import { AiPage } from './features/settings/AiPage'
 import { AiLogsPage } from './features/settings/AiLogsPage'
 import { AppearancePage } from './features/settings/AppearancePage'
@@ -60,6 +61,7 @@ const router = createBrowserRouter([
           { path: '/settings/gmail/import', element: <ImportPage /> },
           { path: '/settings/data', element: <DataPage /> },
           { path: '/settings/export', element: <ExportPage /> },
+          { path: '/settings/about', element: <AboutPage /> },
           { path: '/admin/users', element: <AdminUsersPage /> },
         ],
       },

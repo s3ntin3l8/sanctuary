@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
-import { useShell } from '../../api/shell'
+import { useAbout, useShell } from '../../api/shell'
 import { Icon } from '../../ui/Icon'
 
 type Item = { to: string; icon: string; label: string; admin?: boolean; end?: boolean }
@@ -37,11 +37,13 @@ const GROUPS: Group[] = [
       { to: '/settings/export', icon: 'download', label: 'Export', admin: true },
     ],
   },
+  { label: 'About', items: [{ to: '/settings/about', icon: 'info', label: 'About' }] },
   { label: 'Admin', items: [{ to: '/admin/users', icon: 'group', label: 'Users', admin: true }] },
 ]
 
 export function SettingsLayout() {
   const isAdmin = useShell().data?.user.role === 'admin'
+  const about = useAbout().data
   // The import and log tables need room; every other settings page is a narrow form.
   const wide = ['/settings/gmail/import', '/settings/ai/logs'].includes(useLocation().pathname)
   useEffect(() => {
@@ -58,6 +60,11 @@ export function SettingsLayout() {
           <h1 className="font-display text-[22px] font-extrabold tracking-tight">Settings</h1>
           <p className="flex items-center gap-1 font-mono text-[11px] text-muted">
             <Icon name="lock" size={12} /> local · nothing leaves this device
+            {about && (
+              <span className="ml-2" title={`built ${about.build_date}`}>
+                · v{about.version} · {about.git_sha.slice(0, 7)}
+              </span>
+            )}
           </p>
         </div>
       </header>

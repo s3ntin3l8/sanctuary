@@ -602,3 +602,29 @@ def test_ai_instance_update_clears_key_with_empty_string(db_session):
         i for i in _app_settings(db_session)["ai"]["instances"] if i["id"] == inst["id"]
     )
     assert saved["api_key"] == "not-needed"  # pragma: allowlist secret
+
+
+def test_about_reports_build_info_to_any_signed_in_user(auth_enabled, db_session):
+    from app.services import auth_service
+
+    auth_service.create_user(
+        db_session,
+        email="plain@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    db_session.commit()
+    anon = TestClient(app)
+    assert anon.get("/api/v1/about").status_code == 401
+    c = TestClient(app)
+    c.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "plain@example.com",
+            "password": "password123",  # pragma: allowlist secret
+        },
+    )
+    body = c.get("/api/v1/about").json()
+    assert set(body) == {"version", "git_sha", "build_date", "db_revision"}
+    assert body["version"]
+    # The test schema is built from metadata, so there is no alembic row to read.
+    assert body["db_revision"] is None
