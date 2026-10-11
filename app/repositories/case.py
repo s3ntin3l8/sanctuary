@@ -37,10 +37,13 @@ class CaseRepository(BaseRepository[Case]):
             query = query.filter(Case.is_draft.is_(False))
         return query.order_by(Case.title.asc()).all()
 
-    def list_for_picker(self, owner_id: int) -> Sequence[Case]:
+    def list_for_picker(
+        self, owner_id: int, include_drafts: bool = False
+    ) -> Sequence[Case]:
         """Cases shown in the case-assignment picker (triage HUD, confirm modal).
 
-        Excludes the `_TRIAGE` singleton and AI-created drafts. Sorted by title
+        Excludes the `_TRIAGE` singleton and, unless ``include_drafts``, the
+        AI-created drafts (filing into a draft ratifies it). Sorted by title
         for stable rendering. Centralised here because the same query was open-
         coded in 6+ routes.
 
@@ -50,9 +53,9 @@ class CaseRepository(BaseRepository[Case]):
         ``owner_id`` is required so no caller can get an unscoped list by
         omission.
         """
-        query = self.db.query(Case).filter(
-            Case.id != "_TRIAGE", Case.is_draft.is_(False)
-        )
+        query = self.db.query(Case).filter(Case.id != "_TRIAGE")
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
         from app.models.database import User
         from app.services import access_service
 

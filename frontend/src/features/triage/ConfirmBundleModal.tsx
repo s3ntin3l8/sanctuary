@@ -290,6 +290,7 @@ function Dialog({
               {cases.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.id} · {c.title}
+                  {c.is_draft ? ' (draft)' : ''}
                 </option>
               ))}
             </select>

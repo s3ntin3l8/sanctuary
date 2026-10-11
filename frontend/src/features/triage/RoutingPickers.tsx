@@ -104,7 +104,7 @@ export function RoutingCards({
               <PickRow
                 active={caseId === suggestedCase.id}
                 title={suggestedCase.id}
-                sub={`${suggestedCase.title} · AI-detected`}
+                sub={`${suggestedCase.title} · AI-detected${suggestedCase.is_draft ? ' · draft' : ''}`}
                 onClick={() => route(suggestedCase.id, null)}
               />
             )}
@@ -121,7 +121,7 @@ export function RoutingCards({
                   key={c.id}
                   active={caseId === c.id}
                   title={c.id}
-                  sub={c.title}
+                  sub={c.is_draft ? `${c.title} · draft` : c.title}
                   onClick={() => route(c.id, null)}
                 />
               ))}

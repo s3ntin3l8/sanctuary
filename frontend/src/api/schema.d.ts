@@ -2462,6 +2462,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/triage/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Batch Delete
+         * @description Permanently delete every selected bundle; in-flight ones are skipped.
+         */
+        post: operations["v1_batch_delete_api_v1_triage_batch_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/batch/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Batch Dismiss
+         * @description Archive every selected bundle; bundles that aren't the user's are skipped.
+         */
+        post: operations["v1_batch_dismiss_api_v1_triage_batch_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/triage/bundles/{batch_id}": {
         parameters: {
             query?: never;
@@ -2985,6 +3025,13 @@ export interface components {
         BatchKeys: {
             /** Keys */
             keys: string[];
+        };
+        /** BatchRemoveResult */
+        BatchRemoveResult: {
+            /** Removed Keys */
+            removed_keys: string[];
+            /** Skipped */
+            skipped: string[];
         };
         /** BatchResult */
         BatchResult: {
@@ -4902,6 +4949,11 @@ export interface components {
         PickerCase: {
             /** Id */
             id: string;
+            /**
+             * Is Draft
+             * @default false
+             */
+            is_draft: boolean;
             /** Title */
             title: string;
         };
@@ -10333,6 +10385,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_batch_delete_api_v1_triage_batch_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchKeys"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchRemoveResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_batch_dismiss_api_v1_triage_batch_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchKeys"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchRemoveResult"];
                 };
             };
             /** @description Error */

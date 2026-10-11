@@ -694,6 +694,30 @@
         "title": "BatchKeys",
         "type": "object"
       },
+      "BatchRemoveResult": {
+        "properties": {
+          "removed_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Keys",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "removed_keys",
+          "skipped"
+        ],
+        "title": "BatchRemoveResult",
+        "type": "object"
+      },
       "BatchResult": {
         "properties": {
           "bundles": {
@@ -6959,6 +6983,11 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "is_draft": {
+            "default": false,
+            "title": "Is Draft",
+            "type": "boolean"
           },
           "title": {
             "title": "Title",
@@ -15924,6 +15953,90 @@
           }
         },
         "summary": "V1 Batch Confirm",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
+    "/api/v1/triage/batch/delete": {
+      "post": {
+        "description": "Permanently delete every selected bundle; in-flight ones are skipped.",
+        "operationId": "v1_batch_delete_api_v1_triage_batch_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchKeys"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRemoveResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Batch Delete",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
+    "/api/v1/triage/batch/dismiss": {
+      "post": {
+        "description": "Archive every selected bundle; bundles that aren't the user's are skipped.",
+        "operationId": "v1_batch_dismiss_api_v1_triage_batch_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchKeys"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRemoveResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Batch Dismiss",
         "tags": [
           "triage"
         ]

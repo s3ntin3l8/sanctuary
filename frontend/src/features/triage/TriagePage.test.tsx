@@ -130,6 +130,25 @@ test('batch selection confirms every selected bundle', async () => {
   )
 })
 
+test('batch selection archives every selected bundle after confirming', async () => {
+  const fetch = stub({
+    'POST /api/v1/triage/batch/dismiss': {
+      body: { removed_keys: ['batch-42'], skipped: [] },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await screen.findByText('Klageerwiderung')
+  await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
+  await user.click(screen.getByRole('button', { name: 'Archive (1)' }))
+  expect(await postedJson(fetch, '/batch/dismiss')).toBeUndefined()
+  const dialog = await screen.findByRole('dialog', { name: 'Archive 1 bundle(s)?' })
+  await user.click(within(dialog).getByRole('button', { name: 'Archive' }))
+  await waitFor(async () =>
+    expect(await postedJson(fetch, '/batch/dismiss')).toEqual({ keys: ['batch-42'] }),
+  )
+})
+
 test('?upload=1 opens the ingest modal', async () => {
   stub()
   renderAt('/triage?upload=1', <TriagePage />)

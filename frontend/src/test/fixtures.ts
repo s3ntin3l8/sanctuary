@@ -330,8 +330,8 @@ export const triageView: Schemas['TriageView'] = {
     pipeline: [{ value: 'failed', label: 'Failed' }],
   },
   cases: [
-    { id: 'ADV-024-A', title: 'Weber ./. Weber' },
-    { id: 'ADV-019-C', title: 'Brandt GmbH ./. Keller' },
+    { id: 'ADV-024-A', title: 'Weber ./. Weber', is_draft: false },
+    { id: 'ADV-019-C', title: 'Brandt GmbH ./. Keller', is_draft: false },
   ],
   proceedings: [{ id: 5, case_id: 'ADV-024-A', label: 'Amtsgericht Hamburg · 003 F 426/25' }],
   slicing_queue: [
