@@ -146,6 +146,7 @@ _BODY_ID_REVIEWED: dict[str, str] = {
     "POST /api/v1/upload": "case_id via _editable_case, parent_id via _editable_parent",
     "POST /api/v1/admin/users/{user_id}/reassign-cases": "admin-only route",
     "PUT /api/v1/settings/ai/roles/{role}": "admin-only route",
+    "GET /api/v1/settings/ai/logs": "admin-only route; ids only filter the local runs index",
     "POST /api/v1/cases": "case_id is the id of the new case, not a reference",
     "POST /api/v1/cases/{case_id}/costs": (
         "proceeding_id verified to belong to the guarded case"

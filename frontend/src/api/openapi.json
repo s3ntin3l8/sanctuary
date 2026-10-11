@@ -3204,10 +3204,6 @@
       },
       "DataView": {
         "properties": {
-          "ai_debug_redact": {
-            "title": "Ai Debug Redact",
-            "type": "boolean"
-          },
           "case_count": {
             "title": "Case Count",
             "type": "integer"
@@ -3234,14 +3230,52 @@
           "case_count",
           "claim_count",
           "cost_count",
-          "db_size_mb",
-          "ai_debug_redact"
+          "db_size_mb"
         ],
         "title": "DataView",
         "type": "object"
       },
+      "DebugLogFacets": {
+        "properties": {
+          "kind": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kind",
+            "type": "array"
+          },
+          "model": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Model",
+            "type": "array"
+          },
+          "stage": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stage",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "stage",
+          "model"
+        ],
+        "title": "DebugLogFacets",
+        "type": "object"
+      },
       "DebugLogList": {
         "properties": {
+          "ai_debug_redact": {
+            "title": "Ai Debug Redact",
+            "type": "boolean"
+          },
+          "facets": {
+            "$ref": "#/components/schemas/DebugLogFacets"
+          },
           "log_root": {
             "title": "Log Root",
             "type": "string"
@@ -3256,13 +3290,59 @@
         },
         "required": [
           "rows",
-          "log_root"
+          "facets",
+          "log_root",
+          "ai_debug_redact"
         ],
         "title": "DebugLogList",
         "type": "object"
       },
       "DebugLogRow": {
         "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Id"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -3273,6 +3353,17 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "kind": {
             "anyOf": [
@@ -3306,6 +3397,39 @@
               }
             ],
             "title": "Path"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "reasoning_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Tokens"
           },
           "scope_id": {
             "anyOf": [
@@ -3350,6 +3474,28 @@
               }
             ],
             "title": "Ts"
+          },
+          "ttfb_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttfb Ms"
+          },
+          "watchdog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchdog"
           }
         },
         "required": [
@@ -3358,8 +3504,18 @@
           "scope_id",
           "stage",
           "model",
+          "provider",
           "duration_ms",
+          "ttfb_ms",
           "status",
+          "error",
+          "doc_id",
+          "batch_id",
+          "case_id",
+          "prompt_tokens",
+          "completion_tokens",
+          "reasoning_tokens",
+          "watchdog",
           "path"
         ],
         "title": "DebugLogRow",
@@ -14741,6 +14897,245 @@
         ]
       }
     },
+    "/api/v1/settings/ai/logs": {
+      "get": {
+        "description": "Recent AI calls from the local runs index, newest first, optionally filtered.",
+        "operationId": "v1_ai_logs_api_v1_settings_ai_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(ok|error)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "doc_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doc Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "batch_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Batch Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebugLogList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Ai Logs",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/logs/view": {
+      "get": {
+        "description": "A call's debug log. With ``stage`` and ``ts`` only that call's block is returned.",
+        "operationId": "v1_ai_log_view_api_v1_settings_ai_logs_view_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ts",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ts"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebugLogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Ai Log View",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/settings/ai/ocr-concurrency": {
       "put": {
         "operationId": "v1_ocr_concurrency_api_v1_settings_ai_ocr_concurrency_put",
@@ -15196,95 +15591,6 @@
           }
         },
         "summary": "V1 Clear All Data",
-        "tags": [
-          "settings"
-        ]
-      }
-    },
-    "/api/v1/settings/data/debug-logs": {
-      "get": {
-        "operationId": "v1_debug_logs_api_v1_settings_data_debug_logs_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DebugLogList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "V1 Debug Logs",
-        "tags": [
-          "settings"
-        ]
-      }
-    },
-    "/api/v1/settings/data/debug-logs/view": {
-      "get": {
-        "operationId": "v1_debug_log_api_v1_settings_data_debug_logs_view_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "maxLength": 500,
-              "minLength": 1,
-              "title": "Path",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DebugLogView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "V1 Debug Log",
         "tags": [
           "settings"
         ]

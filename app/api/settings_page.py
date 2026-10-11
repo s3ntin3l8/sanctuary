@@ -26,6 +26,11 @@ def gmail_import_page(user: User = Depends(get_current_user)) -> Response:
     return spa_index()
 
 
+@router.get("/settings/ai/logs", dependencies=[Depends(get_current_admin)])
+def ai_logs_page() -> Response:
+    return spa_index()
+
+
 @router.get("/settings/{tab}")
 def settings_tab(tab: str, user: User = Depends(get_current_user)) -> Response:
     if tab not in SETTINGS_TABS:

@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -165,12 +166,10 @@ async def probe_role_health(db) -> dict[str, dict]:
     return out
 
 
-def tail_jsonl(path, limit: int) -> list[dict]:
-    """Return the last `limit` parsed JSON lines from `path`, newest first.
+def _read_runs(path) -> list[dict]:
+    """Every parsed line of the runs index, oldest first; unreadable lines are skipped.
 
-    Small enough to read fully for now (the index file is line-per-call and
-    grows slowly). Switching to a chunked reverse-read can wait until the
-    file is many MB.
+    Small enough to read fully (one line per call, pruned after 30 days).
     """
     if not path.exists():
         return []
@@ -184,7 +183,69 @@ def tail_jsonl(path, limit: int) -> list[dict]:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-    return list(reversed(rows[-limit:]))
+    return rows
+
+
+def query_runs(
+    path,
+    *,
+    limit: int,
+    kind: str | None = None,
+    stage: str | None = None,
+    model: str | None = None,
+    status: str | None = None,
+    doc_id: int | None = None,
+    batch_id: int | None = None,
+    q: str | None = None,
+) -> tuple[list[dict], dict[str, list[str]]]:
+    """The newest ``limit`` runs matching every given filter, newest first.
+
+    ``status="error"`` matches anything that isn't ``ok``. ``q`` is a
+    case-insensitive substring of the scope id or the error. The facets are the
+    distinct kind/stage/model values over the whole file, so the filter
+    dropdowns don't shrink as filters apply.
+    """
+    rows = _read_runs(path)
+    facets = {
+        key: sorted({str(r[key]) for r in rows if r.get(key)})
+        for key in ("kind", "stage", "model")
+    }
+    needle = q.lower() if q else None
+
+    def keep(r: dict) -> bool:
+        if kind and r.get("kind") != kind:
+            return False
+        if stage and r.get("stage") != stage:
+            return False
+        if model and r.get("model") != model:
+            return False
+        if status == "ok" and r.get("status") != "ok":
+            return False
+        if status == "error" and r.get("status") == "ok":
+            return False
+        if doc_id is not None and r.get("doc_id") != doc_id:
+            return False
+        if batch_id is not None and r.get("batch_id") != batch_id:
+            return False
+        haystack = f"{r.get('scope_id') or ''} {r.get('error') or ''}".lower()
+        return not needle or needle in haystack
+
+    matched = [r for r in rows if keep(r)]
+    return list(reversed(matched[-limit:])), facets
+
+
+def extract_call_section(body: str, stage: str, ts: str) -> str | None:
+    """The one ``# call:`` block of a per-document log matching ``stage`` and ``ts``.
+
+    Blocks are separated by a rule line of ``═``; each starts with
+    ``# call: <label> | stage=<stage> | ts=<ts> | ...``. Returns None when no
+    block matches (the caller falls back to the whole file).
+    """
+    marker = f"| stage={stage} | ts={ts} |"
+    for block in re.split(r"^═{16,}\n", body, flags=re.MULTILINE):
+        if marker in block.split("\n", 1)[0]:
+            return block.rstrip() + "\n"
+    return None
 
 
 def read_debug_log(path: str) -> str | None:

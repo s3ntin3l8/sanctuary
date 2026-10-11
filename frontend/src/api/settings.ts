@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type ApiError, type Schemas, unwrap } from './client'
 
@@ -270,22 +270,39 @@ export function useMaintenance(kind: 'reset-enrichment' | 'clear-all-data') {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'data'] }),
   })
 }
-export function useDebugLogs() {
+export type AiLogFilters = {
+  kind?: string
+  stage?: string
+  model?: string
+  status?: 'ok' | 'error'
+  doc_id?: number
+  batch_id?: number
+  q?: string
+}
+export function useAiLogs(filters: AiLogFilters) {
   return useQuery<S['DebugLogList'], ApiError>({
-    queryKey: ['settings', 'debug-logs'],
-    queryFn: () => unwrap(api.GET('/api/v1/settings/data/debug-logs')),
+    queryKey: ['settings', 'ai-logs', filters],
+    queryFn: () => unwrap(api.GET('/api/v1/settings/ai/logs', { params: { query: filters } })),
+    placeholderData: keepPreviousData,
+    refetchInterval: 15_000,
   })
 }
-export function useDebugLog(path: string | null) {
+export function useAiLogView(row: {
+  path: string | null
+  stage: string | null
+  ts: string | null
+}) {
   return useQuery<S['DebugLogView'], ApiError>({
-    queryKey: ['settings', 'debug-log', path],
+    queryKey: ['settings', 'ai-log', row.path, row.stage, row.ts],
     queryFn: () =>
       unwrap(
-        api.GET('/api/v1/settings/data/debug-logs/view', {
-          params: { query: { path: path ?? '' } },
+        api.GET('/api/v1/settings/ai/logs/view', {
+          params: {
+            query: { path: row.path ?? '', stage: row.stage ?? undefined, ts: row.ts ?? undefined },
+          },
         }),
       ),
-    enabled: !!path,
+    enabled: !!row.path,
   })
 }
 

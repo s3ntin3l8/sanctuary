@@ -39,7 +39,6 @@ def test_data_view_reports_stats(db_session, sample_case):
     body = client.get("/api/v1/settings/data").json()
     assert body["case_count"] == 1
     assert body["db_size_mb"] > 0
-    assert body["ai_debug_redact"] in (True, False)
 
 
 def test_maintenance_reset_ai_enrichment(db_session):
@@ -90,15 +89,115 @@ def test_maintenance_clear_all_data(db_session, sample_case):
 
 
 def test_debug_log_view_rejects_escaping_paths(db_session):
-    resp = client.get(
-        "/api/v1/settings/data/debug-logs/view", params={"path": "../x.md"}
-    )
+    resp = client.get("/api/v1/settings/ai/logs/view", params={"path": "../x.md"})
     assert resp.status_code == 422
     assert resp.json()["code"] == "invalid_path"
-    missing = client.get(
-        "/api/v1/settings/data/debug-logs/view", params={"path": "nope.md"}
-    )
+    missing = client.get("/api/v1/settings/ai/logs/view", params={"path": "nope.md"})
     assert missing.status_code == 404
+
+
+def _write_runs(tmp_path, monkeypatch, rows):
+    import json
+
+    from app.api.v1 import settings_ai
+    from app.services import ai_settings_service
+
+    root = tmp_path / "ai_debug"
+    root.mkdir()
+    (root / "runs.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    monkeypatch.setattr(settings_ai, "AI_DEBUG_ROOT", root)
+    monkeypatch.setattr(ai_settings_service, "AI_DEBUG_ROOT", root)
+    return root
+
+
+def test_ai_logs_filter_and_facets(db_session, tmp_path, monkeypatch):
+    _write_runs(
+        tmp_path,
+        monkeypatch,
+        [
+            {
+                "ts": "t1",
+                "kind": "doc",
+                "scope_id": 1,
+                "stage": "enrich",
+                "model": "m1",
+                "status": "ok",
+                "doc_id": 1,
+                "batch_id": 5,
+                "duration_ms": 2000,
+            },
+            {
+                "ts": "t2",
+                "kind": "doc",
+                "scope_id": 2,
+                "stage": "claims-p1",
+                "model": "m1",
+                "status": "error",
+                "error": "timeout",
+                "doc_id": 2,
+                "batch_id": 5,
+            },
+            {
+                "ts": "t3",
+                "kind": "misc",
+                "scope_id": "dedup_9",
+                "stage": "dedup_judge_9",
+                "model": "m2",
+                "status": "ok",
+            },
+        ],
+    )
+    body = client.get("/api/v1/settings/ai/logs").json()
+    assert [r["ts"] for r in body["rows"]] == ["t3", "t2", "t1"]
+    assert body["facets"] == {
+        "kind": ["doc", "misc"],
+        "stage": ["claims-p1", "dedup_judge_9", "enrich"],
+        "model": ["m1", "m2"],
+    }
+    errors = client.get("/api/v1/settings/ai/logs", params={"status": "error"}).json()
+    assert [r["ts"] for r in errors["rows"]] == ["t2"]
+    assert errors["rows"][0]["error"] == "timeout"
+    # Facets stay whole while filtering.
+    assert errors["facets"]["kind"] == ["doc", "misc"]
+    by_batch = client.get(
+        "/api/v1/settings/ai/logs", params={"batch_id": 5, "model": "m1"}
+    ).json()
+    assert [r["ts"] for r in by_batch["rows"]] == ["t2", "t1"]
+    by_q = client.get("/api/v1/settings/ai/logs", params={"q": "TIME"}).json()
+    assert [r["ts"] for r in by_q["rows"]] == ["t2"]
+    assert (
+        len(client.get("/api/v1/settings/ai/logs", params={"limit": 1}).json()["rows"])
+        == 1
+    )
+
+
+def test_ai_log_view_returns_only_the_requested_call(db_session, tmp_path, monkeypatch):
+    root = _write_runs(tmp_path, monkeypatch, [])
+    rule = "═" * 64
+    (root / "ib-0001").mkdir()
+    (root / "ib-0001" / "doc_7.md").write_text(
+        f"{rule}\n# call: doc_7_a | stage=metadata | ts=2026-10-10T12:00:00+02:00 | prompt_v=1\n\nFIRST\n\n"
+        f"{rule}\n# call: doc_7_b | stage=enrich | ts=2026-10-10T12:05:00+02:00 | prompt_v=1\n\nSECOND\n"
+    )
+    one = client.get(
+        "/api/v1/settings/ai/logs/view",
+        params={
+            "path": "ib-0001/doc_7.md",
+            "stage": "enrich",
+            "ts": "2026-10-10T12:05:00+02:00",
+        },
+    ).json()["body"]
+    assert "SECOND" in one and "FIRST" not in one
+    whole = client.get(
+        "/api/v1/settings/ai/logs/view", params={"path": "ib-0001/doc_7.md"}
+    ).json()["body"]
+    assert "FIRST" in whole and "SECOND" in whole
+    # An unmatched call falls back to the whole file rather than showing nothing.
+    fallback = client.get(
+        "/api/v1/settings/ai/logs/view",
+        params={"path": "ib-0001/doc_7.md", "stage": "nope", "ts": "x"},
+    ).json()["body"]
+    assert "FIRST" in fallback
 
 
 def test_data_routes_require_admin(auth_enabled, db_session):
@@ -434,7 +533,7 @@ def test_extraction_engine_and_debug_redact(db_session):
     assert client.put(
         "/api/v1/settings/ai/debug-redact", json={"enabled": False}
     ).json() == {"enabled": False}
-    assert client.get("/api/v1/settings/data").json()["ai_debug_redact"] is False
+    assert client.get("/api/v1/settings/ai/logs").json()["ai_debug_redact"] is False
 
 
 # --- Pages -------------------------------------------------------------------

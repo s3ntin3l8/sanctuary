@@ -16,6 +16,7 @@ import { HomePage } from './features/home/HomePage'
 import { NotFoundPage } from './features/NotFoundPage'
 import { AccountPage } from './features/settings/AccountPage'
 import { AiPage } from './features/settings/AiPage'
+import { AiLogsPage } from './features/settings/AiLogsPage'
 import { AppearancePage } from './features/settings/AppearancePage'
 import { DataPage } from './features/settings/DataPage'
 import { ExportPage } from './features/settings/ExportPage'
@@ -53,6 +54,7 @@ const router = createBrowserRouter([
           { path: '/settings/account', element: <AccountPage /> },
           { path: '/settings/appearance', element: <AppearancePage /> },
           { path: '/settings/ai', element: <AiPage /> },
+          { path: '/settings/ai/logs', element: <AiLogsPage /> },
           { path: '/settings/identity', element: <IdentityPage /> },
           { path: '/settings/gmail', element: <GmailPage /> },
           { path: '/settings/gmail/import', element: <ImportPage /> },
