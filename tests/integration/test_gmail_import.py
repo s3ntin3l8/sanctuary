@@ -212,6 +212,29 @@ def test_ingested_is_derived_from_batches_and_flips_back_on_delete(db_session):
     assert client.get("/api/v1/gmail/groups").json()["groups"][0]["ingested_count"] == 0
 
 
+def test_messages_are_marked_outgoing_when_sent_from_an_own_address(db_session):
+    uid = _admin(db_session)
+    _index(db_session, uid, "in", "8372/25 reply", 1)
+    _index(db_session, uid, "out", "8372/25 answer", 2, sender="Me@Example.com")
+    user_settings_service.set_gmail_inbox_filters(
+        db_session,
+        uid,
+        allowlist=["lawyer@example.com"],
+        label_filter="",
+        include_sent=True,
+        own_addresses=["me@example.com"],
+    )
+    db_session.commit()
+
+    items = client.get("/api/v1/gmail/messages", params={"group": "8372-25"}).json()[
+        "items"
+    ]
+    assert [(m["gmail_id"], m["outgoing"]) for m in items] == [
+        ("in", False),
+        ("out", True),
+    ]
+
+
 def test_messages_page_oldest_first_with_cursor(db_session):
     uid = _admin(db_session)
     for day, gid in enumerate(["m3", "m1", "m2"], start=1):  # inserted out of order

@@ -5193,6 +5193,10 @@
             "title": "Ingested",
             "type": "boolean"
           },
+          "outgoing": {
+            "title": "Outgoing",
+            "type": "boolean"
+          },
           "sender": {
             "anyOf": [
               {
@@ -5231,6 +5235,7 @@
           "sender",
           "subject",
           "sent_at",
+          "outgoing",
           "has_attachments",
           "ingested",
           "cached"
