@@ -39,6 +39,17 @@ export const emptyQueue: Schemas['QueueView'] = {
   executing: [],
   queued: [],
   failed: [],
+  recent: [],
+  ai_calls: [],
+  system: {
+    workers: [
+      { name: 'ingest', up: true, concurrency: 4 },
+      { name: 'ai', up: true, concurrency: 2 },
+      { name: 'maintenance', up: true, concurrency: 1 },
+    ],
+    queue_depth: { ingest: 0, ai: 0, maintenance: 0 },
+    gpu_gate: { holders: [], waiting: 0 },
+  },
 }
 
 export const homeView: Schemas['HomeView'] = {

@@ -4260,12 +4260,19 @@ export interface components {
             batch_id: number | null;
             /** Doc Id */
             doc_id: number;
+            /** Stages */
+            stages: components["schemas"]["FailedStage"][];
+            /** Title */
+            title: string;
+        };
+        /** FailedStage */
+        FailedStage: {
+            /** Attempt */
+            attempt?: number | null;
             /** Error */
             error: string;
             /** Stage */
             stage: string;
-            /** Title */
-            title: string;
         };
         /** FinancialsSummary */
         FinancialsSummary: {
@@ -4289,6 +4296,13 @@ export interface components {
             /** Signal Docs */
             signal_docs: components["schemas"]["CostSignalDoc"][];
             summary: components["schemas"]["FinancialsSummary"];
+        };
+        /** GateStatus */
+        GateStatus: {
+            /** Holders */
+            holders: string[];
+            /** Waiting */
+            waiting: number;
         };
         /** GmailFilterPreview */
         GmailFilterPreview: {
@@ -5275,8 +5289,19 @@ export interface components {
             /** Queued */
             queued: number;
         };
+        /** QueueDepth */
+        QueueDepth: {
+            /** Ai */
+            ai: number;
+            /** Ingest */
+            ingest: number;
+            /** Maintenance */
+            maintenance: number;
+        };
         /** QueueItem */
         QueueItem: {
+            /** Attempt */
+            attempt?: number | null;
             /** Batch Id */
             batch_id: number | null;
             /** Doc Count */
@@ -5290,12 +5315,20 @@ export interface components {
             kind: "doc" | "batch" | "slicing";
             /** Label */
             label: string;
+            /** Max Attempts */
+            max_attempts?: number | null;
+            /** Next At */
+            next_at?: string | null;
             /** Note */
             note?: string | null;
             stage: components["schemas"]["PipelineStage"] | null;
+            /** Started At */
+            started_at?: string | null;
         };
         /** QueueView */
         QueueView: {
+            /** Ai Calls */
+            ai_calls: string[];
             counts: components["schemas"]["QueueCounts"];
             /** Executing */
             executing: components["schemas"]["QueueItem"][];
@@ -5304,6 +5337,9 @@ export interface components {
             gmail_import?: components["schemas"]["GmailImportStatus"] | null;
             /** Queued */
             queued: components["schemas"]["QueueItem"][];
+            /** Recent */
+            recent: components["schemas"]["RecentStage"][];
+            system: components["schemas"]["SystemStatus"];
         };
         /** ReactionUpdate */
         ReactionUpdate: {
@@ -5340,6 +5376,24 @@ export interface components {
             prev_doc_id: number | null;
             /** Total */
             total: number | null;
+        };
+        /** RecentStage */
+        RecentStage: {
+            /** Batch Id */
+            batch_id: number | null;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Doc Id */
+            doc_id: number;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Stage */
+            stage: string;
+            /** Title */
+            title: string;
         };
         /** ReenrichResult */
         ReenrichResult: {
@@ -5671,6 +5725,16 @@ export interface components {
             /** Created At */
             created_at: string | null;
             enrich_status: components["schemas"]["StageStatus"] | null;
+        };
+        /**
+         * SystemStatus
+         * @description Each part is None when it can't be read (Redis or the workers are down).
+         */
+        SystemStatus: {
+            gpu_gate: components["schemas"]["GateStatus"] | null;
+            queue_depth: components["schemas"]["QueueDepth"] | null;
+            /** Workers */
+            workers: components["schemas"]["WorkerStatus"][] | null;
         };
         /** ThemeUpdate */
         ThemeUpdate: {
@@ -6011,6 +6075,15 @@ export interface components {
          * @enum {string}
          */
         UserRole: "admin" | "user";
+        /** WorkerStatus */
+        WorkerStatus: {
+            /** Concurrency */
+            concurrency: number;
+            /** Name */
+            name: string;
+            /** Up */
+            up: boolean;
+        };
     };
     responses: never;
     parameters: never;

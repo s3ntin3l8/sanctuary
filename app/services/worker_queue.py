@@ -2,17 +2,25 @@
 SPA's queue popover (app/api/v1/worker_queue.py) and the shell badge."""
 
 import logging
+from datetime import timedelta
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Query, Session
 
-from app.models.database import Document, User
-from app.models.enums import PipelineStage, PipelineState
+from app.core.timezone import now_utc
+from app.models.database import Document, DocumentPipelineStage, User
+from app.models.enums import PipelineStage, PipelineState, StageStatus
 from app.services import access_service
 from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
 
 logger = logging.getLogger(__name__)
+
+# Bounds on the listed rows; the failed *count* is queried separately so it stays true.
+ACTIVE_DOC_LIMIT = 200
+FAILED_DOC_LIMIT = 100
+RECENT_LIMIT = 30
+RECENT_WINDOW = timedelta(hours=24)
 
 
 def _visible_to(
@@ -59,7 +67,7 @@ def _get_queue_docs(
             visible_case_ids,
         )
         .order_by(Document.pipeline_state)
-        .limit(50)
+        .limit(ACTIVE_DOC_LIMIT)
         .all()
     )
     running = [
@@ -74,7 +82,7 @@ def _get_queue_docs(
             owner_id,
             visible_case_ids,
         )
-        .limit(20)
+        .limit(FAILED_DOC_LIMIT)
         .all()
     )
     return running, pending, failed
@@ -134,22 +142,62 @@ def _first_pending_stage(doc: Document) -> str:
     return ""
 
 
-def _first_failed_stage_info(doc: Document) -> dict:
-    """Return the root-cause failed stage name and error text.
+def failed_stages(doc: Document) -> list[dict]:
+    """Every failed stage of the doc as ``{"stage", "error", "attempt"}``.
 
-    Sorts ascending by pipeline order so the earliest (root-cause) failure
-    is found first, not a downstream cascade whose error reads
-    "upstream {stage} failed".
-    Returns {"stage": str, "error": str}; both empty if no failed stage found.
+    Ordered by pipeline order so the root cause comes first, ahead of the
+    downstream cascade whose error reads "upstream {stage} failed".
     """
     ordered = sorted(
         stages_dict(doc).items(),
         key=lambda kv: STAGE_REGISTRY[kv[0]].order if kv[0] in STAGE_REGISTRY else 99,
     )
-    for key, rec in ordered:
-        if isinstance(rec, dict) and rec.get("status") == "failed":
-            return {"stage": key, "error": rec.get("error") or ""}
-    return {"stage": "", "error": ""}
+    return [
+        {"stage": key, "error": rec.get("error") or "", "attempt": rec.get("attempt")}
+        for key, rec in ordered
+        if isinstance(rec, dict) and rec.get("status") == "failed"
+    ]
+
+
+def count_failed_docs(db: Session, owner_id: int | None = None) -> int:
+    """How many FAILED docs `owner_id` may see (the listed rows are capped)."""
+    visible_case_ids = (
+        access_service.visible_case_ids(db, db.get(User, owner_id))
+        if owner_id is not None
+        else None
+    )
+    return _visible_to(
+        db.query(func.count(Document.id)).filter(
+            Document.pipeline_state == PipelineState.FAILED
+        ),
+        owner_id,
+        visible_case_ids,
+    ).scalar()
+
+
+def recent_completed_stages(
+    db: Session, owner_id: int | None = None
+) -> list[tuple[DocumentPipelineStage, Document]]:
+    """The most recently completed stages in the last day, newest first."""
+    visible_case_ids = (
+        access_service.visible_case_ids(db, db.get(User, owner_id))
+        if owner_id is not None
+        else None
+    )
+    query = (
+        db.query(DocumentPipelineStage, Document)
+        .join(Document, Document.id == DocumentPipelineStage.document_id)
+        .filter(
+            DocumentPipelineStage.status == StageStatus.COMPLETED.value,
+            DocumentPipelineStage.completed_at >= now_utc() - RECENT_WINDOW,
+        )
+    )
+    return (
+        _visible_to(query, owner_id, visible_case_ids)
+        .order_by(DocumentPipelineStage.completed_at.desc())
+        .limit(RECENT_LIMIT)
+        .all()
+    )
 
 
 def _build_queue_items(running: list[Document], pending: list[Document]) -> list[dict]:
