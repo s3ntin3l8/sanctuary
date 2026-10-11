@@ -24,6 +24,7 @@ from app.models.database import (
 )
 from app.models.enums import DocumentRole, DocumentStatus, RelationshipType
 from app.repositories.document_relationship import insert_edge_if_absent
+from app.services import family_context
 from app.services.ingestion.service import apply_review_reasons
 
 
@@ -162,6 +163,8 @@ def set_cover_letter(db: Session, doc_id: int, batch_id: int) -> Document:
     db.flush()
     for m in members:
         apply_review_reasons(m)
+    # The new structure may put a member next to a document with a case.
+    family_context.propagate_batch(db, batch_id)
     db.flush()
     return doc
 
@@ -267,6 +270,9 @@ def reorder_documents(
             Document.ingest_batch_id == batch_id,
         ).update({"sub_group_id": target_sub_group_id, "sub_group_sort_order": order})
 
+    db.flush()
+    # A document moved into a group takes that group's case.
+    family_context.propagate_batch(db, batch_id)
     db.flush()
 
 

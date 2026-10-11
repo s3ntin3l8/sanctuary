@@ -12,7 +12,7 @@ from app.models.database import (
 from app.models.enums import ProceedingCourtLevel, ProceedingStatus
 
 
-def _is_unused_draft(proc: Proceeding, db: Session, own_batch_id: int | None) -> bool:
+def is_unused_draft(proc: Proceeding, db: Session, own_batch_id: int | None) -> bool:
     """A draft nothing refers to any more — the same emptiness rule as
     ``CaseService.delete_empty_proceeding``. The document's own bundle does
     not count: it is repointed when the draft goes."""
@@ -133,7 +133,7 @@ def rematch_proceeding(doc: Document, db: Session) -> None:
     if (
         old is None
         or old.id == target.id
-        or not _is_unused_draft(old, db, doc.ingest_batch_id)
+        or not is_unused_draft(old, db, doc.ingest_batch_id)
     ):
         return
     # The bundle pointed at the draft only because this document seeded it.

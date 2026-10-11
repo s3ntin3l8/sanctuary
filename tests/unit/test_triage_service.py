@@ -261,6 +261,66 @@ def test_confirm_bundle_clears_doc_with_only_missing_case_id(db_session):
 
 
 @pytest.mark.unit
+def test_confirm_bundle_files_a_doc_with_its_own_az_by_that_az(db_session):
+    """A bundle filed into a proceeding does not drag in a document that prints
+    another Aktenzeichen: that one is matched by its own AZ, or left unlinked."""
+    from app.models.database import Case, Proceeding
+    from app.models.enums import (
+        ProceedingCourtLevel,
+        ProceedingStatus,
+    )
+    from app.services.triage_confirmation import confirm_bundle
+
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
+    target_case = Case(
+        id="ADV-002-T",
+        title="Target Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(target_case)
+    db_session.flush()
+    procs = {
+        az: Proceeding(
+            case_id=target_case.id,
+            court_name="Amtsgericht Ingolstadt",
+            court_level=ProceedingCourtLevel.AG,
+            az_court=az,
+            status=ProceedingStatus.ACTIVE,
+            is_draft=False,
+        )
+        for az in ("3 F 1221/26", "2 K 92/25")
+    }
+    db_session.add_all(procs.values())
+    db_session.commit()
+
+    batch, docs = _make_batch_with_docs(
+        db_session,
+        triage_case,
+        target_case,
+        [
+            {"title": "Motion", "role": DocumentRole.COVER_LETTER},
+            {"title": "Old ruling", "role": DocumentRole.ENCLOSURE},
+            {"title": "Medical letter", "role": DocumentRole.ENCLOSURE},
+        ],
+    )
+    docs[0].az_court = "3 F 1221/26"
+    docs[1].az_court = "2 K 92/25"
+    db_session.commit()
+
+    confirm_bundle(
+        db_session, batch.id, target_case.id, procs["3 F 1221/26"].id, finalize=True
+    )
+
+    db_session.expire_all()
+    motion, ruling, letter = (db_session.get(type(d), d.id) for d in docs)
+    assert motion.proceeding_id == procs["3 F 1221/26"].id
+    assert ruling.proceeding_id == procs["2 K 92/25"].id  # by its own AZ
+    assert letter.proceeding_id == procs["3 F 1221/26"].id  # no AZ: inherits
+    assert all(d.extraction_confidence["case_id"] == "user_set" for d in docs)
+
+
+@pytest.mark.unit
 def test_confirm_bundle_keeps_doc_in_triage_when_sender_missing(db_session):
     """Doc missing sender should stay in triage even after case is assigned."""
     from app.models.database import Case

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
+from app.services import family_context
 from app.services.ai_config import get_chat_config
 from app.services.content_text import condense_image_descriptions
 from app.services.ingestion.extractors import (
@@ -158,6 +159,12 @@ def _apply_proceeding_extraction(
 
     if not doc.case_id or doc.case_id == "_TRIAGE":
         return "no case assigned"
+
+    # An exhibit's own Aktenzeichen belongs to whatever it copies, not to the
+    # filing it is attached to: it never creates, forks or closes a proceeding.
+    # (fill_proceeding_from_az still matches it to an existing one.)
+    if family_context.is_exhibit(doc):
+        return "exhibit: matched by its own AZ only"
 
     data = dict(summary_data)
 
@@ -341,10 +348,19 @@ def _apply_proceeding_extraction(
             db.flush()
 
         doc.proceeding_id = new_proc.id
+        # Members of the family without an AZ of their own follow the document
+        # into the new instance; the bundle follows its documents.
+        for member in family_context.family_members(db, doc):
+            if (
+                member.id != doc.id
+                and not family_context.own_az(member)
+                and member.confirmed_at is None
+            ):
+                member.proceeding_id = new_proc.id
         if doc.ingest_batch:
-            doc.ingest_batch.proceeding_id = new_proc.id
-            for batch_doc in doc.ingest_batch.documents:
-                batch_doc.proceeding_id = new_proc.id
+            from app.services.proceeding_rematch import sync_batch_proceeding
+
+            sync_batch_proceeding(db, doc.ingest_batch)
     else:
         if not current_proc.az_court and extracted_az:
             current_proc.az_court = extracted_az
@@ -511,7 +527,12 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     if az_court and not doc.az_court:
         doc.az_court = az_court
 
-    if doc.case_id == "_TRIAGE":
+    # A case taken over from the family yields to the document's own reference,
+    # except for an exhibit: whatever matter it copies, it is evidence in the
+    # filing it is attached to and belongs to that filing's case.
+    if (
+        doc.case_id == "_TRIAGE" or family_context.case_source(doc) == "inherited"
+    ) and not family_context.is_exhibit(doc):
         from app.models.database import User
         from app.services import access_service
 
@@ -576,7 +597,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                     else ""
                 )
             )
-            _cascade_case_to_batch(db, doc, matching_case, matching_proceeding)
+            family_context.mark_case(doc, None)
+            family_context.propagate(db, doc)
 
         elif internal_id and not case_access_denied:
             # No existing case matched — auto-create a draft for user confirmation.
@@ -611,7 +633,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             doc.case_id = draft_case.id
             if draft_proc:
                 doc.proceeding_id = draft_proc.id
-            _cascade_case_to_batch(db, doc, draft_case, draft_proc)
+            family_context.mark_case(doc, None)
+            family_context.propagate(db, doc)
             if created:
                 logger.info(
                     f"AI Auto-Triage: draft case {draft_case.id} created for doc {doc.id}"
@@ -635,6 +658,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     )
 
     fill_proceeding_from_az(db, doc)
+    # Deliberately not folded into the earlier calls: the proceeding extraction
+    # above may have created or matched a proceeding the family has not seen yet.
+    family_context.propagate(db, doc)
     sync_batch_proceeding(db, doc.ingest_batch)
 
     # 6. AI case_type fallback — only fires when AZ inference (step 5) left the
@@ -657,54 +683,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                     parsed_ct,
                     doc.case_id,
                 )
-
-
-def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
-    """Cascade a case assignment to the ingest batch and (single-doc only) siblings.
-
-    For multi-doc batches: BATCH_ANALYSIS is the cross-doc authority and runs after all
-    METADATA tasks finish. METADATA cascades to the batch record only — sibling docs are left
-    with _TRIAGE so BATCH_ANALYSIS can assign the cover letter's case.
-    For single-doc / unbatched docs: cascade to siblings (there are none) and the batch.
-    """
-    if not doc.ingest_batch_id:
-        return
-    from app.models.database import IngestBatch
-
-    # For batched docs: BATCH_ANALYSIS runs after all METADATA complete.
-    # METADATA assigns the doc's own case_id but does NOT overwrite sibling case_ids —
-    # BATCH_ANALYSIS is the authoritative cascade for multi-doc batches.
-    siblings = (
-        db.query(Document)
-        .filter(
-            Document.ingest_batch_id == doc.ingest_batch_id,
-            Document.case_id == "_TRIAGE",
-            Document.id != doc.id,
-        )
-        .all()
-    )
-    total_in_batch = (
-        db.query(Document)
-        .filter(Document.ingest_batch_id == doc.ingest_batch_id)
-        .count()
-    )
-
-    # Only cascade to siblings when this is the only doc in the batch (BATCH_ANALYSIS is skipped)
-    if total_in_batch == 1:
-        for sib in siblings:
-            sib.case_id = case.id
-            if proceeding and not sib.proceeding_id:
-                sib.proceeding_id = proceeding.id
-
-        if siblings:
-            logger.info(
-                f"AI Auto-Triage: cascaded case {case.id} to "
-                f"{len(siblings)} sibling doc(s) in batch {doc.ingest_batch_id}"
-            )
-
-    batch = db.query(IngestBatch).filter(IngestBatch.id == doc.ingest_batch_id).first()
-    if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
-        batch.case_id = case.id
 
 
 def generate_summary_sync(

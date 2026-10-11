@@ -23,6 +23,7 @@ from app.models.enums import (
     parse_originator_type,
 )
 from app.repositories.document_relationship import insert_edge_if_absent
+from app.services import family_context
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
@@ -325,6 +326,10 @@ def _apply_batch_results(
     Legacy format: cover_letter_doc_id, is_cover_letter, enclosed_descriptions
     """
     if skip_role_assignment:
+        # Roles and parent links were set by hand (or by slicing); the family
+        # still shares its case and proceeding.
+        family_context.propagate_batch(db, batch_id)
+        db.commit()
         return
 
     bundles = result.get("bundles")
@@ -366,7 +371,8 @@ def _apply_batch_results(
                 # A cover letter cannot also be an enclosure — clear any stale
                 # parent_id from a prior run or earlier bundle.
                 cover_doc.parent_id = None
-                # court_relay is owned by METADATA (sender=court ∧ originator≠court).
+                # court_relay is owned by ENRICH (it can only be set once the
+                # document's own content has been read).
                 # Don't overwrite from enclosure types — direct court rulings with
                 # court enclosures are not relays.
 
@@ -531,39 +537,9 @@ def _apply_batch_results(
                 if not child.attributed_originator:
                     child.attributed_originator = encl.get("attributed_originator")
 
-    # Cascade case/proceeding from any cover letter to all docs
-    if first_cover and first_cover.case_id:
-        for d in docs:
-            if d.id not in claimed_ids and (not d.case_id or d.case_id == "_TRIAGE"):
-                d.case_id = first_cover.case_id
-                if first_cover.proceeding_id and not d.proceeding_id:
-                    d.proceeding_id = first_cover.proceeding_id
-
-    # analyze() already loaded the IngestBatch on this session, so db.get
-    # returns it from the identity map without a re-query.
-    batch = db.get(IngestBatch, batch_id)
-    if (
-        batch
-        and first_cover
-        and first_cover.case_id
-        and (not batch.case_id or batch.case_id == "_TRIAGE")
-    ):
-        batch.case_id = first_cover.case_id
-
-    # Cover letters and anything else the model didn't tie to a proceeding take
-    # the one their Aktenzeichen names; the bundle then follows its documents.
-    from app.services.proceeding_rematch import (
-        fill_proceeding_from_az,
-        sync_batch_proceeding,
-    )
-
-    for d in docs:
-        fill_proceeding_from_az(db, d)
-    sync_batch_proceeding(db, batch)
-
     # Single-relay fallback: when the AI didn't produce a bundle but exactly
-    # one doc in the batch is flagged as a court relay (set in Phase 1 from
-    # the letterhead), wire the unclaimed siblings as enclosures of that
+    # one doc in the batch is flagged as a court relay (set by ENRICH from
+    # an earlier run), wire the unclaimed siblings as enclosures of that
     # relay. This is the common "court letter + attachments" shape that
     # doesn't read as a Begleitschreiben to the model.
     if not claimed_ids:
@@ -727,6 +703,9 @@ def _apply_batch_results(
         ):
             d.role = DocumentRole.STANDALONE
 
+    # Every wiring decision is final: the families now share their case and
+    # proceeding, and the bundle follows its documents.
+    family_context.propagate_batch(db, batch_id)
     db.commit()
 
 
@@ -774,6 +753,7 @@ def analyze(batch_id: int) -> bool:
             if not manual_groups:
                 for d in docs:
                     d.role = DocumentRole.STANDALONE
+            family_context.propagate_batch(db, batch_id)
             db.commit()
             return False
 
