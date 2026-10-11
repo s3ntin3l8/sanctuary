@@ -252,6 +252,7 @@ def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
                 value=_field_value(doc, field),
                 confidence=conf.get(field)
                 if conf.get(field) in ("high", "medium", "low")
+                and _field_value(doc, field) is not None
                 else None,
             )
             for field, label in METADATA_FIELDS

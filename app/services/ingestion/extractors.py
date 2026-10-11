@@ -465,6 +465,35 @@ _LAWYER_REF_RE = re.compile(
 )
 
 
+_NOTE_INTERNAL_ID_RE = re.compile(r"\b\d{1,6}\s*[/-]\s*\d{2,4}\b")
+
+
+def reference_format_only(note: str) -> bool:
+    """True when ``note`` only differs in how one reference is written.
+
+    A "contradiction" such as ``Hint '3 F 1221/26' vs document '003 F 1221/26'``
+    names the same Aktenzeichen twice: every AZ (or internal id) token in it
+    normalises to a single value, so nothing substantive is in dispute.
+    """
+    az_tokens = [m.group(1) for m in _SUBJECT_AZ_COURT_RE.finditer(note)]
+    # Mask the AZ spans so their "1221/26" tails aren't read as internal ids.
+    rest = _SUBJECT_AZ_COURT_RE.sub(" ", note)
+    id_tokens = _NOTE_INTERNAL_ID_RE.findall(rest)
+
+    collapsed = False
+    for tokens, normalize in (
+        (az_tokens, normalize_az_court),
+        (id_tokens, normalize_internal_id),
+    ):
+        if not tokens:
+            continue
+        values = {normalize(t) or t.strip().upper() for t in tokens}
+        if len(values) != 1:
+            return False
+        collapsed = collapsed or len(tokens) > 1
+    return collapsed
+
+
 def normalize_internal_id(raw: object) -> str | None:
     """Canonical Case.id candidate from an AI-extracted ``internal_id``.
 

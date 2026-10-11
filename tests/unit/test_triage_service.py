@@ -93,6 +93,23 @@ def test_compute_review_reasons_low_confidence(db_session):
 
 
 @pytest.mark.unit
+def test_compute_review_reasons_ignores_confidence_of_empty_field(db_session):
+    """A low grade on an absent reference must not raise low_confidence."""
+    from app.models.database import Document
+
+    doc = Document(
+        title="Test",
+        case_id="ADV-123",
+        originator_type=OriginatorType.OWN,
+        sender="me@example.com",
+        received_date=datetime.now(UTC),
+        internal_id=None,
+        extraction_confidence={"internal_id": "low"},
+    )
+    assert "low_confidence" not in compute_review_reasons(doc)
+
+
+@pytest.mark.unit
 def test_compute_review_reasons_unresolved_relationship(db_session, sample_case):
     """Unconfirmed AI relationships should trigger unresolved_relationship reason."""
     from app.models.database import Document, DocumentRelationship

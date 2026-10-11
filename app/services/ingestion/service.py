@@ -149,13 +149,15 @@ def compute_review_reasons(doc: Document) -> list[str]:
     # 3. Extraction Confidence
     conf = doc.extraction_confidence or {}
     # If any primary field is low/medium confidence, flag it
+    # A grade on an empty field is meaningless: whether the reference is
+    # complete is judged by ``missing_case_id``, not by model self-doubt.
     for field in [
         "internal_id",
         "sender",
         "issued_date",
         "originator_type",
     ]:
-        if conf.get(field) in ("low", "medium"):
+        if getattr(doc, field, None) and conf.get(field) in ("low", "medium"):
             reasons.append("low_confidence")
             break
 

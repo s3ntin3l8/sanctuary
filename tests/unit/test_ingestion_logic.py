@@ -7,7 +7,10 @@ from app.services.ingestion import (
     extract_sender,
     normalize_az_court,
 )
-from app.services.ingestion.extractors import canonical_az_court
+from app.services.ingestion.extractors import (
+    canonical_az_court,
+    reference_format_only,
+)
 from app.services.ingestion.service import _h1_looks_clean
 
 # ---------------------------------------------------------------------------
@@ -249,3 +252,27 @@ def test_infer_case_type_from_az():
     # Non-canonical input → None (function requires normalize_az_court output)
     assert infer_case_type_from_az("003F426/25") is None
     assert infer_case_type_from_az("") is None
+
+
+@pytest.mark.unit
+def test_reference_format_only_detects_formatting_differences():
+    assert reference_format_only(
+        "Hint provided AZ '3 F 1221/26' whereas document shows '003 F 1221/26'"
+    )
+    assert reference_format_only("Hint 8441/25 but document says 8441-25")
+
+
+@pytest.mark.unit
+def test_reference_format_only_keeps_substantive_notes():
+    # Two genuinely different Aktenzeichen.
+    assert not reference_format_only(
+        "Hint '3 F 1221/26' but document shows '2 F 2022/23'"
+    )
+    # A single reference, or none, is not a formatting-only note.
+    assert not reference_format_only("Document is dated after the hearing it describes")
+    assert not reference_format_only("Hint AZ '3 F 1221/26' is missing")
+    # Formatting of one reference must not hide a different amount/date dispute
+    # that carries a second, different reference.
+    assert not reference_format_only(
+        "'003 F 1221/26' vs '3 F 1221/26', but the letter cites 2 K 92/25"
+    )

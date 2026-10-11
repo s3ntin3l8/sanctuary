@@ -112,7 +112,8 @@ def test_review_view_shape(db_session, sample_case):
     (action,) = body["actions"]
     assert action["title"] == "File counter-statement" and action["status"] == "open"
     sender = next(f for f in body["metadata"] if f["field"] == "sender")
-    assert sender["confidence"] == "low"
+    # The sender is empty, so its stored "low" grade is not surfaced.
+    assert sender["value"] is None and sender["confidence"] is None
     assert [s["key"] for s in body["pipeline"]["stages"]][:2] == ["extract", "metadata"]
     assert body["claims_status"] == "pending_triage"
     assert [c["id"] for c in body["cases"]] == [sample_case.id]
