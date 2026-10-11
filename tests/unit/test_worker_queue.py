@@ -589,3 +589,43 @@ def test_worker_status_is_cached(monkeypatch):
     assert system_status.worker_status() == system_status.worker_status()
     assert len(calls) == 1
     system_status._worker_cache = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_system_caches():
+    from app.services import system_status
+
+    system_status._worker_cache = None
+    system_status._snapshot_cache = None
+    yield
+    system_status._worker_cache = None
+    system_status._snapshot_cache = None
+
+
+@pytest.mark.unit
+def test_system_snapshot_is_reused_for_a_few_seconds(monkeypatch):
+    from app.services import system_status
+
+    calls = []
+    monkeypatch.setattr(
+        system_status, "_build_snapshot", lambda: calls.append(1) or {"workers": None}
+    )
+    assert system_status.system_snapshot() == system_status.system_snapshot()
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+def test_list_inflight_caps_entries_and_label_length(monkeypatch):
+    from app.services import ai_inflight
+
+    class FakeRedis:
+        def scan_iter(self, **_):
+            return iter([f"k{i}" for i in range(80)])
+
+        def mget(self, keys):
+            return ["x" * 500 for _ in keys]
+
+    monkeypatch.setattr(ai_inflight, "_get_sync_client", lambda: FakeRedis())
+    labels = ai_inflight.list_inflight()
+    assert len(labels) == 50
+    assert all(len(label) == 200 for label in labels)

@@ -70,7 +70,22 @@ def queue_depth() -> dict[str, int] | None:
         return None
 
 
+_SNAPSHOT_CACHE_SECONDS = 3.0
+_snapshot_cache: tuple[float, dict] | None = None
+
+
 def system_snapshot() -> dict:
+    """Workers, backlog and GPU gate; reused for a few seconds across polls."""
+    global _snapshot_cache
+    now = time.monotonic()
+    if _snapshot_cache and now - _snapshot_cache[0] < _SNAPSHOT_CACHE_SECONDS:
+        return _snapshot_cache[1]
+    snapshot = _build_snapshot()
+    _snapshot_cache = (now, snapshot)
+    return snapshot
+
+
+def _build_snapshot() -> dict:
     depth = queue_depth()
     return {
         # Without the broker there is nobody to ask, and Celery's inspect would

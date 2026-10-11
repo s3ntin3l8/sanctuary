@@ -511,13 +511,8 @@ def gate_snapshot() -> dict | None:
     """
     try:
         client = _get_client()
-        holders = sorted(
-            {
-                family
-                for key in client.scan_iter(match=_CALL_KEY_PREFIX + "*", count=100)
-                if (family := client.get(key))
-            }
-        )
+        keys = list(client.scan_iter(match=_CALL_KEY_PREFIX + "*", count=100))
+        holders = sorted({f for f in (client.mget(keys) if keys else []) if f})
         waiting = sum(
             1 for _ in client.scan_iter(match=_WAIT_KEY_PREFIX + "*", count=100)
         )

@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from sqlalchemy import func, or_
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Query, Session
+from sqlalchemy.orm import Query, Session, joinedload, selectinload
 
 from app.core.timezone import now_utc
 from app.models.database import Document, DocumentPipelineStage, User
@@ -54,7 +54,11 @@ def _get_queue_docs(
     )
     active = (
         _visible_to(
-            db.query(Document).filter(
+            db.query(Document)
+            .options(
+                selectinload(Document.stage_rows), joinedload(Document.ingest_batch)
+            )
+            .filter(
                 Document.pipeline_state.in_(
                     [
                         PipelineState.RUNNING,
@@ -78,7 +82,9 @@ def _get_queue_docs(
     pending = [d for d in active if d.pipeline_state == PipelineState.PENDING]
     failed = (
         _visible_to(
-            db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED),
+            db.query(Document)
+            .options(selectinload(Document.stage_rows))
+            .filter(Document.pipeline_state == PipelineState.FAILED),
             owner_id,
             visible_case_ids,
         )
