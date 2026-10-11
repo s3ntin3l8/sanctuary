@@ -112,23 +112,24 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
             onChange={(next) => edit(() => setIncludeSent(next))}
             label="Also import mail I sent to these senders"
           />
-          <span className="text-[12px] text-ink">Also import mail I sent to these senders</span>
+          <span aria-hidden="true" className="text-[12px] text-ink">
+            Also import mail I sent to these senders
+          </span>
         </div>
-        {includeSent && (
-          <Field
-            label="Your addresses"
-            htmlFor="own-addresses"
-            hint="Addresses you write to your lawyer from, e.g. you@gmail.com. Your own mail keeps its text even when it has attachments."
-          >
-            <input
-              id="own-addresses"
-              value={ownAddresses}
-              placeholder="you@gmail.com"
-              onChange={(e) => edit(() => setOwnAddresses(e.target.value))}
-              className={inputClass}
-            />
-          </Field>
-        )}
+        <Field
+          label="Your addresses"
+          htmlFor="own-addresses"
+          hint="Addresses you write to your lawyer from, e.g. you@gmail.com. Your own mail keeps its text even when it has attachments. Used only when sent mail is imported."
+        >
+          <input
+            id="own-addresses"
+            value={ownAddresses}
+            placeholder="you@gmail.com"
+            disabled={!includeSent}
+            onChange={(e) => edit(() => setOwnAddresses(e.target.value))}
+            className={inputClass}
+          />
+        </Field>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" variant="secondary" disabled={empty || save.isPending}>
             Save filters

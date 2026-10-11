@@ -228,11 +228,11 @@ test('gmail: filters save the sent-mail option and own addresses', async () => {
   })
 })
 
-test('gmail: turning off sent mail hides the address field', async () => {
+test('gmail: turning off sent mail disables the address field', async () => {
   stubApi({ 'GET /api/v1/settings/gmail': { body: gmail } })
   renderAt('/settings/gmail', <GmailPage />)
   await userEvent
     .setup()
     .click(await screen.findByRole('switch', { name: /Also import mail I sent/ }))
-  expect(screen.queryByLabelText('Your addresses')).toBeNull()
+  expect(screen.getByLabelText('Your addresses')).toBeDisabled()
 })

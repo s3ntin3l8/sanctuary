@@ -672,7 +672,12 @@ def _merge_import_outcome(
 
 
 def _import_one(
-    db: Session, get_service, user_id: int, work: dict, gmail_id: str
+    db: Session,
+    get_service,
+    user_id: int,
+    work: dict,
+    gmail_id: str,
+    own_addresses: list[str],
 ) -> None:
     """Ingest one message, updating ``work`` in place."""
     work["current"] = {
@@ -684,7 +689,7 @@ def _import_one(
             db,
             _raw_message(user_id, gmail_id, get_service),
             owner_id=user_id,
-            own_addresses=_own_addresses(_settings_json(db, user_id)),
+            own_addresses=own_addresses,
         )
     except (GmailReconnectRequired, SecretsError):
         raise  # not this message's fault: end the run and ask for a reconnect
@@ -779,8 +784,11 @@ def import_gmail_messages(self, user_id: int, run_id: str):
             get_service = _LazyService(
                 lambda: connect_gmail(db, user_id, _settings_json(db, user_id))
             )
+            own = _own_addresses(_settings_json(db, user_id))
             while work["remaining"]:
-                _import_one(db, get_service, user_id, work, work["remaining"].pop(0))
+                _import_one(
+                    db, get_service, user_id, work, work["remaining"].pop(0), own
+                )
                 if (
                     gmail_runs.update_run("import", user_id, run_id, _progress(work))
                     is None
