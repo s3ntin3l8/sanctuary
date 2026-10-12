@@ -50,7 +50,7 @@ from app.config import (
     SCAN_PROCESSING_DIR,
 )
 from app.core.log_formatter import LocalTimeFormatter
-from app.core.rate_limit import limiter
+from app.core.rate_limit import exempt_asgi, limiter
 from app.core.secrets import SecretsError
 from app.mcp.oauth import oauth_routes
 from app.mcp.server import mcp_gateway
@@ -1010,7 +1010,7 @@ app.include_router(spa_pages_router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)
 # The exact path /mcp (Mount would redirect it to /mcp/); auth is in AuthGateMiddleware.
-app.router.routes.append(Route("/mcp", mcp_gateway))
+app.router.routes.append(Route("/mcp", exempt_asgi(mcp_gateway, "mcp-gateway")))
 app.router.routes.extend(oauth_routes())
 
 

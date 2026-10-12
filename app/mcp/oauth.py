@@ -50,7 +50,12 @@ from starlette.routing import Route, request_response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import dependencies
-from app.core.rate_limit import OAUTH_REGISTER_LIMIT, OAUTH_TOKEN_LIMIT, hit_ip_limit
+from app.core.rate_limit import (
+    OAUTH_REGISTER_LIMIT,
+    OAUTH_TOKEN_LIMIT,
+    exempt_asgi,
+    hit_ip_limit,
+)
 from app.services import api_token_service, oauth_service
 from app.services.oauth_service import OAuthError
 
@@ -259,7 +264,8 @@ def _handler(handle, *, methods: list[str], cors: bool, limit=None, name="") -> 
         request_response(handle), DEFAULT_MAX_REQUEST_BODY_SIZE
     )
     app = _Guarded(app, limit=limit, name=name)
-    return _cors(app, methods) if cors else app
+    app = _cors(app, methods) if cors else app
+    return exempt_asgi(app, f"oauth-{name or handle.__name__}")
 
 
 async def _authorization_server_metadata(request: Request) -> Response:

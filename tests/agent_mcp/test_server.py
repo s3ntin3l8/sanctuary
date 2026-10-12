@@ -82,3 +82,38 @@ def test_host_allowlist_is_optional_and_enforced_when_set(
         json={},
     )
     assert allowed.status_code != 421
+
+
+def test_mcp_and_oauth_routes_survive_the_default_rate_limiter(
+    mcp_client, mcp_session, make_token, alice
+):
+    """SlowAPIMiddleware names the matched endpoint via ``__name__``, which the raw
+    ASGI /mcp and OAuth endpoints lack: with the limiter on they all 500'd."""
+    from app.core.rate_limit import limiter
+
+    limiter.enabled = True  # the autouse fixture restores the previous value
+    for path in (
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+    ):
+        assert mcp_client.get(path).status_code == 200, path
+    # 401 from AuthGateMiddleware: the request got past slowapi to the auth layer.
+    assert mcp_client.post("/mcp", json={}).status_code == 401
+    # The OAuth POST endpoints (wrapped by _handler) reach their own handlers.
+    assert mcp_client.post("/register", json={}).status_code == 400
+    assert mcp_client.post("/token", data={}).status_code == 401
+    assert mcp_client.post("/revoke", data={}).status_code == 400
+    session = mcp_session(make_token(alice))
+    assert "result" in session.rpc("tools/list")
+
+
+def test_exempt_asgi_registers_the_key_slowapi_looks_up():
+    from app.core.rate_limit import exempt_asgi, limiter
+
+    class Endpoint:
+        async def __call__(self, scope, receive, send): ...
+
+    endpoint = exempt_asgi(Endpoint(), "probe")
+    assert f"{endpoint.__module__}.{endpoint.__name__}" in limiter._exempt_routes
+    assert endpoint.__module__ == "app.core.rate_limit"
