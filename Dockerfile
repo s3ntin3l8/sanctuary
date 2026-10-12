@@ -24,6 +24,28 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Headless OpenCV: docling-ibm-models and rapidocr both declare the GUI
+# `opencv-python` wheel, which links Qt/GL and forces libgl1 (mesa/LLVM, ~200 MB)
+# into the runtime image. Same `cv2` module, so swap it for the headless build
+# (keep the version in lockstep with requirements.txt).
+RUN pip uninstall -y opencv-python \
+    && pip install --no-cache-dir opencv-python-headless==5.0.0.93
+
+# Prune dead weight HERE, before the venv is COPYed into the runtime stage
+# (deleting after the COPY would only add a layer and save nothing):
+#   tests/test dirs, torch headers/test binaries (torch.testing is imported by torch
+#   itself, keep it), the 600+ Google API discovery
+#   docs (only gmail.v1 is used), and pip/setuptools.
+RUN SP=/opt/venv/lib/python3.14/site-packages \
+    && find "$SP" -mindepth 2 -type d \( -name tests -o -name test \) -prune -exec rm -rf {} + \
+    && rm -rf "$SP/torch/include" \
+    && find "$SP/torch/bin" -type f ! -name torch_shm_manager -delete \
+    && find "$SP/googleapiclient/discovery_cache/documents" -type f ! -name gmail.v1.json -delete \
+    && rm -rf "$SP"/pip "$SP"/pip-* "$SP"/setuptools "$SP"/setuptools-* "$SP"/wheel "$SP"/wheel-* /opt/venv/bin/pip*
+
+# Fail the build if the prune broke an import the app relies on.
+RUN python -c "import cv2, torch, onnxruntime; from rapidocr import RapidOCR; from docling.document_converter import DocumentConverter; from googleapiclient.discovery import build; build('gmail', 'v1', developerKey='x', cache_discovery=False)"
+
 # --- Stage 3: Final runtime image ---
 FROM python:3.14-slim
 
@@ -31,12 +53,14 @@ FROM python:3.14-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+# Docling runs several OCR children in parallel; one OpenMP thread per tesseract.
+ENV OMP_THREAD_LIMIT=1
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
 # Runtime shared libs only — no compilers:
-#   libgl1 + libglib2.0-0  → OpenCV / Docling page rendering
+#   libglib2.0-0          → OpenCV (headless) / Docling page rendering
 #   libmagic1              → file-type sniffing
 #   libgomp1               → OpenMP runtime for torch / onnxruntime
 #   curl                   → container healthcheck
@@ -44,7 +68,6 @@ WORKDIR /app
 #                            fallback when Chandra errors; Docling shells out to the
 #                            `tesseract` CLI with lang=deu+eng
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
     libglib2.0-0 \
     libmagic1 \
     libgomp1 \

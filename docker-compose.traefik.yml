@@ -133,6 +133,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
+      - model_cache:/root/.cache  # docling/HF models survive image updates
     networks:
       - internal
     depends_on:
@@ -162,6 +163,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
+      - model_cache:/root/.cache  # docling/HF models survive image updates
     networks:
       - internal
     depends_on:
@@ -222,4 +224,5 @@ networks:
 volumes:
   db_data:
   redis_data:
+  model_cache:
   letsencrypt:

@@ -182,6 +182,39 @@ _ocr_converter: object | None = None
 _ocr_converter_lock = threading.Lock()
 
 
+def torch_threads_per_child(cores: int | None, concurrency: int) -> int:
+    """Split the cores across the ingest pool so children don't oversubscribe.
+
+    Docling defaults to 4 torch threads per converter; with ``concurrency``
+    prefork children extracting at once that exceeds the core count.
+    """
+    return max(1, (cores or 1) // max(1, concurrency))
+
+
+def _accelerator_options():
+    """Docling accelerator options sized to this worker's OCR concurrency."""
+    from docling.datamodel.accelerator_options import AcceleratorOptions
+
+    from app.config import SessionLocal
+    from app.services.user_settings_service import (
+        DEFAULT_OCR_CONCURRENCY,
+        get_ocr_concurrency,
+    )
+
+    try:
+        db = SessionLocal()
+        try:
+            concurrency = get_ocr_concurrency(db)
+        finally:
+            db.close()
+    except Exception:
+        logger.warning("OCR concurrency unreadable; using default", exc_info=True)
+        concurrency = DEFAULT_OCR_CONCURRENCY
+    return AcceleratorOptions(
+        num_threads=torch_threads_per_child(os.cpu_count(), concurrency)
+    )
+
+
 def _build_converter(force_full_page_ocr: bool = False):
     """Construct a Docling DocumentConverter with Tesseract OCR configured."""
     import time
@@ -213,6 +246,7 @@ def _build_converter(force_full_page_ocr: bool = False):
         if isinstance(pipeline_options.table_structure_options, TableStructureOptions):
             pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
         pipeline_options.do_ocr = True
+        pipeline_options.accelerator_options = _accelerator_options()
         pipeline_options.ocr_options = TesseractCliOcrOptions(
             lang=["deu", "eng"],
             force_full_page_ocr=force_full_page_ocr,
@@ -295,6 +329,7 @@ def _build_image_ocr_converter():
     pipeline_options.do_table_structure = True
     pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
     pipeline_options.do_ocr = True
+    pipeline_options.accelerator_options = _accelerator_options()
     pipeline_options.layout_options = LayoutOptions(model_spec=_layout_model_spec())
     pipeline_options.ocr_options = TesseractCliOcrOptions(
         lang=["deu", "eng"],
