@@ -74,7 +74,15 @@ async def gmail_oauth_callback(
         logger.warning("OAuth state mismatch: expected=%s got=%s", saved_state, state)
         raise HTTPException(status_code=400, detail="OAuth state mismatch")
 
-    flow = get_oauth_flow(gmail_oauth_config.get_oauth_client(db, request))
+    client = gmail_oauth_config.get_oauth_client(db, request)
+    if not client.configured:
+        # Cleared between /start and Google's redirect back.
+        raise HTTPException(
+            status_code=409,
+            detail="Google OAuth client is not configured. "
+            "Set it up in Settings → Gmail first.",
+        )
+    flow = get_oauth_flow(client)
     try:
         flow.fetch_token(code=code, code_verifier=code_verifier)
     except OAuth2Error as exc:

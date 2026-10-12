@@ -1,5 +1,6 @@
 """Settings → Gmail: the instance-wide Google OAuth client (UI over env)."""
 
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -143,3 +144,12 @@ def test_unreadable_secret_does_not_take_the_page_down(db_session, monkeypatch):
         ).status_code
         == 200
     )
+
+
+def test_callback_after_the_client_was_cleared_is_a_clean_409():
+    client.put(f"{URL}/oauth-client", json=BODY)
+    with patch("app.api.ingestion_settings.secrets.token_urlsafe", return_value="s1"):
+        client.get("/api/ingest/gmail/oauth/start", follow_redirects=False)
+    client.delete(f"{URL}/oauth-client")
+    resp = client.get("/api/ingest/gmail/oauth/callback?code=c&state=s1")
+    assert resp.status_code == 409
