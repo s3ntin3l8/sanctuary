@@ -264,10 +264,15 @@ def set_gmail_credentials(
     data = dict(settings.settings_json or {})
     data["gmail_credentials_json"] = secrets.encrypt(credentials_json)
     data["gmail_connected_at"] = connected_at
-    # None = detection failed: keep what we had (connect_gmail retries later).
     if own_addresses is not None:
         data["gmail_own_addresses"] = own_addresses
         data["gmail_own_addresses_checked_at"] = connected_at
+    else:
+        # Detection failed. The list may belong to a previously connected
+        # account, so drop it rather than keep it: connect_gmail re-reads an
+        # empty list before the next sync or import.
+        data.pop("gmail_own_addresses", None)
+        data.pop("gmail_own_addresses_checked_at", None)
     # Anchor incremental sync at connect time so the first poll never pulls the
     # senders' whole history (that is an explicit, bounded import). A reconnect
     # keeps the existing watermark.

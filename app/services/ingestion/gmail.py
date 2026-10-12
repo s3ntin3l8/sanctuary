@@ -106,11 +106,14 @@ def fetch_own_addresses(service: Any) -> list[str]:
     return sorted(a for a in found if a)
 
 
-def detect_own_addresses(credentials: Credentials) -> list[str] | None:
-    """``fetch_own_addresses`` for fresh credentials; None when Google can't say."""
+def detect_own_addresses(credentials_json: str) -> list[str] | None:
+    """``fetch_own_addresses`` for fresh credentials; None when Google can't say.
+
+    Goes through ``get_gmail_service`` so the read-only scope check and the
+    credential wiring stay in one place.
+    """
     try:
-        service = build("gmail", "v1", credentials=credentials, cache_discovery=False)
-        return fetch_own_addresses(service)
+        return fetch_own_addresses(get_gmail_service(credentials_json).service)
     except Exception:
         logger.warning("Could not read the Gmail account's addresses", exc_info=True)
         return None

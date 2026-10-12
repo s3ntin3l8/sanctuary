@@ -540,6 +540,21 @@ def test_callback_still_connects_when_address_detection_fails(db_session):
     assert client.get("/api/v1/settings/gmail").json()["connected"] is True
 
 
+def test_reconnect_with_failed_detection_drops_the_previous_accounts_list(
+    db_session,
+):
+    uid = _admin(db_session)
+    _connect(
+        db_session,
+        uid,
+        gmail_own_addresses=["old-account@example.com"],
+        gmail_own_addresses_checked_at="2026-01-01T00:00:00+00:00",
+    )
+    with patch("app.api.ingestion_settings.detect_own_addresses", return_value=None):
+        _oauth_callback([READONLY_SCOPE])
+    assert client.get("/api/v1/settings/gmail").json()["own_addresses"] == []
+
+
 def test_disconnect_forgets_the_detected_addresses(db_session):
     uid = _admin(db_session)
     _connect(
