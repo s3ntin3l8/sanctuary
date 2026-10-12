@@ -104,6 +104,13 @@ class Base(DeclarativeBase):
     pass
 
 
+def _agent_token_column():
+    """Set when an external agent (MCP API token) created the row; NULL for the user's own."""
+    return mapped_column(
+        Integer, ForeignKey("api_tokens.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
@@ -696,6 +703,7 @@ class IngestBatch(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
     # The user who ingested this batch (upload / gmail / scan-folder). Drives the
     # per-user triage inbox. NULL only for legacy/unowned rows.
     owner_id: Mapped[int | None] = mapped_column(
@@ -841,6 +849,7 @@ class DocumentRelationship(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
     from_document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
@@ -929,6 +938,7 @@ class ActionItem(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
@@ -1006,6 +1016,7 @@ class Claim(Base):
     __table_args__ = (Index("ix_claims_status", "status"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
 
     claim_text: Mapped[str] = mapped_column(Text, nullable=False)
     claim_type: Mapped[ClaimType] = mapped_column(
@@ -1053,6 +1064,7 @@ class ClaimEvidence(Base):
         ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
     claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
@@ -1211,6 +1223,7 @@ class UserReaction(Base):
     __table_args__ = (Index("ix_user_reactions_reaction", "reaction"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
     document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )
@@ -1239,6 +1252,7 @@ class DocumentPin(Base):
     __table_args__ = (Index("ix_document_pins_passage", "passage_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_token_id: Mapped[int | None] = _agent_token_column()
     document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )

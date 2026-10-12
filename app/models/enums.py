@@ -365,3 +365,4 @@ class AuditEventType(enum.StrEnum):
     DATA_EXPORTED = "data_exported"
     API_TOKEN_CREATED = "api_token_created"
     API_TOKEN_REVOKED = "api_token_revoked"
+    MCP_WRITE = "mcp_write"
