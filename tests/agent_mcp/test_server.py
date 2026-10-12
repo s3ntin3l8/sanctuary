@@ -99,5 +99,9 @@ def test_mcp_and_oauth_routes_survive_the_default_rate_limiter(
     ):
         assert mcp_client.get(path).status_code == 200, path
     assert mcp_client.post("/mcp", json={}).status_code == 401
+    # The OAuth POST endpoints (wrapped by _handler) reach their own handlers.
+    assert mcp_client.post("/register", json={}).status_code == 400
+    assert mcp_client.post("/token", data={}).status_code == 401
+    assert mcp_client.post("/revoke", data={}).status_code == 400
     session = mcp_session(make_token(alice))
     assert "result" in session.rpc("tools/list")

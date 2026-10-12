@@ -55,6 +55,16 @@ test('lists every users tokens with owner, scope, status and activity count', as
   expect(screen.getAllByRole('button', { name: 'Revoke' })).toHaveLength(1)
 })
 
+test('points to Settings → Agent access for creating tokens, even with none yet', async () => {
+  stubApi({ 'GET /api/v1/admin/agent-access': { body: { ...view, tokens: [] } } })
+  renderAt('/admin/agent-access', <AdminAgentAccessPage />)
+  expect(await screen.findByText('No tokens yet.')).toBeVisible()
+  expect(screen.getByRole('link', { name: 'Settings → Agent access' })).toHaveAttribute(
+    'href',
+    '/settings/agent-access',
+  )
+})
+
 test('switching MCP off asks for confirmation first', async () => {
   const fetch = stubApi({
     'GET /api/v1/admin/agent-access': { body: view },

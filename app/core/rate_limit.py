@@ -14,6 +14,7 @@ from limits.storage import storage_from_string
 from limits.strategies import FixedWindowRateLimiter
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.types import ASGIApp
 
 from app.config import RATE_LIMIT_STORAGE_URI
 
@@ -37,7 +38,7 @@ limiter = Limiter(
 )
 
 
-def exempt_asgi(endpoint, name: str):
+def exempt_asgi(endpoint: ASGIApp, name: str) -> ASGIApp:
     """Exempt a raw ASGI endpoint from slowapi's default limit and return it.
 
     SlowAPIMiddleware names the matched route as ``endpoint.__module__.__name__``,
@@ -45,7 +46,11 @@ def exempt_asgi(endpoint, name: str):
     the lookup raises and the request 500s. These endpoints carry their own
     limits (per-token for /mcp, per-IP in the OAuth guard), so exempt them.
     """
-    endpoint.__name__ = name
+    # Both dunders must be set before exempt(): it keys _exempt_routes on
+    # "{__module__}.{__name__}", the same string the middleware looks up. Its
+    # returned wrapper is discarded on purpose (we only want the side effect);
+    # Route() must keep the original endpoint.
+    endpoint.__name__ = name  # type: ignore[union-attr]
     endpoint.__module__ = __name__
     limiter.exempt(endpoint)
     return endpoint
