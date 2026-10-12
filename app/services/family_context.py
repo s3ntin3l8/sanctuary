@@ -208,6 +208,8 @@ def propagate(db: Session, doc: Document) -> list[Document]:
             m.proceeding_id = None
             current = None
         az = own_az(m)
+        # Only when the relay itself has a proceeding; without one the members
+        # fall through to the observed-AZ rule below.
         if relay_headed and family_proc is not None and m.id not in root_ids:
             # The relay's proceeding governs what it forwards, own AZ included
             # (``az_court`` stays as printed, so the old reference is still shown).

@@ -195,12 +195,15 @@ _RELAY_CUE_LOOKBACK = 60
 _RELAY_CUE_PROMPT_CHARS = 120
 _RE_ADDRESSEE_PREFIX = re.compile(r"\bAn(?:\s+(?:das|den))?\s*:?\s*$", re.IGNORECASE)
 # Forwarding wording only: "Stellung nehmen" alone asks for a reply and "Abschrift"
-# alone turns up in boilerplate about filing copies, so neither is a cue.
+# alone turns up in boilerplate about filing copies, so neither is a cue. The verb
+# cues are tried first: "Bekanntgabe" also heads the title line of such covers
+# ("Bekanntgabe Antragsschrift") and must not shadow the forwarding sentence.
 _RE_RELAY_CUE = re.compile(
     r"übersende|übersandt|übersenden|\banbei\b|\banliegend|beigefügt"
-    r"|in der Anlage|zur Kenntnisnahme|\bBekanntgabe\b",
+    r"|in der Anlage|zur Kenntnisnahme",
     re.IGNORECASE,
 )
+_RE_RELAY_CUE_FALLBACK = re.compile(r"\bBekanntgabe\b", re.IGNORECASE)
 _RE_SENTENCE_BREAK = re.compile(r"[.!?]\s|\n\s*\n")
 _RE_SALUTATION_NAME = re.compile(
     r"Sehr\s+geehrte[rn]?\s+((?:Damen\s+und\s+Herren|Herr|Frau)[^,\n]{0,40})",
@@ -222,10 +225,11 @@ def _page_court_letterhead(text: str) -> bool:
 
 def _page_relay_cue(text: str) -> str | None:
     """The sentence around the first forwarding phrase, flattened."""
-    match = _RE_RELAY_CUE.search(text)
+    match = _RE_RELAY_CUE.search(text) or _RE_RELAY_CUE_FALLBACK.search(text)
     if match is None:
         return None
-    # Scans often lack the full stop: never reach back further than a line or so.
+    # Scans often lack the full stop: the look-back is deliberately bounded, so a
+    # title line before the sentence is not swept into the cue.
     start = max(0, match.start() - _RELAY_CUE_LOOKBACK)
     for brk in _RE_SENTENCE_BREAK.finditer(text, start, match.start()):
         start = brk.end()
@@ -554,7 +558,8 @@ def _apply_relay_spans(
     itself. Letters the relay carries, addressed to anyone else or filed under
     another Aktenzeichen, stay inside: the court decides where it files what it
     forwards. Deterministic, like the marker-page rule: the outline model cannot
-    see the forwarding sentence when it sits past the stored head.
+    see the forwarding sentence when it sits past the stored head. Only cuts that
+    are parts are touched: a low-confidence proposal starts uncut and keeps its kind.
     """
     part_at = {p.first: p for p in parts[1:]}
     relay: dict | None = None

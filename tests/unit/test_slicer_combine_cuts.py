@@ -337,3 +337,29 @@ def test_outline_block_carries_the_forwarding_sentence():
     prompt = _outline_prompt(parts, pages)
     assert "Forwards: anbei übersandt." in prompt
     assert prompt.count("Forwards:") == 1
+
+
+def test_a_title_naming_the_bekanntgabe_does_not_shadow_the_forwarding_sentence():
+    text = (
+        "Amtsgericht Ingolstadt\nBekanntgabe Antragsschrift\n\n"
+        "Sehr geehrter Herr Hansen,\n\nanbei wird Ihnen die Antragsschrift übersandt."
+    )
+    assert _page_relay_cue(text) == "anbei wird Ihnen die Antragsschrift übersandt."
+    # Without any verb cue the title still marks the page as a relay.
+    assert _page_relay_cue("Bekanntgabe Antragsschrift") == "Bekanntgabe Antragsschrift"
+
+
+def test_every_relay_in_the_bundle_gets_its_forwards_line():
+    cuts = [_cut(3)]
+    parts = _outline_parts(cuts, page_count=4)
+    pages = [{**_RELAY, "text_head": "A", "text_tail": "B"}] * 2
+    pages += [
+        {
+            **_RELAY,
+            "relay_cue": "zweite Weiterleitung.",
+            "text_head": "C",
+            "text_tail": "D",
+        }
+    ] * 2
+    prompt = _outline_prompt(parts, pages)
+    assert prompt.count("Forwards:") == 2
