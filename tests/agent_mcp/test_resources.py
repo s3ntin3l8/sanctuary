@@ -46,6 +46,7 @@ def test_templates_are_listed(mcp_session, make_token, alice):
         "sanctuary://case/{case_id}/truthmap",
         "sanctuary://case/{case_id}/timeline",
         "sanctuary://document/{document_id}",
+        "sanctuary://document/{document_id}/original",
     }
 
 
