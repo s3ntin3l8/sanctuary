@@ -94,4 +94,6 @@ make migrate    # Run migrations
 
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
 
+**Model cache.** `worker-ingest` and `worker-ai` mount the `model_cache` volume at `/root/.cache` so Docling/HF models are downloaded once, not on every image update. The image uses headless OpenCV and prunes tests/headers/unused Google discovery docs in the builder stage — keep prunes there, never after the `COPY --from`.
+
 **Testing.** `pytest`/`make test` runs across CPU cores by default (pytest-xdist, `-n auto`); each worker starts its own dedicated Postgres+pgvector container (`testcontainers`, session-scoped fixture in `tests/conftest.py`) on a random host port, so workers of the same invocation — and separate, overlapping `pytest` invocations — never contend on a shared database. Requires a working Docker socket.

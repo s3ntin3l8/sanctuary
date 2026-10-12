@@ -55,3 +55,8 @@ gemini.md
 Dockerfile*
 docker-compose*
 .dockerignore
+docs/
+GEMINI.md
+requirements-dev.txt
+codecov.yml
+release-please-config.json
