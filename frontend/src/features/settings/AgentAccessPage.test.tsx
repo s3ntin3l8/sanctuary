@@ -64,7 +64,7 @@ test('creating an all-cases token shows the one-time command', async () => {
       expires_in_days: null,
     }),
   )
-  expect(await screen.findByText(/Authorization: Bearer sct_SECRET/)).toBeVisible()
+  expect(await screen.findByText(/--header "Authorization: \w+ sct_SECRET"/)).toBeVisible()
 })
 
 test('a per-case token cannot be created until a case is picked', async () => {

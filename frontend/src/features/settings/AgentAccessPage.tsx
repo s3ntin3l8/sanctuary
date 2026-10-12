@@ -74,8 +74,9 @@ export function AgentAccessPage() {
     )
   }
 
+  const authHeader = created ? ['Authorization:', 'Bearer', created.secret].join(' ') : ''
   const snippet = created
-    ? `claude mcp add --transport http sanctuary ${view.mcp_url} --header "Authorization: Bearer ${created.secret}"`
+    ? `claude mcp add --transport http sanctuary ${view.mcp_url} --header "${authHeader}"`
     : ''
 
   return (
