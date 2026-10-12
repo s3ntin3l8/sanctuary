@@ -217,3 +217,57 @@ def test_prepare_survives_a_failing_outline(db_session, tmp_path, monkeypatch):
         "letter",
         "letter",
     ]
+
+
+@pytest.mark.unit
+def test_prepare_folds_a_courts_forwarded_filings_under_its_cover(
+    db_session, tmp_path, monkeypatch
+):
+    """Batch #4's shape: the forwarding sentence sits past the stored head, the
+    per-boundary judgment calls the motion a letter, and the outline (blind to
+    the sentence) agrees. The relay rule still makes the whole run one bundle."""
+    from app.services.ingestion import slicer
+
+    pages_text = [
+        "Amtsgericht Ingolstadt Abteilung für Familiensachen "
+        + "Anschrift " * 60
+        + "Sehr geehrter Herr Hansen,\n\nanbei wird Ihnen das Gesuch um "
+        "Verfahrenskostenhilfe zusammen mit der Antragsschrift übersandt.",
+        "Seite 2 Mit freundlichen Grüßen Auf Anordnung",
+        "1 1 An: Amtsgericht Ingolstadt Az.: 003 F 1221/26 Sehr geehrte Frau Richterin,",
+        "Amtsgericht Ingolstadt Sehr geehrte Frau Liu, ab Bekanntgabe Stellung nehmen",
+        "An: Amtsgericht Ingolstadt Az.: 3 F 2022/23 Sehr geehrte Damen und Herren,",
+    ]
+    batch = _scan_batch(db_session, tmp_path, len(pages_text))
+    texts = iter(pages_text)
+    monkeypatch.setattr(slicer, "_ocr_page_text", lambda img: next(texts))
+
+    async def judge(candidates, model):
+        return {
+            c.page: {"is_new_document": True, "kind": "letter", "notes": "new"}
+            for c in candidates
+            if c.page in (3, 4, 5)
+        }
+
+    prompts: list[str] = []
+
+    async def outline(prompt, n_parts, model):
+        prompts.append(prompt)
+        return {"parts": [{"part": i, "kind": "letter"} for i in range(1, n_parts + 1)]}
+
+    monkeypatch.setattr(slicer, "_ai_cut_judgments", judge)
+    monkeypatch.setattr(slicer, "_ai_outline", outline)
+
+    slicer.prepare(batch.id)
+
+    db_session.refresh(batch)
+    slicing = batch.meta["slicing"]
+    assert [(c["page"], c["kind"]) for c in slicing["proposed_cuts"]] == [
+        (3, "attachment"),
+        (4, "attachment"),
+        (5, "attachment"),
+    ]
+    assert "relay: anbei wird Ihnen" in slicing["proposed_cuts"][0]["notes"]
+    assert "Forwards: anbei wird Ihnen" in prompts[0]
+    assert slicing["pages"][0]["court_letterhead"] is True
+    assert slicing["pages"][2]["court_letterhead"] is False

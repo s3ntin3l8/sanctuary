@@ -33,10 +33,18 @@ def is_court_name(name: str | None) -> bool:
     Useful both for sender fields on Document and for free-text party names
     on case.opposing_parties / case.parties.
     """
-    if not name:
-        return False
-    lower = name.lower()
-    return any(fragment in lower for fragment in _COURT_SENDER_FRAGMENTS)
+    return court_name_offset(name) is not None
+
+
+def court_name_offset(text: str | None) -> int | None:
+    """Index of the first recognized court term in ``text`` (case-insensitive),
+    or None. Lets a caller tell a court's letterhead from a court named as the
+    addressee further along the line."""
+    if not text:
+        return None
+    lower = text.lower()
+    hits = [i for f in _COURT_SENDER_FRAGMENTS if (i := lower.find(f)) >= 0]
+    return min(hits) if hits else None
 
 
 # Substrings that uniquely identify entities that PHASE1_METADATA_SYSTEM's

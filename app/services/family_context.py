@@ -9,7 +9,10 @@ Two rules govern the propagation:
 * the **proceeding** cascades only to members that print no Aktenzeichen of
   their own. A document's own AZ always beats an inherited proceeding
   ("observed beats inherited"): an exhibit that is a copy of an old ruling
-  from another matter must not be filed into the live proceeding.
+  from another matter must not be filed into the live proceeding. The one
+  exception is a family headed by a court relay: the court decides where it
+  files what it forwards (a filing sent under a closed Aktenzeichen reaches us
+  under the new one), so the relay's proceeding governs every member.
 
 Where a case came from is kept in ``extraction_confidence["case_id"]``:
 ``"inherited"`` (set here), ``"user_set"`` (a person filed it) or absent (the
@@ -195,6 +198,7 @@ def propagate(db: Session, doc: Document) -> list[Document]:
 
     family_proc = _family_proceeding(db, members, case_id)
     root_ids = {r.id for r in _roots(members)}
+    relay_headed = any(is_relay(r) for r in _roots(members))
     for m in members:
         if m.case_id != case_id:
             continue
@@ -204,7 +208,14 @@ def propagate(db: Session, doc: Document) -> list[Document]:
             m.proceeding_id = None
             current = None
         az = own_az(m)
-        if az:
+        # Only when the relay itself has a proceeding; without one the members
+        # fall through to the observed-AZ rule below.
+        if relay_headed and family_proc is not None and m.id not in root_ids:
+            # The relay's proceeding governs what it forwards, own AZ included
+            # (``az_court`` stays as printed, so the old reference is still shown).
+            if m.proceeding_id != family_proc.id and m.confirmed_at is None:
+                m.proceeding_id = family_proc.id
+        elif az:
             # Observed beats inherited: a proceeding a member did not earn by
             # its own AZ is dropped (unless a person confirmed it), then the one
             # its AZ names is used if the case has it. A root is the source of

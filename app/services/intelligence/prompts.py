@@ -127,6 +127,7 @@ Response shape:
 - "attachment": something a letter carries along — an Anlage, exhibit, copy, certificate, medical report, bank printout, a transmission receipt or service sheet (Zustellungsurkunde), or a Schriftsatz, report or decision that a COURT forwards.
 
 Court cover letters are relays: when a part is a court's letter that forwards material ("übersende ich Ihnen zur Kenntnisnahme", "Abschrift anbei", "in der Anlage", "zur Stellungnahme"), the parts after it are its enclosures — including letters written by someone else, such as the other side's lawyer or an authority — until a part opens a new, unrelated matter with its own court letterhead and its own salutation to the recipient.
+A part may carry a "Forwards:" line, the court's own forwarding sentence (e.g. "anbei wird Ihnen das Gesuch um Verfahrenskostenhilfe zusammen mit der Antragsschrift übersandt"): that part is a relay. A filing addressed TO the court ("An: Amtsgericht …", "Sehr geehrte Frau Richterin") is never a letter to the recipient: after a relay it is the relay's enclosure, even when it is filed under another Aktenzeichen.
 
 Part 1 is always a "letter". Answer for every part, using the numbers given. Use "attachment" when unsure."""
 

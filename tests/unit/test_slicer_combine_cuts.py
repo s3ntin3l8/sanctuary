@@ -6,12 +6,16 @@ failure modes must suppress the cut, not just one of them.
 
 from app.services.ingestion.slicer import (
     _apply_outline,
+    _apply_relay_spans,
     _Boundary,
     _boundary_signals,
     _combine_proposed_cuts,
     _conservative_ai_failure,
     _outline_parts,
     _outline_prompt,
+    _page_court_letterhead,
+    _page_relay_cue,
+    _page_salutation,
 )
 
 _CANDIDATES = [
@@ -221,3 +225,141 @@ def test_low_proposals_keep_their_judged_kind():
     outline = {"parts": [{"part": 2, "kind": "attachment", "notes": "n"}]}
     result = _apply_outline(cuts, parts, outline, frozenset())
     assert [c["kind"] for c in result] == ["letter", "attachment"]
+
+
+_COURT_COVER = (
+    "**Amtsgericht Ingolstadt** Abteilung für Familiensachen\n\n"
+    "Herrn Björn Hansen\n\nSehr geehrter Herr Hansen,\n\n"
+    "anbei wird Ihnen das **Gesuch um Verfahrenskostenhilfe** zusammen mit der "
+    "Antragsschrift übersandt. Sie können innerhalb von 2 Wochen Stellung nehmen.\n\n"
+    "Bitte reichen Sie Anlagen nur in Abschrift ein."
+)
+
+
+def test_court_letterhead_is_the_sender_not_the_addressee():
+    assert _page_court_letterhead(_COURT_COVER)
+    assert not _page_court_letterhead(
+        "1 1 An: Amtsgericht Ingolstadt\nAz.: 3 F 1221/26"
+    )
+    assert not _page_court_letterhead("An das Amtsgericht Ingolstadt")
+    assert not _page_court_letterhead(
+        "Rechtsanwälte Funk Haidl\nAmtsgericht Ingolstadt"
+    )
+
+
+def test_relay_cue_is_the_forwarding_sentence_only():
+    cue = _page_relay_cue(_COURT_COVER)
+    assert cue == (
+        "anbei wird Ihnen das Gesuch um Verfahrenskostenhilfe zusammen mit der "
+        "Antragsschrift übersandt."
+    )
+    # Asking for a statement or mentioning copies is not forwarding.
+    assert (
+        _page_relay_cue("Sie können Stellung nehmen. Anlagen nur in Abschrift.") is None
+    )
+
+
+def test_salutation_names_the_recipient():
+    assert _page_salutation(_COURT_COVER) == "herr hansen"
+    assert _page_salutation("Sehr geehrte Frau Liu,") == "frau liu"
+    assert _page_salutation("Sehr geehrte Damen und Herren Rechtsanwälte,") == (
+        "damen und herren rechtsanwälte"
+    )
+    assert _page_salutation("kein Gruß") is None
+
+
+def _page(letterhead=False, cue=None, salutation=None):
+    return {"court_letterhead": letterhead, "relay_cue": cue, "salutation": salutation}
+
+
+_RELAY = _page(True, "anbei übersandt.", "herr hansen")
+_FILING = _page()  # a party's filing addressed to the court
+_COURT_TO_OTHER = _page(True, None, "frau liu")  # a court letter the filing encloses
+
+
+def test_relay_folds_what_it_forwards_even_across_other_az_and_court_letters():
+    cuts = [_cut(3), _cut(5), _cut(7), _cut(9)]
+    parts = _outline_parts(cuts, page_count=10)
+    pages = [_RELAY, _RELAY, _FILING, _FILING, _COURT_TO_OTHER, _COURT_TO_OTHER]
+    pages += [_FILING, _FILING, _FILING, _FILING]
+    result = _apply_relay_spans(cuts, parts, pages)
+    assert [c["kind"] for c in result] == ["attachment"] * 4
+    assert result[0]["notes"].startswith("relay: anbei")
+
+
+def test_a_court_letter_to_the_same_recipient_ends_the_relay():
+    cuts = [_cut(3), _cut(5), _cut(7)]
+    parts = _outline_parts(cuts, page_count=8)
+    next_letter = _page(True, None, "herr hansen")
+    pages = [
+        _RELAY,
+        _RELAY,
+        _FILING,
+        _FILING,
+        next_letter,
+        next_letter,
+        _FILING,
+        _FILING,
+    ]
+    result = _apply_relay_spans(cuts, parts, pages)
+    assert [c["kind"] for c in result] == ["attachment", "letter", "letter"]
+
+
+def test_a_new_relay_opens_after_the_old_one_ends():
+    cuts = [_cut(3), _cut(5), _cut(7)]
+    parts = _outline_parts(cuts, page_count=8)
+    second = _page(True, "zur Kenntnisnahme übersandt.", "herr hansen")
+    pages = [_RELAY, _RELAY, _FILING, _FILING, second, second, _FILING, _FILING]
+    result = _apply_relay_spans(cuts, parts, pages)
+    assert [c["kind"] for c in result] == ["attachment", "letter", "attachment"]
+
+
+def test_no_relay_changes_nothing():
+    cuts = [_cut(3), _cut(5, "attachment")]
+    parts = _outline_parts(cuts, page_count=6)
+    pages = [_page(True, None, "herr hansen")] + [_FILING] * 5
+    assert _apply_relay_spans(cuts, parts, pages) == cuts
+
+
+def test_low_proposals_are_not_parts_and_stay_as_they_are():
+    cuts = [_cut(3, confidence="low"), _cut(5)]
+    parts = _outline_parts(cuts, page_count=6)
+    pages = [_RELAY, _RELAY, _FILING, _FILING, _FILING, _FILING]
+    result = _apply_relay_spans(cuts, parts, pages)
+    assert [c["kind"] for c in result] == ["letter", "attachment"]
+
+
+def test_outline_block_carries_the_forwarding_sentence():
+    cuts = [_cut(3)]
+    parts = _outline_parts(cuts, page_count=4)
+    pages = [{**_RELAY, "text_head": "Amtsgericht", "text_tail": "Gruß"}] * 2
+    pages += [{**_FILING, "text_head": "An: Amtsgericht", "text_tail": "x"}] * 2
+    prompt = _outline_prompt(parts, pages)
+    assert "Forwards: anbei übersandt." in prompt
+    assert prompt.count("Forwards:") == 1
+
+
+def test_a_title_naming_the_bekanntgabe_does_not_shadow_the_forwarding_sentence():
+    text = (
+        "Amtsgericht Ingolstadt\nBekanntgabe Antragsschrift\n\n"
+        "Sehr geehrter Herr Hansen,\n\nanbei wird Ihnen die Antragsschrift übersandt."
+    )
+    assert _page_relay_cue(text) == "anbei wird Ihnen die Antragsschrift übersandt."
+    # Without any verb cue the title still marks the page as a relay.
+    assert _page_relay_cue("Bekanntgabe Antragsschrift") == "Bekanntgabe Antragsschrift"
+
+
+def test_every_relay_in_the_bundle_gets_its_forwards_line():
+    cuts = [_cut(3)]
+    parts = _outline_parts(cuts, page_count=4)
+    pages = [{**_RELAY, "text_head": "A", "text_tail": "B"}] * 2
+    pages += [
+        {
+            **_RELAY,
+            "relay_cue": "zweite Weiterleitung.",
+            "text_head": "C",
+            "text_tail": "D",
+        }
+    ] * 2
+    prompt = _outline_prompt(parts, pages)
+    assert prompt.count("Forwards:") == 2
