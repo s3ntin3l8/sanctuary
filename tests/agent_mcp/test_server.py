@@ -60,3 +60,25 @@ def test_read_only_token_still_reads(mcp_session, make_token, make_case, alice):
     make_case("A-1", alice.id)
     session = mcp_session(make_token(alice, access=ApiTokenAccess.READ))
     assert not session.call("get_case", case_id="A-1")[0]
+
+
+def test_host_allowlist_is_optional_and_enforced_when_set(
+    mcp_session, make_token, alice, monkeypatch
+):
+    import app.config
+
+    session = mcp_session(make_token(alice))
+    assert session.client.post(
+        "/mcp", headers={**session.headers, "Host": "evil.example"}, json={}
+    ).status_code not in (421,)
+    monkeypatch.setattr(app.config, "MCP_ALLOWED_HOSTS", ["sanctuary.example.org"])
+    blocked = session.client.post(
+        "/mcp", headers={**session.headers, "Host": "evil.example"}, json={}
+    )
+    assert blocked.status_code == 421
+    allowed = session.client.post(
+        "/mcp",
+        headers={**session.headers, "Host": "sanctuary.example.org:443"},
+        json={},
+    )
+    assert allowed.status_code != 421

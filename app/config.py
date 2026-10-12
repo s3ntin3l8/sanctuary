@@ -169,6 +169,14 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
 
+# Optional Host allow-list for /mcp (comma-separated, e.g. "sanctuary.example.org").
+# Unset = any Host; bearer-token auth is the protection either way.
+MCP_ALLOWED_HOSTS = [
+    h.strip().lower()
+    for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",")
+    if h.strip()
+]
+
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(

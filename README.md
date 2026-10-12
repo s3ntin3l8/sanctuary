@@ -94,7 +94,7 @@ Sanctuary exposes a [Model Context Protocol](https://modelcontextprotocol.io) en
 
 A token acts as you and can never see more than you can. Every call is rate limited per token and tokens can be revoked at any time.
 
-**Network exposure:** `/mcp` is meant to sit behind your TLS reverse proxy like the rest of the app. It authenticates with a bearer token only (never cookies), so DNS-rebinding and cross-site request attacks gain nothing without the token itself; the SDK's Host-header allow-list is therefore disabled. Keep tokens secret, prefer expiry, and revoke what you no longer use.
+**Network exposure:** `/mcp` is meant to sit behind your TLS reverse proxy like the rest of the app. It authenticates with a bearer token only (never cookies), so DNS-rebinding and cross-site request attacks gain nothing without the token itself; the SDK's Host-header allow-list is therefore disabled. To pin the endpoint to your public hostname anyway, set `MCP_ALLOWED_HOSTS=sanctuary.example.org` (comma-separated; other Hosts get 421). Keep tokens secret, prefer expiry, and revoke what you no longer use.
 
 **Privacy:** the AI in Sanctuary itself runs locally, but an external agent does not. Case content that a tool returns is sent to whatever model that agent uses — if that is a cloud model, it leaves your machine. Prefer read-only tokens limited to the cases the agent needs.
 

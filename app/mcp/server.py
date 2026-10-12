@@ -8,9 +8,11 @@ from contextlib import asynccontextmanager
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
+from app import config as app_config
 from app.mcp import tools_analysis, tools_cases, tools_documents
 
 INSTRUCTIONS = """\
@@ -82,6 +84,15 @@ class McpGateway:
                 status_code=503,
             )(scope, receive, send)
             return
+        allowed = app_config.MCP_ALLOWED_HOSTS
+        if allowed:
+            host = Headers(scope=scope).get("host", "").rsplit(":", 1)[0].lower()
+            if host not in allowed:
+                await JSONResponse(
+                    {"detail": "Host not allowed.", "code": "host_not_allowed"},
+                    status_code=421,
+                )(scope, receive, send)
+                return
         await self._app(scope, receive, send)
 
 
