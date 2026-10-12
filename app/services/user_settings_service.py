@@ -163,6 +163,7 @@ _GMAIL_KEYS = (
     "gmail_label_filter",
     "gmail_include_sent",
     "gmail_own_addresses",
+    "gmail_own_addresses_checked_at",
     "gmail_connected_at",
     "gmail_last_sync_at",
     "gmail_sync_mode",
@@ -184,6 +185,9 @@ DEFAULT_SYNC_MODE = "notify"
 # user's own configuration and survive a reconnect.
 _GMAIL_CONNECTION_KEYS = (
     "gmail_credentials_json",
+    # Detected from the connected account, so a different account starts clean.
+    "gmail_own_addresses",
+    "gmail_own_addresses_checked_at",
     "gmail_connected_at",
     "gmail_last_sync_at",
     "gmail_sync_mode",
@@ -226,7 +230,6 @@ def set_gmail_inbox_filters(
     allowlist: list[str],
     label_filter: str,
     include_sent: bool = False,
-    own_addresses: list[str] | None = None,
 ) -> None:
     _update_gmail(
         db,
@@ -234,17 +237,42 @@ def set_gmail_inbox_filters(
         gmail_allowlist=allowlist,
         gmail_label_filter=label_filter,
         gmail_include_sent=include_sent,
-        gmail_own_addresses=own_addresses or [],
+    )
+
+
+def set_gmail_own_addresses(
+    db, user_id: int, addresses: list[str], checked_at: str
+) -> None:
+    """The addresses the connected account sends from (primary + send-as aliases)."""
+    _update_gmail(
+        db,
+        user_id,
+        gmail_own_addresses=addresses,
+        gmail_own_addresses_checked_at=checked_at,
     )
 
 
 def set_gmail_credentials(
-    db, user_id: int, *, credentials_json: str, connected_at: str
+    db,
+    user_id: int,
+    *,
+    credentials_json: str,
+    connected_at: str,
+    own_addresses: list[str] | None = None,
 ) -> None:
     settings = _get_or_create_user(db, user_id)
     data = dict(settings.settings_json or {})
     data["gmail_credentials_json"] = secrets.encrypt(credentials_json)
     data["gmail_connected_at"] = connected_at
+    if own_addresses is not None:
+        data["gmail_own_addresses"] = own_addresses
+        data["gmail_own_addresses_checked_at"] = connected_at
+    else:
+        # Detection failed. The list may belong to a previously connected
+        # account, so drop it rather than keep it: connect_gmail re-reads an
+        # empty list before the next sync or import.
+        data.pop("gmail_own_addresses", None)
+        data.pop("gmail_own_addresses_checked_at", None)
     # Anchor incremental sync at connect time so the first poll never pulls the
     # senders' whole history (that is an explicit, bounded import). A reconnect
     # keeps the existing watermark.

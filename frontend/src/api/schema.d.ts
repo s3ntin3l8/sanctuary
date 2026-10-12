@@ -4661,11 +4661,6 @@ export interface components {
              * @default
              */
             label_filter: string;
-            /**
-             * Own Addresses
-             * @default []
-             */
-            own_addresses: string[];
         };
         /** GmailGroup */
         GmailGroup: {

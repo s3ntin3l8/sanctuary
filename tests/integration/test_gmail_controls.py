@@ -69,6 +69,13 @@ def _oauth_callback(granted_scopes, fetch_error=None):
 
 
 @pytest.fixture(autouse=True)
+def no_address_lookup():
+    """The callback would otherwise call Gmail with the mocked credentials."""
+    with patch("app.api.ingestion_settings.detect_own_addresses", return_value=[]):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def env_oauth_client(monkeypatch):
     monkeypatch.setattr(config, "GMAIL_CLIENT_ID", "id.apps.googleusercontent.com")
     monkeypatch.setattr(config, "GMAIL_CLIENT_SECRET", "s")  # pragma: allowlist secret
@@ -491,27 +498,74 @@ def test_filters_accept_a_sender_a_label_or_both(db_session, body):
     assert resp.json()["allowlist"] == body["allowlist"]
 
 
-def test_filters_sent_mail_needs_an_own_address(db_session):
+def test_filters_sent_mail_needs_no_typed_addresses(db_session):
+    """Own addresses come from the connected account, not from the form."""
     body = {"allowlist": ["info@firm.de"], "include_sent": True}
-    resp = client.put("/api/v1/settings/gmail/filters", json=body)
-    assert resp.status_code == 422
-    assert "address(es) you send from" in resp.text
-
-    bad = {**body, "own_addresses": ["not an address"]}
-    assert client.put("/api/v1/settings/gmail/filters", json=bad).status_code == 422
-
-
-def test_filters_save_sent_mail_and_own_addresses(db_session):
-    body = {
-        "allowlist": ["info@firm.de"],
-        "include_sent": True,
-        "own_addresses": [" Me@Example.com "],
-    }
     resp = client.put("/api/v1/settings/gmail/filters", json=body)
     assert resp.status_code == 200
     assert resp.json()["include_sent"] is True
-    assert resp.json()["own_addresses"] == ["me@example.com"]
     assert client.get("/api/v1/settings/gmail").json()["include_sent"] is True
+
+
+def test_saving_filters_keeps_the_detected_addresses(db_session):
+    uid = _admin(db_session)
+    _connect(
+        db_session,
+        uid,
+        gmail_own_addresses=["me@example.com"],
+        gmail_own_addresses_checked_at="2026-01-01T00:00:00+00:00",
+    )
+    body = {"allowlist": ["info@firm.de"], "include_sent": True}
+    resp = client.put("/api/v1/settings/gmail/filters", json=body)
+    assert resp.json()["own_addresses"] == ["me@example.com"]
+
+
+def test_callback_stores_the_addresses_detected_from_the_account(db_session):
+    with patch(
+        "app.api.ingestion_settings.detect_own_addresses",
+        return_value=["me@example.com", "alias@example.com"],
+    ):
+        response = _oauth_callback([READONLY_SCOPE])
+    assert response.status_code in (302, 303, 307)
+    assert client.get("/api/v1/settings/gmail").json()["own_addresses"] == [
+        "me@example.com",
+        "alias@example.com",
+    ]
+
+
+def test_callback_still_connects_when_address_detection_fails(db_session):
+    with patch("app.api.ingestion_settings.detect_own_addresses", return_value=None):
+        response = _oauth_callback([READONLY_SCOPE])
+    assert response.status_code in (302, 303, 307)
+    assert client.get("/api/v1/settings/gmail").json()["connected"] is True
+
+
+def test_reconnect_with_failed_detection_drops_the_previous_accounts_list(
+    db_session,
+):
+    uid = _admin(db_session)
+    _connect(
+        db_session,
+        uid,
+        gmail_own_addresses=["old-account@example.com"],
+        gmail_own_addresses_checked_at="2026-01-01T00:00:00+00:00",
+    )
+    with patch("app.api.ingestion_settings.detect_own_addresses", return_value=None):
+        _oauth_callback([READONLY_SCOPE])
+    assert client.get("/api/v1/settings/gmail").json()["own_addresses"] == []
+
+
+def test_disconnect_forgets_the_detected_addresses(db_session):
+    uid = _admin(db_session)
+    _connect(
+        db_session,
+        uid,
+        gmail_own_addresses=["me@example.com"],
+        gmail_own_addresses_checked_at="2026-01-01T00:00:00+00:00",
+    )
+    with patch("app.api.v1.settings_gmail.revoke_token"):
+        client.delete("/api/v1/settings/gmail")
+    assert client.get("/api/v1/settings/gmail").json()["own_addresses"] == []
 
 
 def test_filter_preview_counts_matches_without_saving(db_session):

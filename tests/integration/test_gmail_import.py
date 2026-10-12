@@ -222,7 +222,9 @@ def test_messages_are_marked_outgoing_when_sent_from_an_own_address(db_session):
         allowlist=["lawyer@example.com"],
         label_filter="",
         include_sent=True,
-        own_addresses=["me@example.com"],
+    )
+    user_settings_service.set_gmail_own_addresses(
+        db_session, uid, ["me@example.com"], "2026-01-01T00:00:00+00:00"
     )
     db_session.commit()
 

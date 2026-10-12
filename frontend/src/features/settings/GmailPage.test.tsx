@@ -182,7 +182,6 @@ test('gmail: previewing the filters shows how many messages they match', async (
     allowlist: ['lawyer@example.com'],
     label_filter: '',
     include_sent: true,
-    own_addresses: ['me@example.com'],
   })
 
   // Editing invalidates the count.
@@ -215,34 +214,31 @@ test('gmail: preview explains why it is disabled when not connected', async () =
   expect(screen.getAllByText('Connect Gmail first').length).toBeGreaterThan(0)
 })
 
-test('gmail: filters save the sent-mail option and own addresses', async () => {
+test('gmail: filters save the sent-mail option; own addresses are shown, not typed', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/gmail': { body: gmail },
     'PUT /api/v1/settings/gmail/filters': { body: gmail },
   })
   renderAt('/settings/gmail', <GmailPage />)
   const user = userEvent.setup()
-  const own = await screen.findByLabelText('Your addresses')
-  expect(own).toHaveValue('me@example.com')
-  await user.clear(own)
-  await user.type(own, 'me@example.com, alias@example.com')
+  expect(await screen.findByTestId('own-addresses')).toHaveTextContent('me@example.com')
+  expect(screen.queryByLabelText('Your addresses')).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Save filters' }))
   await waitFor(() => expect(sentTo(fetch, 'PUT', '/api/v1/settings/gmail/filters')).toBeDefined())
   expect(await sentTo(fetch, 'PUT', '/api/v1/settings/gmail/filters')?.clone().json()).toEqual({
     allowlist: ['lawyer@example.com'],
     label_filter: '',
     include_sent: true,
-    own_addresses: ['me@example.com', 'alias@example.com'],
   })
 })
 
-test('gmail: turning off sent mail disables the address field', async () => {
+test('gmail: turning off sent mail hides the detected addresses', async () => {
   stubApi({ 'GET /api/v1/settings/gmail': { body: gmail } })
   renderAt('/settings/gmail', <GmailPage />)
   await userEvent
     .setup()
     .click(await screen.findByRole('switch', { name: /Also import mail I sent/ }))
-  expect(screen.getByLabelText('Your addresses')).toBeDisabled()
+  expect(screen.queryByTestId('own-addresses')).not.toBeInTheDocument()
 })
 
 test('gmail: saving the OAuth client without touching the secret sends none', async () => {

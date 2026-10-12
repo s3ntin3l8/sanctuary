@@ -14,6 +14,7 @@ from app.services import gmail_oauth_config, user_settings_service
 from app.services.ingestion.gmail import (
     GmailScopeError,
     assert_readonly_scopes,
+    detect_own_addresses,
     get_oauth_flow,
 )
 
@@ -110,11 +111,13 @@ async def gmail_oauth_callback(
         logger.warning("Gmail OAuth rejected: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    credentials_json = creds.to_json()
     user_settings_service.set_gmail_credentials(
         db,
         user.id,
-        credentials_json=creds.to_json(),
+        credentials_json=credentials_json,
         connected_at=now_utc().isoformat(),
+        own_addresses=detect_own_addresses(credentials_json),
     )
     db.commit()
 

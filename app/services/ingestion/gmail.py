@@ -2,7 +2,7 @@ import json
 import logging
 import time
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any, NamedTuple
@@ -87,6 +87,68 @@ def get_gmail_service(credentials_json: str) -> GmailConnection:
     )
 
 
+OWN_ADDRESSES_TTL = timedelta(hours=24)
+
+
+def fetch_own_addresses(service: Any) -> list[str]:
+    """The addresses the connected account sends from: its own plus send-as aliases.
+
+    Read-only (``getProfile`` and ``settings.sendAs.list`` are covered by
+    gmail.readonly). Aliases still awaiting verification can't send, so they are
+    skipped; the primary address always counts.
+    """
+    profile = service.users().getProfile(userId="me").execute()
+    found = {str(profile.get("emailAddress") or "").strip().lower()}
+    aliases = service.users().settings().sendAs().list(userId="me").execute()
+    for alias in aliases.get("sendAs", []):
+        if alias.get("verificationStatus", "accepted") == "accepted":
+            found.add(str(alias.get("sendAsEmail") or "").strip().lower())
+    return sorted(a for a in found if a)
+
+
+def detect_own_addresses(credentials_json: str) -> list[str] | None:
+    """``fetch_own_addresses`` for fresh credentials; None when Google can't say.
+
+    Goes through ``get_gmail_service`` so the read-only scope check and the
+    credential wiring stay in one place.
+    """
+    try:
+        return fetch_own_addresses(get_gmail_service(credentials_json).service)
+    except Exception:
+        logger.warning("Could not read the Gmail account's addresses", exc_info=True)
+        return None
+
+
+def _own_addresses_stale(settings: dict) -> bool:
+    checked = settings.get("gmail_own_addresses_checked_at")
+    if not settings.get("gmail_own_addresses") or not checked:
+        return True
+    try:
+        return datetime.now(UTC) - datetime.fromisoformat(checked) > OWN_ADDRESSES_TTL
+    except ValueError:
+        return True
+
+
+def _refresh_own_addresses(db: Any, user_id: int, service: Any, settings: dict) -> None:
+    """Re-read the account's addresses when missing or older than a day.
+
+    Never fails the caller: on any error the stored list stays as it was.
+    """
+    from app.services import user_settings_service
+
+    if not _own_addresses_stale(settings):
+        return
+    try:
+        addresses = fetch_own_addresses(service)
+        user_settings_service.set_gmail_own_addresses(
+            db, user_id, addresses, datetime.now(UTC).isoformat()
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("Could not refresh the Gmail account's addresses", exc_info=True)
+
+
 def connect_gmail(db: Any, user_id: int, settings: dict) -> Any:
     """Build the Gmail client from the user's stored (encrypted) credentials.
 
@@ -104,6 +166,7 @@ def connect_gmail(db: Any, user_id: int, settings: dict) -> Any:
             db, user_id, connection.refreshed_credentials_json
         )
         db.commit()
+    _refresh_own_addresses(db, user_id, connection.service, settings)
     return connection.service
 
 
