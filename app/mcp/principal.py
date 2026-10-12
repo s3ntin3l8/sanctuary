@@ -163,7 +163,10 @@ class McpPrincipal:
             if not (visible if readable is None else visible & readable):
                 raise ToolError(NOT_FOUND)
         elif not self.all_cases:
-            raise ToolError(NOT_FOUND)  # evidenced only by untriaged documents
+            # No linked case: the claim hangs only off untriaged documents. Like
+            # untriaged documents themselves, that is outside any per-case token's
+            # scope (the owner can still reach it with an all-cases token).
+            raise ToolError(NOT_FOUND)
         if write:
             if not self.can_write:
                 raise ToolError(READ_ONLY)
@@ -172,6 +175,8 @@ class McpPrincipal:
             ):
                 raise ToolError("You can view this claim but not edit it.")
             writable = self.writable_case_ids(db)
+            # (a claim with no linked case leaves `visible` empty: only all-cases
+            # tokens get here, and the ownership check above is the gate)
             if writable is not None and not visible <= writable:
                 raise ToolError(
                     "This claim also belongs to cases outside this token's write scope."

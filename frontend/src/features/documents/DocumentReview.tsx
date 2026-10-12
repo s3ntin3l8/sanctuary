@@ -1189,8 +1189,12 @@ function Reactions({ review }: { review: Review }) {
       meta="recalled by the AI later"
       dataAttr={{ 'data-reaction-bar': '' }}
     >
-      <div className="mb-1.5">
-        <AgentBadge name={review.reactions.find((r) => r.agent_token_name)?.agent_token_name} />
+      <div className="mb-1.5 flex flex-wrap gap-1">
+        {[...new Set(review.reactions.map((r) => r.agent_token_name).filter(Boolean))].map(
+          (name) => (
+            <AgentBadge key={name} name={name} />
+          ),
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {REACTIONS.map(([key, glyph, label]) => (

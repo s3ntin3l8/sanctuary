@@ -453,7 +453,9 @@ def create_relationship(
             from_document_id=source.id, to_document_id=target.id,
             relationship_type=relationship_type.value,
         )  # fmt: skip
-        db.commit()  # recompute_thread_open reads committed edges
+        # Commit here so recompute_thread_open sees the new edge; run()'s own
+        # commit afterwards finds nothing pending.
+        db.commit()
         recompute_thread_open(target.id, db)
         refresh_review_reasons(source, db, commit=False)
     return RelationshipOut(
