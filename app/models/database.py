@@ -1514,6 +1514,8 @@ class ApiToken(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
+    # unique=True with index=True emits ONE unique index (ix_api_tokens_token_hash),
+    # the one verify() looks up by; there is no second non-unique twin.
     token_hash: Mapped[str] = mapped_column(
         String, unique=True, nullable=False, index=True
     )

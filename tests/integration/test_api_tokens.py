@@ -213,16 +213,21 @@ def test_bearer_without_a_space_is_rejected(auth_enabled, db_session, alice):
     assert resp.status_code == 401
 
 
+@pytest.mark.parametrize("stamp_first", [False, True])
 def test_a_failing_last_used_write_does_not_fail_the_call(
-    auth_enabled, db_session, alice, monkeypatch
+    auth_enabled, db_session, alice, monkeypatch, stamp_first
 ):
     def boom(db, token):
+        if stamp_first:  # the commit fails after the timestamp was set
+            token.last_used_at = now_utc()
         raise RuntimeError("lock timeout")
 
     monkeypatch.setattr(api_token_service, "touch", boom)
-    _, secret = _mint(db_session, alice)
+    token, secret = _mint(db_session, alice)
     resp = TestClient(app).post("/mcp", json={}, headers=_bearer(secret))
     assert resp.status_code not in (401, 500)
+    db_session.expire_all()
+    assert db_session.get(ApiToken, token.id).last_used_at is None
 
 
 def test_revoked_token_is_rejected(auth_enabled, db_session, alice):
