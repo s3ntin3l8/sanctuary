@@ -109,6 +109,8 @@ def test_confirm_evidence_keeps_the_asserting_role(db_session, sample_case):
 
     (row,) = db_session.query(ClaimEvidence).filter_by(claim_id=claim.id).all()
     assert row.role == ClaimEvidenceRole.ASSERTS
+    # ... and is not rebranded as a person's decision.
+    assert row.confidence == RelationshipConfidence.AI_DETECTED
 
 
 @pytest.mark.unit
