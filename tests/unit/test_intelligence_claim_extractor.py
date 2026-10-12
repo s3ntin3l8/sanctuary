@@ -1113,3 +1113,108 @@ def test_extract_proceeds_when_no_recent_asserts(db_session, significant_doc):
         result = extract(significant_doc.id)
 
     assert result is None, "extract() should have run, not returned a skip reason"
+
+
+def _run_extract(db_session, doc, ai_result):
+    with (
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.claim_extractor import extract
+
+        extract(doc.id)
+    db_session.expire_all()
+
+
+def _pending_proposals(db_session, claim, doc):
+    from app.models.database import ClaimEvidenceProposal
+    from app.models.enums import ProposalStatus
+
+    return (
+        db_session.query(ClaimEvidenceProposal)
+        .filter(
+            ClaimEvidenceProposal.target_claim_id == claim.id,
+            ClaimEvidenceProposal.source_document_id == doc.id,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        )
+        .all()
+    )
+
+
+@pytest.mark.unit
+def test_competing_roles_on_one_claim_collapse_to_the_stronger(
+    db_session, significant_doc, existing_claim
+):
+    """A contest and a refute over overlapping quotes is one link, not two."""
+    _run_extract(
+        db_session,
+        significant_doc,
+        {
+            "new_claims": [],
+            "evidence_links": [
+                {
+                    "claim_id": existing_claim.id,
+                    "role": "contests",
+                    "excerpt": "der Antrag keinerlei Aussicht auf Erfolg hat",
+                },
+                {
+                    "claim_id": existing_claim.id,
+                    "role": "refutes",
+                    "excerpt": "Aus alledem ergibt sich, dass der Antrag keinerlei Aussicht auf Erfolg hat",
+                },
+            ],
+        },
+    )
+
+    (proposal,) = _pending_proposals(db_session, existing_claim, significant_doc)
+    assert proposal.proposed_role == ClaimEvidenceRole.REFUTES
+    assert proposal.excerpt.startswith("Aus alledem")
+
+
+@pytest.mark.unit
+def test_rerun_replaces_pending_proposals(db_session, significant_doc, existing_claim):
+    link = {"claim_id": existing_claim.id, "excerpt": "quote"}
+    _run_extract(
+        db_session,
+        significant_doc,
+        {"new_claims": [], "evidence_links": [{**link, "role": "contests"}]},
+    )
+    _run_extract(
+        db_session,
+        significant_doc,
+        {"new_claims": [], "evidence_links": [{**link, "role": "refutes"}]},
+    )
+
+    (proposal,) = _pending_proposals(db_session, existing_claim, significant_doc)
+    assert proposal.proposed_role == ClaimEvidenceRole.REFUTES
+
+
+@pytest.mark.unit
+def test_existing_evidence_on_the_pair_suppresses_a_proposal(
+    db_session, significant_doc, existing_claim
+):
+    db_session.add(
+        ClaimEvidence(
+            claim_id=existing_claim.id,
+            document_id=significant_doc.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+        )
+    )
+    db_session.commit()
+
+    _run_extract(
+        db_session,
+        significant_doc,
+        {
+            "new_claims": [],
+            "evidence_links": [
+                {"claim_id": existing_claim.id, "role": "contests", "excerpt": "q"}
+            ],
+        },
+    )
+
+    assert _pending_proposals(db_session, existing_claim, significant_doc) == []

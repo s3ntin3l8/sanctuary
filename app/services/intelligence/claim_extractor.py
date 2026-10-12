@@ -25,6 +25,7 @@ from app.models.database import (
     Document,
 )
 from app.models.enums import (
+    EVIDENCE_ROLE_STRENGTH,
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
@@ -217,6 +218,18 @@ def _apply_claims(
     # gate prevents the wrong-REFUTES bug that emerged when the AI
     # mis-interpreted what "the document" referred to in cross-doc evidence.
     confidence_default = ProposalConfidence.MEDIUM
+
+    # A re-run replaces this document's earlier suggestions instead of piling
+    # new ones onto them; anything the user already confirmed is evidence now.
+    db.query(ClaimEvidenceProposal).filter(
+        ClaimEvidenceProposal.source_document_id == doc.id,
+        ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+    ).delete(synchronize_session=False)
+
+    # One link per (claim, document): when the model emits several roles for the
+    # same claim (a contest and a refute over overlapping quotes), keep the
+    # stronger one.
+    chosen: dict[int, tuple[ClaimEvidenceRole, str]] = {}
     for item in result.get("evidence_links") or []:
         claim_id = item.get("claim_id")
         if claim_id not in valid_claim_ids:
@@ -231,31 +244,24 @@ def _apply_claims(
             continue
 
         role = ClaimEvidenceRole(role_raw)
+        excerpt = (item.get("excerpt") or "")[:500]
+        prior = chosen.get(claim_id)
+        if (
+            prior is None
+            or EVIDENCE_ROLE_STRENGTH[role] > EVIDENCE_ROLE_STRENGTH[prior[0]]
+        ):
+            chosen[claim_id] = (role, excerpt)
 
-        # Skip duplicates: don't re-propose if the same role already lands
-        # on this (claim, doc) pair, either as confirmed evidence or as a
-        # pending proposal.
-        if evidence_repo.evidence_exists(claim_id, doc.id, role):
+    for claim_id, (role, excerpt) in chosen.items():
+        # Confirmed (or originating) evidence on this pair stands.
+        if evidence_repo.evidence_for(claim_id, doc.id) is not None:
             continue
-        existing_proposal = (
-            db.query(ClaimEvidenceProposal)
-            .filter(
-                ClaimEvidenceProposal.target_claim_id == claim_id,
-                ClaimEvidenceProposal.source_document_id == doc.id,
-                ClaimEvidenceProposal.proposed_role == role,
-                ClaimEvidenceProposal.status == ProposalStatus.PENDING,
-            )
-            .first()
-        )
-        if existing_proposal:
-            continue
-
         db.add(
             ClaimEvidenceProposal(
                 target_claim_id=claim_id,
                 source_document_id=doc.id,
                 proposed_role=role,
-                excerpt=(item.get("excerpt") or "")[:500],
+                excerpt=excerpt,
                 rationale=None,
                 confidence=confidence_default,
                 status=ProposalStatus.PENDING,

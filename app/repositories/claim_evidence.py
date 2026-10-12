@@ -27,15 +27,13 @@ class ClaimEvidenceRepository(BaseRepository[ClaimEvidence]):
             ingest_date=now_utc(),
         )
 
-    def evidence_exists(
-        self, claim_id: int, document_id: int, role: ClaimEvidenceRole
-    ) -> bool:
+    def evidence_for(self, claim_id: int, document_id: int) -> ClaimEvidence | None:
+        """The one evidence row a document holds on a claim, whatever its role."""
         return (
             self.db.query(ClaimEvidence)
             .filter(
                 ClaimEvidence.claim_id == claim_id,
                 ClaimEvidence.document_id == document_id,
-                ClaimEvidence.role == role,
             )
             .first()
-        ) is not None
+        )

@@ -276,6 +276,24 @@ class ClaimEvidenceRole(enum.StrEnum):
     CITES_AS_PROOF = "cites_as_proof"
 
 
+# One document holds one link to a claim. When two roles compete for the same
+# (claim, document) pair, the stronger one stands: ASSERTS (the originating
+# document) over everything, then adversarial roles over agreement, so a
+# contest is never lost to a supports.
+EVIDENCE_ROLE_STRENGTH: dict[ClaimEvidenceRole, int] = {
+    ClaimEvidenceRole.ASSERTS: 5,
+    ClaimEvidenceRole.REFUTES: 4,
+    ClaimEvidenceRole.CONTESTS: 3,
+    ClaimEvidenceRole.SUPPORTS: 2,
+    ClaimEvidenceRole.CITES_AS_PROOF: 1,
+}
+
+
+def stronger_role(a: ClaimEvidenceRole, b: ClaimEvidenceRole) -> ClaimEvidenceRole:
+    """The role that wins when ``a`` and ``b`` compete for one (claim, document)."""
+    return a if EVIDENCE_ROLE_STRENGTH[a] >= EVIDENCE_ROLE_STRENGTH[b] else b
+
+
 class ProposalStatus(enum.StrEnum):
     """Lifecycle of an AI-generated proposal awaiting user review."""
 

@@ -77,6 +77,22 @@ def doc_b(db_session, cs_case):
     return doc
 
 
+@pytest.fixture
+def doc_c(db_session, cs_case):
+    doc = Document(
+        title="Stellungnahme",
+        content="A third document",
+        case_id=cs_case.id,
+        originator_type=OriginatorType.OWN,
+        sender="own@example.com",
+        received_date=datetime(2025, 5, 1),
+    )
+    db_session.add(doc)
+    db_session.flush()
+    db_session.refresh(doc)
+    return doc
+
+
 def _make_claim(db_session, case, doc, text, status=ClaimStatus.ASSERTED):
     """Wave 2A: claim is global; case scope comes from its ASSERTS evidence
     row's document. The `case` argument is kept in the signature for call-site
@@ -245,13 +261,13 @@ def test_get_truth_map_excludes_other_case_claims(db_session, cs_case, doc_a):
 
 
 @pytest.mark.unit
-def test_evidence_rows_attached_to_claim(db_session, cs_case, doc_a, doc_b):
+def test_evidence_rows_attached_to_claim(db_session, cs_case, doc_a, doc_b, doc_c):
     from app.services.claim_service import ClaimService
 
     claim = _make_claim(
         db_session, cs_case, doc_a, "Claim with evidence", ClaimStatus.ASSERTED
     )
-    _make_evidence(db_session, claim, doc_a, ClaimEvidenceRole.SUPPORTS)
+    _make_evidence(db_session, claim, doc_c, ClaimEvidenceRole.SUPPORTS)
     _make_evidence(db_session, claim, doc_b, ClaimEvidenceRole.CONTESTS)
     db_session.commit()
 
@@ -265,7 +281,9 @@ def test_evidence_rows_attached_to_claim(db_session, cs_case, doc_a, doc_b):
 
 
 @pytest.mark.unit
-def test_evidence_ordered_by_received_date_asc(db_session, cs_case, doc_a, doc_b):
+def test_evidence_ordered_by_received_date_asc(
+    db_session, cs_case, doc_a, doc_b, doc_c
+):
     from app.services.claim_service import ClaimService
 
     # doc_a received 2025-03-10, doc_b received 2025-04-05 → doc_a first
@@ -273,7 +291,7 @@ def test_evidence_ordered_by_received_date_asc(db_session, cs_case, doc_a, doc_b
         db_session, cs_case, doc_a, "Ordered evidence claim", ClaimStatus.ASSERTED
     )
     _make_evidence(db_session, claim, doc_b, ClaimEvidenceRole.CONTESTS)  # added second
-    _make_evidence(db_session, claim, doc_a, ClaimEvidenceRole.SUPPORTS)  # added first
+    _make_evidence(db_session, claim, doc_c, ClaimEvidenceRole.SUPPORTS)  # added first
     db_session.commit()
 
     svc = ClaimService(db_session)
@@ -281,22 +299,24 @@ def test_evidence_ordered_by_received_date_asc(db_session, cs_case, doc_a, doc_b
 
     evidence_rows = view.groups[0].claims[0].evidence
     # 3 rows total (ASSERTS from _make_claim + 2 explicit). doc_a-rooted
-    # evidence sorts before doc_b-rooted by received_date.
+    # evidence sorts before doc_b-rooted, before doc_c, by received_date.
     doc_ids_in_order = [r.document.id for r in evidence_rows]
-    assert doc_ids_in_order.index(doc_a.id) < doc_ids_in_order.index(doc_b.id)
+    assert doc_ids_in_order == [doc_a.id, doc_b.id, doc_c.id]
 
 
 @pytest.mark.unit
-def test_reactions_attached_to_evidence_rows(db_session, cs_case, doc_a, sample_user):
+def test_reactions_attached_to_evidence_rows(
+    db_session, cs_case, doc_a, doc_b, sample_user
+):
     from app.services.claim_service import ClaimService
 
     claim = _make_claim(
         db_session, cs_case, doc_a, "Claim with reaction", ClaimStatus.ASSERTED
     )
-    _make_evidence(db_session, claim, doc_a, ClaimEvidenceRole.SUPPORTS)
+    _make_evidence(db_session, claim, doc_b, ClaimEvidenceRole.SUPPORTS)
 
     reaction = UserReaction(
-        document_id=doc_a.id,
+        document_id=doc_b.id,
         reaction=UserReactionType.LIES,
         notes="I dispute this",
         user_id=sample_user.id,
@@ -307,19 +327,21 @@ def test_reactions_attached_to_evidence_rows(db_session, cs_case, doc_a, sample_
     svc = ClaimService(db_session)
     view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
-    evidence_row = view.groups[0].claims[0].evidence[0]
+    evidence_row = next(
+        r for r in view.groups[0].claims[0].evidence if r.document.id == doc_b.id
+    )
     assert len(evidence_row.reactions) == 1
     assert evidence_row.reactions[0].reaction == UserReactionType.LIES
 
 
 @pytest.mark.unit
-def test_no_reactions_when_none_tagged(db_session, cs_case, doc_a):
+def test_no_reactions_when_none_tagged(db_session, cs_case, doc_a, doc_b):
     from app.services.claim_service import ClaimService
 
     claim = _make_claim(
         db_session, cs_case, doc_a, "Claim no reaction", ClaimStatus.ASSERTED
     )
-    _make_evidence(db_session, claim, doc_a, ClaimEvidenceRole.SUPPORTS)
+    _make_evidence(db_session, claim, doc_b, ClaimEvidenceRole.SUPPORTS)
     db_session.commit()
 
     svc = ClaimService(db_session)

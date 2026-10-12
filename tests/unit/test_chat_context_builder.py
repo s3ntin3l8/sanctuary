@@ -36,6 +36,12 @@ def test_build_case_chat_prompt_includes_chronology_and_claims(db_session, sampl
 
     # ASSERTS row scopes the claim to source_doc's case; SUPPORTS row gives
     # the evidence-count verification something to count.
+    other_supports = Document(
+        title="Supports", content="x", case_id=sample_case.id, needs_review=False
+    )
+    db_session.add(other_supports)
+    db_session.flush()
+
     db_session.add_all(
         [
             ClaimEvidence(
@@ -46,7 +52,7 @@ def test_build_case_chat_prompt_includes_chronology_and_claims(db_session, sampl
             ),
             ClaimEvidence(
                 claim_id=claim.id,
-                document_id=source_doc.id,
+                document_id=other_supports.id,
                 role=ClaimEvidenceRole.SUPPORTS,
                 ingest_date=datetime.now(),
             ),

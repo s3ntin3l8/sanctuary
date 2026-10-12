@@ -34,6 +34,18 @@ def test_format_claims_for_case_includes_status_and_evidence_counts(
     db_session.add(claim)
     db_session.flush()
 
+    other_supports = Document(
+        title="Supports", content="x", case_id=sample_case.id, needs_review=False
+    )
+    db_session.add(other_supports)
+    db_session.flush()
+
+    other_contests = Document(
+        title="Contests", content="x", case_id=sample_case.id, needs_review=False
+    )
+    db_session.add(other_contests)
+    db_session.flush()
+
     db_session.add_all(
         [
             ClaimEvidence(
@@ -44,13 +56,13 @@ def test_format_claims_for_case_includes_status_and_evidence_counts(
             ),
             ClaimEvidence(
                 claim_id=claim.id,
-                document_id=source_doc.id,
+                document_id=other_supports.id,
                 role=ClaimEvidenceRole.SUPPORTS,
                 ingest_date=datetime.now(),
             ),
             ClaimEvidence(
                 claim_id=claim.id,
-                document_id=source_doc.id,
+                document_id=other_contests.id,
                 role=ClaimEvidenceRole.CONTESTS,
                 ingest_date=datetime.now(),
             ),
