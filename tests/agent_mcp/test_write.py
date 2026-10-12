@@ -40,16 +40,17 @@ RW = ApiTokenAccess.READ_WRITE
 
 @pytest.fixture(autouse=True)
 def no_embeddings(monkeypatch):
-    """The embedding provider is not available in tests; the lookups are best effort."""
-
-    async def nothing(*args, **kwargs):
-        return []
+    """The embedding provider is not available in tests (embed fails -> None); the
+    similar-claim lookup is best effort."""
 
     async def no_embedding(*args, **kwargs):
-        return False
+        return None
 
-    monkeypatch.setattr("app.mcp.tools_write.nearest_claims", nothing)
-    monkeypatch.setattr("app.mcp.tools_write.upsert_claim_embedding", no_embedding)
+    def nothing(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr("app.mcp.tools_write.embed_text", no_embedding)
+    monkeypatch.setattr("app.mcp.tools_write.nearest_claims_by_vector", nothing)
 
 
 @pytest.fixture
@@ -333,10 +334,14 @@ def test_create_claim_writes_the_asserts_evidence(
 def test_create_claim_reports_similar_claims_without_blocking(
     mcp_session, make_token, db_session, alice, world, monkeypatch
 ):
-    async def near(text, db, *, k, case_id):
+    def near(embedding, db, *, k, case_id):
         return [(world["claim"], 0.12345)]
 
-    monkeypatch.setattr("app.mcp.tools_write.nearest_claims", near)
+    async def vec(text, cfg):
+        return [0.1] * cfg.embed_dim
+
+    monkeypatch.setattr("app.mcp.tools_write.embed_text", vec)
+    monkeypatch.setattr("app.mcp.tools_write.nearest_claims_by_vector", near)
     session = mcp_session(make_token(alice, access=RW))
     out = _ok(
         session,
@@ -355,6 +360,82 @@ def test_create_claim_reports_similar_claims_without_blocking(
         }
     ]
     assert db_session.query(Claim).count() == 2
+
+
+def _create_args(world):
+    return {
+        "case_id": "A-1",
+        "text": "The notice arrived late",
+        "claim_type": "procedural",
+        "document_id": world["d2"],
+    }
+
+
+def test_create_claim_embeds_once_with_no_session_open(
+    mcp_session, make_token, db_session, alice, world, monkeypatch
+):
+    from app import dependencies
+
+    open_sessions: set = set()
+    real = dependencies.SessionLocal
+
+    def tracking():
+        s = real()
+        open_sessions.add(s)
+        orig_close = s.close
+
+        def close():
+            open_sessions.discard(s)
+            orig_close()
+
+        s.close = close
+        return s
+
+    monkeypatch.setattr(dependencies, "SessionLocal", tracking)
+    calls = []
+
+    async def vec(text, cfg):
+        calls.append((text, len(open_sessions)))
+        return [0.25] * cfg.embed_dim
+
+    monkeypatch.setattr("app.mcp.tools_write.embed_text", vec)
+    session = mcp_session(make_token(alice, access=RW))
+    out = _ok(session, "create_claim", **_create_args(world))
+    assert calls == [("The notice arrived late", 0)]
+    db_session.expire_all()
+    claim = db_session.get(Claim, out["claim_id"])
+    assert list(claim.embedding) == pytest.approx([0.25] * len(claim.embedding))
+    assert claim.embedding_failed_at is None
+
+
+def test_create_claim_survives_a_failing_similar_lookup(
+    mcp_session, make_token, db_session, alice, world, monkeypatch
+):
+    async def vec(text, cfg):
+        return [0.1] * cfg.embed_dim
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("knn exploded")
+
+    monkeypatch.setattr("app.mcp.tools_write.embed_text", vec)
+    monkeypatch.setattr("app.mcp.tools_write.nearest_claims_by_vector", boom)
+    session = mcp_session(make_token(alice, access=RW))
+    out = _ok(session, "create_claim", **_create_args(world))
+    assert out["similar_claims"] == []
+    db_session.expire_all()
+    assert db_session.get(Claim, out["claim_id"]) is not None
+
+
+def test_create_claim_records_an_embedding_failure(
+    mcp_session, make_token, db_session, alice, world
+):
+    session = mcp_session(
+        make_token(alice, access=RW)
+    )  # default fixture: embed -> None
+    out = _ok(session, "create_claim", **_create_args(world))
+    db_session.expire_all()
+    claim = db_session.get(Claim, out["claim_id"])
+    assert claim.embedding is None and claim.embedding_failed_at is not None
 
 
 def test_create_claim_needs_a_document_of_that_case(
