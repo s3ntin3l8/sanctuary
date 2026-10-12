@@ -41,6 +41,74 @@ export interface paths {
         patch: operations["v1_set_action_item_status_api_v1_action_items__item_id__patch"];
         trace?: never;
     };
+    "/api/v1/admin/agent-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Admin Agent Access */
+        get: operations["v1_admin_agent_access_api_v1_admin_agent_access_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/agent-access/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Admin Set Mcp Enabled */
+        put: operations["v1_admin_set_mcp_enabled_api_v1_admin_agent_access_enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/agent-access/tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Admin Revoke Token */
+        delete: operations["v1_admin_revoke_token_api_v1_admin_agent_access_tokens__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/agent-access/tokens/{token_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Admin Token Activity */
+        get: operations["v1_admin_token_activity_api_v1_admin_agent_access_tokens__token_id__activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/signup": {
         parameters: {
             query?: never;
@@ -2976,6 +3044,13 @@ export interface components {
             /** Is Active */
             is_active: boolean;
         };
+        /** AdminAgentAccessView */
+        AdminAgentAccessView: {
+            /** Mcp Enabled */
+            mcp_enabled: boolean;
+            /** Tokens */
+            tokens: components["schemas"]["AdminTokenView"][];
+        };
         /** AdminPasswordReset */
         AdminPasswordReset: {
             /** New Password */
@@ -2989,6 +3064,44 @@ export interface components {
         /** AdminRoleUpdate */
         AdminRoleUpdate: {
             role: components["schemas"]["UserRole"];
+        };
+        /** AdminTokenView */
+        AdminTokenView: {
+            access: components["schemas"]["ApiTokenAccess"];
+            /** Activity Count 7D */
+            activity_count_7d: number;
+            /** All Cases */
+            all_cases: boolean;
+            /** Cases */
+            cases: components["schemas"]["TokenCase"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Id */
+            id: number;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Id */
+            owner_id: number;
+            /** Owner Name */
+            owner_name: string | null;
+            /** Prefix */
+            prefix: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "revoked" | "expired";
         };
         /** AdminUser */
         AdminUser: {
@@ -3026,6 +3139,8 @@ export interface components {
         };
         /** AgentAccessView */
         AgentAccessView: {
+            /** Mcp Enabled */
+            mcp_enabled: boolean;
             /** Mcp Url */
             mcp_url: string;
             /** Tokens */
@@ -5039,6 +5154,11 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** McpSwitch */
+        McpSwitch: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** MergeProposalView */
         MergeProposalView: {
             /** Confidence */
@@ -5952,6 +6072,35 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** TokenActivityEntry */
+        TokenActivityEntry: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: number;
+            /** Target Id */
+            target_id: string | null;
+            /** Target Type */
+            target_type: string | null;
+            /** Tool */
+            tool: string | null;
+        };
+        /** TokenActivityView */
+        TokenActivityView: {
+            /** Entries */
+            entries: components["schemas"]["TokenActivityEntry"][];
+            /** Token Id */
+            token_id: number;
+        };
         /** TokenCase */
         TokenCase: {
             /** Id */
@@ -6305,6 +6454,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseActionItem"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_admin_agent_access_api_v1_admin_agent_access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAgentAccessView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_admin_set_mcp_enabled_api_v1_admin_agent_access_enabled_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpSwitch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAgentAccessView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_admin_revoke_token_api_v1_admin_agent_access_tokens__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAgentAccessView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_admin_token_activity_api_v1_admin_agent_access_tokens__token_id__activity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                token_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenActivityView"];
                 };
             };
             /** @description Error */

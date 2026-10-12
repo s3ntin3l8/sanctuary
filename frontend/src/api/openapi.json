@@ -202,6 +202,27 @@
         "title": "AdminActiveUpdate",
         "type": "object"
       },
+      "AdminAgentAccessView": {
+        "properties": {
+          "mcp_enabled": {
+            "title": "Mcp Enabled",
+            "type": "boolean"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/AdminTokenView"
+            },
+            "title": "Tokens",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mcp_enabled",
+          "tokens"
+        ],
+        "title": "AdminAgentAccessView",
+        "type": "object"
+      },
       "AdminPasswordReset": {
         "properties": {
           "new_password": {
@@ -239,6 +260,128 @@
           "role"
         ],
         "title": "AdminRoleUpdate",
+        "type": "object"
+      },
+      "AdminTokenView": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ApiTokenAccess"
+          },
+          "activity_count_7d": {
+            "title": "Activity Count 7D",
+            "type": "integer"
+          },
+          "all_cases": {
+            "title": "All Cases",
+            "type": "boolean"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/TokenCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "integer"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "access",
+          "all_cases",
+          "cases",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+          "revoked_at",
+          "owner_id",
+          "owner_email",
+          "owner_name",
+          "status",
+          "activity_count_7d"
+        ],
+        "title": "AdminTokenView",
         "type": "object"
       },
       "AdminUser": {
@@ -357,6 +500,10 @@
       },
       "AgentAccessView": {
         "properties": {
+          "mcp_enabled": {
+            "title": "Mcp Enabled",
+            "type": "boolean"
+          },
           "mcp_url": {
             "title": "Mcp Url",
             "type": "string"
@@ -371,6 +518,7 @@
         },
         "required": [
           "mcp_url",
+          "mcp_enabled",
           "tokens"
         ],
         "title": "AgentAccessView",
@@ -6952,6 +7100,19 @@
         "title": "MaintenanceResult",
         "type": "object"
       },
+      "McpSwitch": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "McpSwitch",
+        "type": "object"
+      },
       "MergeProposalView": {
         "properties": {
           "confidence": {
@@ -9938,6 +10099,93 @@
         "title": "TitleUpdate",
         "type": "object"
       },
+      "TokenActivityEntry": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Type"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "event_type",
+          "tool",
+          "target_type",
+          "target_id",
+          "detail"
+        ],
+        "title": "TokenActivityEntry",
+        "type": "object"
+      },
+      "TokenActivityView": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TokenActivityEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "token_id": {
+            "title": "Token Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "token_id",
+          "entries"
+        ],
+        "title": "TokenActivityView",
+        "type": "object"
+      },
       "TokenCase": {
         "properties": {
           "id": {
@@ -11013,6 +11261,174 @@
         "summary": "V1 Set Action Item Status",
         "tags": [
           "cases"
+        ]
+      }
+    },
+    "/api/v1/admin/agent-access": {
+      "get": {
+        "operationId": "v1_admin_agent_access_api_v1_admin_agent_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgentAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Admin Agent Access",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/agent-access/enabled": {
+      "put": {
+        "operationId": "v1_admin_set_mcp_enabled_api_v1_admin_agent_access_enabled_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpSwitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgentAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Admin Set Mcp Enabled",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/agent-access/tokens/{token_id}": {
+      "delete": {
+        "operationId": "v1_admin_revoke_token_api_v1_admin_agent_access_tokens__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgentAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Admin Revoke Token",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/agent-access/tokens/{token_id}/activity": {
+      "get": {
+        "operationId": "v1_admin_token_activity_api_v1_admin_agent_access_tokens__token_id__activity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenActivityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Admin Token Activity",
+        "tags": [
+          "admin"
         ]
       }
     },

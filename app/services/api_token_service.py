@@ -15,8 +15,9 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.cache import cache
 from app.core.timezone import now_utc
-from app.models.database import ApiToken, ApiTokenCase, User
+from app.models.database import ApiToken, ApiTokenCase, AppSettings, User
 from app.models.enums import ApiTokenAccess, AuditEventType
 from app.services import access_service, audit_service
 
@@ -79,6 +80,7 @@ def mint(
         target_type="api_token",
         target_id=str(token.id),
         payload={
+            "api_token_id": token.id,
             "name": token.name,
             "access": access.value,
             "all_cases": all_cases,
@@ -121,7 +123,9 @@ def touch(db: Session, token: ApiToken) -> None:
         db.commit()
 
 
-def revoke(db: Session, token: ApiToken, *, actor_user_id: int) -> None:
+def revoke(
+    db: Session, token: ApiToken, *, actor_user_id: int, by_admin: bool = False
+) -> None:
     if token.revoked_at is not None:
         return
     token.revoked_at = now_utc()
@@ -130,7 +134,12 @@ def revoke(db: Session, token: ApiToken, *, actor_user_id: int) -> None:
         AuditEventType.API_TOKEN_REVOKED,
         target_type="api_token",
         target_id=str(token.id),
-        payload={"name": token.name},
+        payload={
+            "api_token_id": token.id,
+            "name": token.name,
+            "owner_user_id": token.user_id,
+            "by_admin": by_admin,
+        },
         actor_user_id=actor_user_id,
     )
 
@@ -165,3 +174,41 @@ def token_names(db: Session, ids: Iterable[int | None]) -> dict[int | None, str]
     rows = db.query(ApiToken.id, ApiToken.name).filter(ApiToken.id.in_(wanted)).all()
     names: dict[int | None, str] = {row[0]: row[1] for row in rows}
     return names
+
+
+# --- Instance-wide switch ------------------------------------------------------
+
+_MCP_ENABLED_KEY = "mcp_enabled"
+_SWITCH_CACHE_KEY = "mcp:instance_enabled"
+_SWITCH_CACHE_TTL = 5  # seconds; the gate reads this on every /mcp request
+
+
+def mcp_enabled(db: Session) -> bool:
+    """Whether the MCP endpoint is switched on for this instance (default: yes)."""
+    cached = cache.get(_SWITCH_CACHE_KEY)
+    if cached is not None:
+        return bool(cached)
+    row = db.query(AppSettings).first()
+    settings = row.settings_json if row and isinstance(row.settings_json, dict) else {}
+    value = bool(settings.get(_MCP_ENABLED_KEY, True))
+    cache.set(_SWITCH_CACHE_KEY, value, ttl=_SWITCH_CACHE_TTL)
+    return value
+
+
+def set_mcp_enabled(db: Session, value: bool, *, actor_user_id: int) -> None:
+    row = db.query(AppSettings).first()
+    if row is None:
+        row = AppSettings(settings_json={})
+        db.add(row)
+        db.flush()
+    previous = bool((row.settings_json or {}).get(_MCP_ENABLED_KEY, True))
+    row.settings_json = {**(row.settings_json or {}), _MCP_ENABLED_KEY: bool(value)}
+    db.flush()
+    cache.delete(_SWITCH_CACHE_KEY)
+    audit_service.record(
+        db,
+        AuditEventType.MCP_SWITCH_CHANGED,
+        target_type="instance",
+        payload={"enabled": bool(value), "previous": previous},
+        actor_user_id=actor_user_id,
+    )

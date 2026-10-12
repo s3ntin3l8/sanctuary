@@ -366,3 +366,4 @@ class AuditEventType(enum.StrEnum):
     API_TOKEN_CREATED = "api_token_created"
     API_TOKEN_REVOKED = "api_token_revoked"
     MCP_WRITE = "mcp_write"
+    MCP_SWITCH_CHANGED = "mcp_switch_changed"

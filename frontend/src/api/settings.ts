@@ -389,3 +389,46 @@ export const useAdminSignup = () =>
   useAdminReplace<boolean>((enabled) =>
     unwrap(api.PUT('/api/v1/admin/signup', { body: { enabled } })),
   )
+
+// --- Admin: agent access -------------------------------------------------------
+
+export const useAdminAgentAccess = () =>
+  useQuery<S['AdminAgentAccessView'], ApiError>({
+    queryKey: ['admin', 'agent-access'],
+    queryFn: () => unwrap(api.GET('/api/v1/admin/agent-access')),
+  })
+
+function useAdminAgentMutation<V>(run: (vars: V) => Promise<S['AdminAgentAccessView']>) {
+  const queryClient = useQueryClient()
+  return useMutation<S['AdminAgentAccessView'], ApiError, V>({
+    mutationFn: run,
+    onSuccess: (view) => {
+      queryClient.setQueryData(['admin', 'agent-access'], view)
+      // The user-facing page shows the instance switch and the revoked state too.
+      void queryClient.invalidateQueries({ queryKey: ['settings', 'agent-access'] })
+    },
+  })
+}
+export const useAdminSetMcpEnabled = () =>
+  useAdminAgentMutation<boolean>((enabled) =>
+    unwrap(api.PUT('/api/v1/admin/agent-access/enabled', { body: { enabled } })),
+  )
+export const useAdminRevokeAgentToken = () =>
+  useAdminAgentMutation<number>((token_id) =>
+    unwrap(
+      api.DELETE('/api/v1/admin/agent-access/tokens/{token_id}', {
+        params: { path: { token_id } },
+      }),
+    ),
+  )
+export const useAdminTokenActivity = (tokenId: number, enabled: boolean) =>
+  useQuery<S['TokenActivityView'], ApiError>({
+    queryKey: ['admin', 'agent-access', 'activity', tokenId],
+    enabled,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/v1/admin/agent-access/tokens/{token_id}/activity', {
+          params: { path: { token_id: tokenId } },
+        }),
+      ),
+  })

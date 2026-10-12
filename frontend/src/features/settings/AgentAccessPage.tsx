@@ -97,6 +97,19 @@ export function AgentAccessPage() {
         </div>
       </SettingsCard>
 
+      {!view.mcp_enabled && (
+        <p
+          role="alert"
+          className="flex gap-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-[12px] text-ink2"
+        >
+          <Icon name="block" size={16} />
+          <span>
+            An admin has switched MCP access off for this instance. Agents are refused and new
+            tokens cannot be created until it is switched back on.
+          </span>
+        </p>
+      )}
+
       {created && (
         <SettingsCard
           title={`Token “${created.name}” created`}
@@ -124,71 +137,73 @@ export function AgentAccessPage() {
 
       <SettingsCard title="New token">
         <form className="space-y-4" onSubmit={submit}>
-          <TextField label="Name" name="name" required maxLength={80} placeholder="Claude Code" />
+          <fieldset disabled={!view.mcp_enabled} className="space-y-4">
+            <TextField label="Name" name="name" required maxLength={80} placeholder="Claude Code" />
 
-          <fieldset className="space-y-2">
-            <legend className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
-              Cases
-            </legend>
-            <label className="flex items-center gap-2 text-[12.5px]">
-              <input type="radio" checked={allCases} onChange={() => setAllCases(true)} />
-              All cases, including ones created later
-            </label>
-            <label className="flex items-center gap-2 text-[12.5px]">
-              <input type="radio" checked={!allCases} onChange={() => setAllCases(false)} />
-              Only these cases
-            </label>
-            {!allCases && (
-              <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-line p-2">
-                {cases.map((c) => (
-                  <li key={c.id}>
-                    <label className="flex items-center gap-2 text-[12px]">
-                      <input
-                        type="checkbox"
-                        checked={picked.includes(c.id)}
-                        onChange={(e) =>
-                          setPicked((p) =>
-                            e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id),
-                          )
-                        }
-                      />
-                      <span className="font-mono text-[11px]">{c.id}</span>
-                      <span className="truncate text-muted">{c.title}</span>
-                    </label>
-                  </li>
+            <fieldset className="space-y-2">
+              <legend className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
+                Cases
+              </legend>
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="radio" checked={allCases} onChange={() => setAllCases(true)} />
+                All cases, including ones created later
+              </label>
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="radio" checked={!allCases} onChange={() => setAllCases(false)} />
+                Only these cases
+              </label>
+              {!allCases && (
+                <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-line p-2">
+                  {cases.map((c) => (
+                    <li key={c.id}>
+                      <label className="flex items-center gap-2 text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={picked.includes(c.id)}
+                          onChange={(e) =>
+                            setPicked((p) =>
+                              e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id),
+                            )
+                          }
+                        />
+                        <span className="font-mono text-[11px]">{c.id}</span>
+                        <span className="truncate text-muted">{c.title}</span>
+                      </label>
+                    </li>
+                  ))}
+                  {cases.length === 0 && <li className="text-[12px] text-muted">No cases yet.</li>}
+                </ul>
+              )}
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
+                Access
+              </legend>
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="radio" name="access" value="read" defaultChecked />
+                Read-only
+              </label>
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="radio" name="access" value="read_write" />
+                Read &amp; write — annotate, add claims and deadlines, upload
+              </label>
+            </fieldset>
+
+            <Field label="Expires" htmlFor="expiry">
+              <select id="expiry" name="expiry" className={inputClass} defaultValue="">
+                {EXPIRY.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
-                {cases.length === 0 && <li className="text-[12px] text-muted">No cases yet.</li>}
-              </ul>
-            )}
+              </select>
+            </Field>
+
+            <Button type="submit" disabled={create.isPending || (!allCases && picked.length === 0)}>
+              Create token
+            </Button>
           </fieldset>
-
-          <fieldset className="space-y-2">
-            <legend className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
-              Access
-            </legend>
-            <label className="flex items-center gap-2 text-[12.5px]">
-              <input type="radio" name="access" value="read" defaultChecked />
-              Read-only
-            </label>
-            <label className="flex items-center gap-2 text-[12.5px]">
-              <input type="radio" name="access" value="read_write" />
-              Read &amp; write — annotate, add claims and deadlines, upload
-            </label>
-          </fieldset>
-
-          <Field label="Expires" htmlFor="expiry">
-            <select id="expiry" name="expiry" className={inputClass} defaultValue="">
-              {EXPIRY.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Button type="submit" disabled={create.isPending || (!allCases && picked.length === 0)}>
-            Create token
-          </Button>
         </form>
       </SettingsCard>
 

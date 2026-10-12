@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -29,6 +30,8 @@ class ApiTokenView(BaseModel):
 
 class AgentAccessView(BaseModel):
     mcp_url: str
+    # False when an admin switched MCP off for the whole instance.
+    mcp_enabled: bool
     tokens: list[ApiTokenView]
 
 
@@ -52,3 +55,41 @@ class ApiTokenCreated(BaseModel):
     token: ApiTokenView
     # Shown once: only its hash is stored.
     secret: str
+
+
+# --- Admin overview ------------------------------------------------------------
+
+TokenStatus = Literal["active", "revoked", "expired"]
+
+
+class AdminTokenView(ApiTokenView):
+    owner_id: int
+    owner_email: str
+    owner_name: str | None
+    status: TokenStatus
+    # Audited MCP actions (writes) by this token in the last 7 days.
+    activity_count_7d: int
+
+
+class AdminAgentAccessView(BaseModel):
+    mcp_enabled: bool
+    tokens: list[AdminTokenView]
+
+
+class McpSwitch(BaseModel):
+    enabled: bool
+
+
+class TokenActivityEntry(BaseModel):
+    id: int
+    created_at: datetime
+    event_type: str
+    tool: str | None
+    target_type: str | None
+    target_id: str | None
+    detail: dict[str, Any]
+
+
+class TokenActivityView(BaseModel):
+    token_id: int
+    entries: list[TokenActivityEntry]
