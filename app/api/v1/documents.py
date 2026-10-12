@@ -50,7 +50,12 @@ from app.schemas.document_review import (
     SummaryBullet,
     SummaryView,
 )
-from app.services import api_token_service, pin_service, reaction_service
+from app.services import (
+    api_token_service,
+    document_files,
+    pin_service,
+    reaction_service,
+)
 from app.services.document_review_service import (
     case_ref,
     pin_view,
@@ -100,16 +105,11 @@ def reader(
 )
 def original(doc: Document = Depends(require_document_access())):
     """The stored source file, inline for PDFs and as a download otherwise."""
-    from app.config import DATA_DIR
-    from app.core.paths import resolve_storage_path
-
-    if not doc.file_path:
-        raise ApiError(404, "no_original", "No original file stored for this document.")
-    resolved = resolve_storage_path(doc.file_path).resolve()
-    data_root = DATA_DIR.resolve()
-    # Refuse anything outside DATA_DIR even if file_path were ever attacker-influenced.
-    if not str(resolved).startswith(str(data_root) + "/") or not resolved.exists():
-        raise ApiError(404, "no_original", "Original file not found on disk.")
+    try:
+        original_file = document_files.resolve_original(doc)
+    except document_files.OriginalFileError as exc:
+        raise ApiError(404, exc.code, exc.detail) from exc
+    resolved = original_file.path
     if resolved.suffix.lower() == ".pdf":
         return FileResponse(
             path=str(resolved),

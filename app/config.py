@@ -82,6 +82,9 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 AI_SUMMARY_MODEL = os.getenv("AI_SUMMARY_MODEL", "qwen3.5:9b")
 AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text:v1.5")
 AI_EMBED_DIM = int(os.getenv("AI_EMBED_DIM", "768"))  # nomic-embed-text default
+
+# Largest original file the MCP get_original_file tool will hand to an agent.
+MCP_MAX_DOWNLOAD_MB = int(os.getenv("MCP_MAX_DOWNLOAD_MB", "25"))
 AI_USER_CONTEXT = os.getenv("AI_USER_CONTEXT", "")
 # Read timeout (seconds) for streaming AI calls. Local inference on long prompts
 # can easily exceed 60s; the default of 600s gives slow local models headroom.
