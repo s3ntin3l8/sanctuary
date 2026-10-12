@@ -347,8 +347,10 @@ def fetch_metadata(
     """
     found: list[dict] = []
     retry: list[str] = []
+    answered: set[str] = set()
 
     def _collect(request_id: str, response: dict | None, exception: Exception | None):
+        answered.add(request_id)
         if exception is None and response is not None:
             found.append(response)
         elif exception is not None and _http_status(exception) == 404:
@@ -368,8 +370,9 @@ def fetch_metadata(
         retry.clear()
         for start in range(0, len(pending), batch_size):
             before = len(retry)
+            ids = pending[start : start + batch_size]
             batch = service.new_batch_http_request(callback=_collect)
-            for gmail_id in pending[start : start + batch_size]:
+            for gmail_id in ids:
                 batch.add(
                     service.users()
                     .messages()
@@ -381,7 +384,14 @@ def fetch_metadata(
                     ),
                     request_id=gmail_id,
                 )
-            batch.execute()
+            try:
+                batch.execute()
+            except HttpError as exc:
+                # The batch call itself was refused (its own quota), so no
+                # sub-request was answered: retry them like any other.
+                if not _is_rate_limited(exc):
+                    raise
+                retry.extend(i for i in ids if i not in answered)
             if len(retry) > before:
                 pause = min(pause * 2, _BATCH_PAUSE_MAX_SECONDS)  # back off at once
             if start + batch_size < len(pending):

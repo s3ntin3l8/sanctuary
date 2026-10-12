@@ -266,3 +266,37 @@ def test_index_chunk_does_not_count_deleted_messages_as_skipped():
             MagicMock(), MagicMock(), 1, ["ok", "deleted", "throttled"]
         )
     assert skipped == 1  # only the one Gmail kept failing
+
+
+def test_a_rate_limited_batch_call_is_retried_like_its_sub_requests():
+    envelope = _http_error(429, "rateLimitExceeded", "Too many concurrent requests")
+    refused = []
+
+    def _new_batch(callback):
+        batch = _FlakyBatch(callback, {})
+        if not refused:
+            refused.append(batch)
+
+            def _boom():
+                raise envelope
+
+            batch.execute = _boom
+        return batch
+
+    service = MagicMock()
+    service.new_batch_http_request.side_effect = _new_batch
+
+    with patch.object(gmail.time, "sleep"):
+        found = fetch_metadata(service, ["a", "b", "c"])
+
+    assert sorted(m["id"] for m in found) == ["a", "b", "c"]
+
+
+def test_a_non_rate_limit_batch_failure_still_raises():
+    denied = _http_error(403, "insufficientPermissions", "denied")
+    service = MagicMock()
+    batch = MagicMock()
+    batch.execute.side_effect = denied
+    service.new_batch_http_request.return_value = batch
+    with patch.object(gmail.time, "sleep"), pytest.raises(HttpError):
+        fetch_metadata(service, ["a"])
