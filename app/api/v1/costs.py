@@ -12,7 +12,6 @@ from app.api.access_guards import (
     require_cost_access,
     require_cost_signal_access,
 )
-from app.api.v1.case_detail import _cost_row
 from app.api.v1.errors import ApiError
 from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
@@ -28,7 +27,7 @@ from app.schemas.case_detail import (
     CostsOverview,
 )
 from app.services import access_service
-from app.services.case_overview_service import summary_of
+from app.services.case_overview_service import cost_row, summary_of
 from app.services.case_service import recompute_total_cost_exposure
 from app.services.cost_service import CostService, _derive_status, costs_due
 
@@ -62,7 +61,7 @@ def costs_overview(
         (
             d.overdue,
             CostAlert(
-                cost=_cost_row(d.cost),
+                cost=cost_row(d.cost),
                 case_title=titles.get(d.cost.case_id, d.cost.case_id),
                 open_amount=d.open_amount,
             ),
@@ -82,7 +81,7 @@ def costs_overview(
                 status=case.status,
                 can_edit=editable is None or case.id in editable,
                 summary=summary_of(by_case[case.id], case.total_cost_exposure or 0),
-                costs=[_cost_row(c) for c in by_case[case.id]],
+                costs=[cost_row(c) for c in by_case[case.id]],
             )
             for case in cases
         ],
@@ -123,14 +122,14 @@ def create_cost(
     db.commit()
     db.refresh(cost)
     recompute_total_cost_exposure(case.id, db)
-    return _cost_row(cost)
+    return cost_row(cost)
 
 
 def _refreshed(db: Session, cost: LegalCost) -> CostRow:
     db.commit()
     db.refresh(cost)
     recompute_total_cost_exposure(cost.case_id, db)
-    return _cost_row(cost)
+    return cost_row(cost)
 
 
 @router.post("/costs/{cost_id}/pay", response_model=CostRow)

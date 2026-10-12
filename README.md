@@ -77,6 +77,25 @@ For a self-contained deployment that terminates HTTPS itself (Traefik + Let's En
 
 Alembic migrations run automatically on server startup. AI features require [Ollama](https://ollama.com/) or a compatible provider. See `.env.example` for all options.
 
+## Connecting an agent (MCP)
+
+Sanctuary exposes a [Model Context Protocol](https://modelcontextprotocol.io) endpoint at `/mcp`, so an external AI agent (Claude Code, Claude Desktop, …) can read your cases directly instead of you pasting files into a chat.
+
+1. Open **Settings → Agent access** and create a token. Choose **all cases** (including ones created later) or specific cases, and **read-only** or **read & write**. The secret is shown once.
+2. Add the server, e.g. for Claude Code:
+
+   ```bash
+   claude mcp add --transport http sanctuary https://<your-host>/mcp \
+     --header "Authorization: Bearer sct_…"
+   ```
+
+   Clients that cannot send a static header can use the `mcp-remote` bridge: `npx mcp-remote https://<your-host>/mcp --header "Authorization: Bearer sct_…"`.
+3. Ask the agent to work with your cases: it can list cases, read overviews, documents (with AI summaries and key passages), the Truth Map, timeline, deadlines and costs, and search by keyword or meaning.
+
+A token acts as you and can never see more than you can. Every call is rate limited per token and tokens can be revoked at any time.
+
+**Privacy:** the AI in Sanctuary itself runs locally, but an external agent does not. Case content that a tool returns is sent to whatever model that agent uses — if that is a cloud model, it leaves your machine. Prefer read-only tokens limited to the cases the agent needs.
+
 ## Seed Data
 
 Populate the database with ~100 realistic documents, parent-child links, costs, and extracted entities:
