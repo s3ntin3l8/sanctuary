@@ -47,7 +47,8 @@ def mint(
     """Create a token for ``user`` and return it with its one-time secret."""
     wanted = set(case_ids or [])
     if all_cases:
-        wanted = set()
+        if wanted:
+            raise TokenScopeError("All-cases tokens take no case list.")
     elif not wanted:
         raise TokenScopeError("Pick at least one case, or choose all cases.")
     else:
@@ -87,7 +88,10 @@ def mint(
 
 
 def verify(db: Session, secret: str) -> ApiToken | None:
-    """The live token for ``secret``, or None (unknown, revoked, expired, owner disabled)."""
+    """The live token for ``secret``, or None (unknown, revoked, expired, owner disabled).
+
+    A pure read; the caller records the use with :func:`touch`.
+    """
     if not secret.startswith(SECRET_PREFIX):
         return None
     token = (
@@ -98,13 +102,17 @@ def verify(db: Session, secret: str) -> ApiToken | None:
     )
     if token is None or token.revoked_at is not None or not token.user.is_active:
         return None
-    now = now_utc()
-    if token.expires_at is not None and token.expires_at <= now:
+    if token.expires_at is not None and token.expires_at <= now_utc():
         return None
+    return token
+
+
+def touch(db: Session, token: ApiToken) -> None:
+    """Stamp ``last_used_at`` (at most once a minute) and commit."""
+    now = now_utc()
     if token.last_used_at is None or now - token.last_used_at > _LAST_USED_RESOLUTION:
         token.last_used_at = now
         db.commit()
-    return token
 
 
 def revoke(db: Session, token: ApiToken, *, actor_user_id: int) -> None:

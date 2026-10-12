@@ -18,7 +18,8 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["600/minute"])
 # Per-token budget for the MCP endpoint. slowapi keys on client IP, which is
 # the wrong identity for an agent: many tokens can share one IP and one token
 # can roam. Uses the `limits` package slowapi is built on (in-memory, which is
-# right for the single uvicorn process).
+# right for the single uvicorn process; with several workers each gets its
+# own budget, so move the storage to Redis if the deployment ever does).
 MCP_TOKEN_RATE_LIMIT = parse(os.getenv("MCP_TOKEN_RATE_LIMIT", "120/minute"))
 _token_limiter = FixedWindowRateLimiter(MemoryStorage())
 

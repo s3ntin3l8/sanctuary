@@ -112,10 +112,25 @@ def test_per_case_scope_requires_visible_cases(db_session, alice):
 
 
 def test_all_cases_token_stores_no_case_rows(db_session, alice):
-    _case(db_session, "A-1", alice.id)
-    token, _ = _mint(db_session, alice, all_cases=True, case_ids=["A-1"])
+    token, _ = _mint(db_session, alice, all_cases=True)
     assert token.all_cases is True
     assert token.cases == []
+
+
+def test_all_cases_token_rejects_a_case_list(db_session, alice):
+    _case(db_session, "A-1", alice.id)
+    with pytest.raises(api_token_service.TokenScopeError):
+        _mint(db_session, alice, all_cases=True, case_ids=["A-1"])
+
+
+def test_verify_is_a_pure_read_and_touch_throttles(db_session, alice):
+    token, secret = _mint(db_session, alice)
+    assert api_token_service.verify(db_session, secret).last_used_at is None
+    api_token_service.touch(db_session, token)
+    first = token.last_used_at
+    assert first is not None
+    api_token_service.touch(db_session, token)
+    assert token.last_used_at == first
 
 
 def test_mint_and_revoke_are_audited(db_session, alice):
@@ -166,6 +181,25 @@ def test_valid_token_passes_the_gate(auth_enabled, db_session, alice):
     _, secret = _mint(db_session, alice)
     resp = TestClient(app).post("/mcp", json={}, headers=_bearer(secret))
     assert resp.status_code != 401
+
+
+@pytest.mark.parametrize("header", ["Bearer   {s}", "bearer {s}", "BEARER {s}"])
+def test_bearer_scheme_is_case_and_space_tolerant(
+    auth_enabled, db_session, alice, header
+):
+    _, secret = _mint(db_session, alice)
+    resp = TestClient(app).post(
+        "/mcp", json={}, headers={"Authorization": header.format(s=secret)}
+    )
+    assert resp.status_code != 401
+
+
+def test_bearer_without_a_space_is_rejected(auth_enabled, db_session, alice):
+    _, secret = _mint(db_session, alice)
+    resp = TestClient(app).post(
+        "/mcp", json={}, headers={"Authorization": f"Bearer{secret}"}
+    )
+    assert resp.status_code == 401
 
 
 def test_revoked_token_is_rejected(auth_enabled, db_session, alice):
@@ -245,13 +279,13 @@ def test_settings_rejects_empty_or_foreign_scope(auth_enabled, db_session, alice
     )
     _case(db_session, "B-1", other.id)
     client = _login("alice@example.com")
-    for case_ids in ([], ["B-1"]):
+    for all_cases, case_ids in ((False, []), (False, ["B-1"]), (True, ["B-1"])):
         resp = client.post(
             "/api/v1/settings/agent-access",
             json={
                 "name": "x",
                 "access": "read",
-                "all_cases": False,
+                "all_cases": all_cases,
                 "case_ids": case_ids,
             },
         )

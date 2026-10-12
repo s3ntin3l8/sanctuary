@@ -654,6 +654,7 @@ def _is_mcp_path(path: str) -> bool:
 
 
 def _bearer_secret(request: Request) -> str | None:
+    # "Bearer <secret>"; any amount of whitespace after the scheme is tolerated.
     scheme, _, value = request.headers.get("authorization", "").partition(" ")
     return value.strip() or None if scheme.lower() == "bearer" else None
 
@@ -758,6 +759,7 @@ class AuthGateMiddleware:
             try:
                 token = api_token_service.verify(db, secret)
                 if token is not None:
+                    api_token_service.touch(db, token)
                     token_id, user_id = token.id, token.user_id
             finally:
                 db.close()

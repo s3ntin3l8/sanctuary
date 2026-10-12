@@ -1539,6 +1539,8 @@ class ApiTokenCase(Base):
     token_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("api_tokens.id", ondelete="CASCADE"), primary_key=True
     )
+    # Also indexed on its own: merge_cases and case cascades look rows up by
+    # case_id alone, which the (token_id, case_id) primary key cannot serve.
     case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
