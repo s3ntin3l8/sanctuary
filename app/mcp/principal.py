@@ -9,7 +9,8 @@ API's 404s, so an agent cannot probe for what exists.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.orm import Session
@@ -32,6 +33,9 @@ class McpPrincipal:
     access: ApiTokenAccess
     all_cases: bool
     scoped_case_ids: frozenset[str]
+    # One principal serves one tool call (one DB session), so the owner's case
+    # sets are computed once per call instead of once per checked row.
+    _memo: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
     def load(cls, db: Session, *, token_id: int | None) -> McpPrincipal:
@@ -70,12 +74,22 @@ class McpPrincipal:
 
     def readable_case_ids(self, db: Session) -> set[str] | None:
         """Case ids this token may read; ``None`` means every case."""
-        return self._narrow(access_service.visible_case_ids(db, self.user))
+        if "readable" not in self._memo:
+            self._memo["readable"] = self._narrow(
+                access_service.visible_case_ids(db, self.user)
+            )
+        found = self._memo["readable"]
+        return None if found is None else set(found)
 
     def writable_case_ids(self, db: Session) -> set[str] | None:
         if not self.can_write:
             return set()
-        return self._narrow(access_service.editable_case_ids(db, self.user))
+        if "writable" not in self._memo:
+            self._memo["writable"] = self._narrow(
+                access_service.editable_case_ids(db, self.user)
+            )
+        found = self._memo["writable"]
+        return None if found is None else set(found)
 
     def can_read_object(
         self, db: Session, *, owner_id: int | None, case_id: str | None
