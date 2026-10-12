@@ -6,8 +6,13 @@ from unittest.mock import patch
 import pytest
 
 from app import config
-from app.models.database import AuditLog, Document, IngestBatch
-from app.models.enums import ApiTokenAccess, AuditEventType, IngestBatchSourceType
+from app.models.database import AuditLog, Document, IngestBatch, Proceeding
+from app.models.enums import (
+    ApiTokenAccess,
+    AuditEventType,
+    IngestBatchSourceType,
+    ProceedingCourtLevel,
+)
 
 RW = ApiTokenAccess.READ_WRITE
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
@@ -52,6 +57,32 @@ def test_per_case_token_uploads_into_its_case(
     batch = db_session.get(IngestBatch, out["ingest_batch_id"])
     assert batch.agent_token_id is not None
     no_dispatch.assert_called_once()
+
+
+def test_uploading_into_a_draft_proceeding_makes_it_real(
+    mcp_session, make_token, make_case, alice, db_session
+):
+    make_case("A-1", alice.id)
+    proc = Proceeding(
+        case_id="A-1",
+        court_name="AG Berlin",
+        court_level=ProceedingCourtLevel.AG,
+        is_draft=True,
+    )
+    db_session.add(proc)
+    db_session.commit()
+    s = mcp_session(make_token(alice, access=RW))
+    error, out = s.call(
+        "upload_document",
+        filename="a.pdf",
+        content_base64=b64(),
+        case_id="A-1",
+        proceeding_id=proc.id,
+    )
+    assert not error, out
+    db_session.expire_all()
+    assert db_session.get(Proceeding, proc.id).is_draft is False
+    assert db_session.get(Document, out["document_id"]).proceeding_id == proc.id
 
 
 def test_per_case_token_must_name_a_writable_case(
@@ -148,6 +179,9 @@ def test_assign_document_moves_it_into_the_case(
         db_session.query(AuditLog).filter_by(event_type=AuditEventType.MCP_WRITE).one()
     )
     assert audit.payload["tool"] == "assign_to_case"
+    assert audit.payload["api_token_id"] is not None
+    assert audit.actor_user_id == alice.id
+    assert audit.actor_label == "mcp:agent"
 
 
 def test_assign_batch_moves_its_triage_documents(

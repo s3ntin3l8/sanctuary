@@ -22,7 +22,7 @@ from app import config
 from app.core.async_utils import run_async
 from app.mcp.db import run
 from app.mcp.principal import NOT_FOUND, READ_ONLY, McpPrincipal
-from app.models.database import Document, IngestBatch
+from app.models.database import Document, IngestBatch, Proceeding
 from app.models.enums import AuditEventType
 from app.services import audit_service, triage_routing_service
 from app.services.ingestion.converters import ALLOWED_EXTENSIONS
@@ -113,6 +113,10 @@ def upload_document(
         raise ToolError(str(exc.detail)) from exc
     if proceeding_id is not None:
         doc.proceeding_id = proceeding_id
+        # Filing into a draft proceeding makes it real, as route_document does.
+        proc = db.get(Proceeding, proceeding_id)
+        if proc and proc.is_draft:
+            proc.is_draft = False
     audit_service.record(
         db,
         AuditEventType.MCP_UPLOAD,
@@ -182,8 +186,9 @@ def assign_to_case(
                 db, batch_id, case.id, proceeding_id, finalize
             )
         else:
+            assert document_id is not None  # exactly one of the two ids is set
             triage_routing_service.route_document(
-                db, document_id or 0, case.id, proceeding_id, finalize
+                db, document_id, case.id, proceeding_id, finalize
             )
     except triage_routing_service.RoutingError as exc:
         raise ToolError(exc.detail) from exc
