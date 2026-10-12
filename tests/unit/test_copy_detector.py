@@ -401,3 +401,60 @@ def test_a_copy_already_analysed_is_cleaned_when_its_original_arrives(env):
     assert kept == {RelationshipType.REPLIES_TO}  # the person's edge stays
     (edge,) = _edges(db, copy.id)
     assert edge.to_document_id == original.id
+
+
+# --- scoring on distinctive text (#304) -------------------------------------
+
+TEMPLATE = " ".join(f"vordruck{i}" for i in range(80))
+
+
+def _unique(tag: str, n: int) -> str:
+    return " ".join(f"{tag}wort{i}" for i in range(n))
+
+
+def test_form_letters_sharing_a_sender_template_are_not_copies(env):
+    db, batch, doc = env
+    # Raw containment ~0.8 (template dominates), distinctive ~0.
+    a = doc(batch(), content=f"{TEMPLATE} {_unique('a', 20)}")
+    b = doc(batch(), content=f"{TEMPLATE} {_unique('b', 20)}")
+    doc(batch(), content=f"{TEMPLATE} {_unique('c', 40)}")  # defines the boilerplate
+    assert cd.containment(cd._shingles(a.content), cd._shingles(b.content)) > 0.75
+
+    assert cd.detect_and_link(db, b).original_id is None
+    assert _edges(db) == []
+
+
+def test_a_noisy_copy_is_still_linked_on_distinctive_text(env):
+    db, batch, doc = env
+    body = f"{TEMPLATE} {_unique('x', 120)}"
+    original = doc(batch(), content=body, ingest_date=DAY)
+    doc(batch(), content=f"{TEMPLATE} {_unique('y', 120)}")  # same-sender form
+    words = body.split()
+    for i in range(7, len(words), 50):  # ~2% word error
+        words[i] = "ocrfehler"
+    copy = doc(
+        batch(),
+        content=" ".join(words),
+        role=DocumentRole.ENCLOSURE,
+        ingest_date=DAY + timedelta(days=9),
+    )
+
+    assert cd.detect_and_link(db, copy).original_id == original.id
+    (edge,) = _edges(db, copy.id)
+    assert "(distinctive)" in edge.notes
+
+
+def test_a_short_distinctive_remainder_falls_back_to_raw_containment(env):
+    db, batch, doc = env
+    original = doc(batch(), content=f"{TEMPLATE} {_unique('z', 3)}", ingest_date=DAY)
+    doc(batch(), content=f"{TEMPLATE} {_unique('q', 30)}")
+    copy = doc(
+        batch(),
+        content=f"{TEMPLATE} {_unique('z', 3)}",
+        role=DocumentRole.ENCLOSURE,
+        ingest_date=DAY + timedelta(days=9),
+    )
+
+    assert cd.detect_and_link(db, copy).original_id == original.id
+    (edge,) = _edges(db, copy.id)
+    assert "(distinctive)" not in edge.notes

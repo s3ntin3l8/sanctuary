@@ -8,7 +8,8 @@ their own, and the timeline and graph should show one document, not two.
 A copy is found by text, not by file bytes (a scan of a printout shares none):
 two documents of the same owner, dated the same day and tied by sender, court
 file number or firm reference, whose word 5-gram shingles overlap by at least
-``COPY_CONTAINMENT_MIN`` of the shorter one. Containment (not Jaccard) so that
+``COPY_CONTAINMENT_MIN`` of the shorter one, once the sender's own boilerplate
+(text its other documents share) is set aside. Containment (not Jaccard) so that
 a stamp, a header or a trailing page does not break the match.
 
 The link is an ordinary reviewable edge (``COPY_OF``, copy -> original,
@@ -38,13 +39,18 @@ from app.models.enums import (
 from app.repositories.claim import ClaimRepository
 from app.repositories.document_relationship import insert_edge_if_absent
 
-# Tune on real scans (OCR noise lowers overlap between a clean PDF and a scanned
-# copy of it); see the follow-up issue.
-COPY_CONTAINMENT_MIN = 0.85
+# Measured on the live corpus (#304). Same-court form letters of one day share a
+# template: raw containment 0.61-0.79, but only 0.10-0.43 once the sender's
+# boilerplate is removed (``_sender_boilerplate``). A true copy, as a scan with
+# 1-2% OCR word error on both sides, still scores 0.78-0.85 (3%: 0.64-0.73, 5%:
+# 0.54-0.61), so 0.75 on distinctive text keeps real copies and rejects forms.
+COPY_CONTAINMENT_MIN = 0.75
 # Too few shingles and a short form letter "matches" every sibling.
 _MIN_SHINGLES = 20
 _SHINGLE_WORDS = 5
 _MAX_CANDIDATES = 20
+# Other documents of the sender that define its boilerplate.
+_BOILERPLATE_DOCS = 10
 
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _NON_WORD_RE = re.compile(r"[^\w]+")
@@ -132,10 +138,73 @@ def _candidates(db: Session, doc: Document) -> list[Document]:
     return q.order_by(Document.id).limit(_MAX_CANDIDATES).all()
 
 
+def _sender_shingles(
+    db: Session, doc: Document, cache: dict[tuple, dict[int, set[int]]]
+) -> dict[int, set[int]]:
+    """Shingles of a few documents of ``doc``'s sender and owner (id -> set),
+    cached per sender for one detection pass. Two spare rows cover the pair."""
+    if not doc.sender or not doc.sender.strip():
+        return {}
+    key = (doc.owner_id, doc.sender.strip().lower())
+    if key not in cache:
+        q = db.query(Document.id, Document.content).filter(
+            Document.content.isnot(None),
+            Document.status != DocumentStatus.DISMISSED,
+            func.lower(func.trim(Document.sender)) == key[1],
+            Document.owner_id.is_(None)
+            if doc.owner_id is None
+            else Document.owner_id == doc.owner_id,
+        )
+        rows = q.order_by(Document.id.desc()).limit(_BOILERPLATE_DOCS + 2).all()
+        cache[key] = {i: _shingles(c) for i, c in rows}
+    return cache[key]
+
+
+def _sender_boilerplate(
+    db: Session,
+    doc: Document,
+    cand: Document,
+    cache: dict[tuple, dict[int, set[int]]],
+) -> set[int]:
+    """Shingles the sender's other documents share: the letterhead, form text
+    and legal notices a court or firm prints on everything. The pair itself is
+    left out, or a true copy would erase itself."""
+    others = [
+        s
+        for i, s in _sender_shingles(db, doc, cache).items()
+        if i not in (doc.id, cand.id)
+    ][:_BOILERPLATE_DOCS]
+    return set().union(*others) if others else set()
+
+
+def _score(
+    db: Session,
+    doc: Document,
+    cand: Document,
+    mine: set[int],
+    theirs: set[int],
+    cache: dict[tuple, dict[int, set[int]]],
+) -> tuple[float, bool]:
+    """(containment, distinctive). Scored on text beyond the sender's
+    boilerplate when both sides keep enough of it, else on the raw text."""
+    boiler = _sender_boilerplate(db, doc, cand, cache)
+    if boiler:
+        m, t = mine - boiler, theirs - boiler
+        if len(m) >= _MIN_SHINGLES and len(t) >= _MIN_SHINGLES:
+            return containment(m, t), True
+    return containment(mine, theirs), False
+
+
 @dataclass
 class CopyOutcome:
     original_id: int | None = None  # set when ``doc`` is a copy of this document
     copy_ids: list[int] = field(default_factory=list)  # documents now copies of ``doc``
+
+
+def _note(score: float, distinctive: bool) -> str:
+    return f"copy detector: containment={score:.2f}" + (
+        " (distinctive)" if distinctive else ""
+    )
 
 
 def detect_and_link(db: Session, doc: Document) -> CopyOutcome:
@@ -147,37 +216,38 @@ def detect_and_link(db: Session, doc: Document) -> CopyOutcome:
     if len(mine) < _MIN_SHINGLES:
         return outcome
 
-    best_original: tuple[float, Document] | None = None
+    cache: dict[tuple, dict[int, set[int]]] = {}
+    best_original: tuple[float, bool, Document] | None = None
     for cand in _candidates(db, doc):
         theirs = _shingles(cand.content)
         if len(theirs) < _MIN_SHINGLES:
             continue
-        score = containment(mine, theirs)
+        score, distinctive = _score(db, doc, cand, mine, theirs, cache)
         if score < COPY_CONTAINMENT_MIN:
             continue
         original, copy = _original_first(doc, cand)
         if copy is doc:
             if best_original is None or score > best_original[0]:
-                best_original = (score, original)
+                best_original = (score, distinctive, original)
         elif not is_copy(db, cand.id) and insert_edge_if_absent(
             db,
             from_document_id=cand.id,
             to_document_id=doc.id,
             relationship_type=RelationshipType.COPY_OF,
             confidence=RelationshipConfidence.AI_DETECTED,
-            notes=f"copy detector: containment={score:.2f}",
+            notes=_note(score, distinctive),
         ):
             outcome.copy_ids.append(cand.id)
 
     if best_original is not None:
-        score, original = best_original
+        score, distinctive, original = best_original
         insert_edge_if_absent(
             db,
             from_document_id=doc.id,
             to_document_id=original.id,
             relationship_type=RelationshipType.COPY_OF,
             confidence=RelationshipConfidence.AI_DETECTED,
-            notes=f"copy detector: containment={score:.2f}",
+            notes=_note(score, distinctive),
         )
     if is_copy(db, doc.id):
         outcome.original_id = (
