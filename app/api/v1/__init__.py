@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     about,
+    admin_tokens,
     admin_users,
     auth,
     case_detail,
@@ -58,6 +59,7 @@ for _module in (
     settings_appearance,
     settings_data,
     admin_users,
+    admin_tokens,
     triage,
     documents,
     upload,

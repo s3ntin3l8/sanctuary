@@ -53,3 +53,8 @@ def settings_tab(tab: str, user: User = Depends(get_current_user)) -> Response:
 @router.get("/admin/users", dependencies=[Depends(get_current_admin)])
 def admin_users_page() -> Response:
     return spa_index()
+
+
+@router.get("/admin/agent-access", dependencies=[Depends(get_current_admin)])
+def admin_agent_access_page() -> Response:
+    return spa_index()

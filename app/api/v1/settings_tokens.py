@@ -23,7 +23,7 @@ from app.services import api_token_service
 router = APIRouter(prefix="/settings/agent-access", tags=["settings"])
 
 
-def _view(db: Session, token: ApiToken) -> ApiTokenView:
+def token_view(db: Session, token: ApiToken) -> ApiTokenView:
     ids = [c.case_id for c in token.cases]
     titles: dict[str, str] = {}
     if ids:
@@ -51,7 +51,8 @@ def agent_access(
 ):
     return AgentAccessView(
         mcp_url=f"{request.base_url}mcp",
-        tokens=[_view(db, t) for t in api_token_service.list_for_user(db, user)],
+        mcp_enabled=api_token_service.mcp_enabled(db),
+        tokens=[token_view(db, t) for t in api_token_service.list_for_user(db, user)],
     )
 
 
@@ -61,6 +62,12 @@ def create_token(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if not api_token_service.mcp_enabled(db):
+        raise ApiError(
+            409,
+            "mcp_disabled",
+            "An admin has switched MCP access off for this instance.",
+        )
     expires_at = (
         now_utc() + timedelta(days=body.expires_in_days)
         if body.expires_in_days
@@ -79,7 +86,7 @@ def create_token(
     except api_token_service.TokenScopeError as exc:
         raise ApiError(422, "invalid_scope", str(exc)) from exc
     db.commit()
-    return ApiTokenCreated(token=_view(db, token), secret=secret)
+    return ApiTokenCreated(token=token_view(db, token), secret=secret)
 
 
 @router.delete("/{token_id}", response_model=ApiTokenView)
@@ -93,4 +100,4 @@ def revoke_token(
         raise ApiError(404, "token_not_found", "Token not found.")
     api_token_service.revoke(db, token, actor_user_id=user.id)
     db.commit()
-    return _view(db, token)
+    return token_view(db, token)

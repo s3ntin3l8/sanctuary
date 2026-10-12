@@ -17,7 +17,7 @@ const token = {
   expires_at: null,
   revoked_at: null,
 }
-const view = { mcp_url: 'https://sanctuary.test/mcp', tokens: [token] }
+const view = { mcp_url: 'https://sanctuary.test/mcp', mcp_enabled: true, tokens: [token] }
 const directory = {
   cases: [{ id: 'ADV-024-A', title: 'Vogt v. Meier' }],
   counts_by_status: {},
@@ -96,4 +96,25 @@ test('revoking asks for confirmation first', async () => {
     within(await screen.findByRole('dialog')).getByRole('button', { name: 'Revoke' }),
   )
   await waitFor(() => expect(fetch.mock.calls.some(([r]) => r.method === 'DELETE')).toBe(true))
+})
+
+test('shows a banner and locks the create form when an admin switched MCP off', async () => {
+  stubApi({
+    'GET /api/v1/settings/agent-access': { body: { ...view, mcp_enabled: false } },
+    'GET /api/v1/cases': { body: directory },
+  })
+  renderAt('/settings/agent-access', <AgentAccessPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(/switched MCP access off/)
+  expect(screen.getByLabelText('Name')).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Create token' })).toBeDisabled()
+})
+
+test('no banner while MCP is on', async () => {
+  stubApi({
+    'GET /api/v1/settings/agent-access': { body: view },
+    'GET /api/v1/cases': { body: directory },
+  })
+  renderAt('/settings/agent-access', <AgentAccessPage />)
+  await screen.findByText('Claude Code')
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })

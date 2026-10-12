@@ -39,7 +39,13 @@ const GROUPS: Group[] = [
     ],
   },
   { label: 'About', items: [{ to: '/settings/about', icon: 'info', label: 'About' }] },
-  { label: 'Admin', items: [{ to: '/admin/users', icon: 'group', label: 'Users', admin: true }] },
+  {
+    label: 'Admin',
+    items: [
+      { to: '/admin/users', icon: 'group', label: 'Users', admin: true },
+      { to: '/admin/agent-access', icon: 'smart_toy', label: 'Agent access', admin: true },
+    ],
+  },
 ]
 
 export function SettingsLayout() {

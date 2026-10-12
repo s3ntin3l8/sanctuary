@@ -767,6 +767,15 @@ class AuthGateMiddleware:
 
         secret = _bearer_secret(request)
         token_id = user_id = None
+        db = SessionLocal()
+        try:
+            if not api_token_service.mcp_enabled(db):
+                await _mcp_denied(
+                    503, "mcp_disabled", "MCP access is disabled on this instance."
+                )(scope, receive, send)
+                return
+        finally:
+            db.close()
         if secret:
             db = SessionLocal()
             try:

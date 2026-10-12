@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 
 import { ApiError } from './api/client'
+import { AdminAgentAccessPage } from './features/admin/AdminAgentAccessPage'
 import { AdminUsersPage } from './features/admin/AdminUsersPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { SignupPage } from './features/auth/SignupPage'
@@ -65,6 +66,7 @@ const router = createBrowserRouter([
           { path: '/settings/export', element: <ExportPage /> },
           { path: '/settings/about', element: <AboutPage /> },
           { path: '/admin/users', element: <AdminUsersPage /> },
+          { path: '/admin/agent-access', element: <AdminAgentAccessPage /> },
         ],
       },
       { path: '*', element: <NotFoundPage /> },
