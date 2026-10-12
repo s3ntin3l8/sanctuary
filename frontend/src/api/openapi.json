@@ -119,6 +119,17 @@
             ],
             "title": "Addressee"
           },
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "description": {
             "anyOf": [
               {
@@ -1286,6 +1297,17 @@
             ],
             "title": "Addressee"
           },
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "description": {
             "anyOf": [
               {
@@ -2106,6 +2128,17 @@
       },
       "ClaimView": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "allowed_transitions": {
             "items": {
               "$ref": "#/components/schemas/ClaimStatus"
@@ -4768,6 +4801,17 @@
       },
       "EvidenceView": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "confidence": {
             "$ref": "#/components/schemas/RelationshipConfidence"
           },
@@ -7600,6 +7644,17 @@
       },
       "PinView": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -8318,6 +8373,17 @@
       },
       "ReactionView": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -8628,6 +8694,17 @@
       },
       "RelationshipView": {
         "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
           "confidence": {
             "$ref": "#/components/schemas/RelationshipConfidence"
           },

@@ -9,6 +9,7 @@ import {
 } from '../../../api/caseDetail'
 import { formatDueRelative, formatEur, formatShortDate } from '../../../format'
 import { Button } from '../../../ui/Button'
+import { AgentBadge } from '../../../ui/AgentBadge'
 import { Icon } from '../../../ui/Icon'
 import { useToast } from '../../../ui/toast'
 
@@ -176,6 +177,7 @@ export function Rail({
               ) : (
                 <p className="mt-0.5">{a.title}</p>
               )}
+              <AgentBadge name={a.agent_token_name} />
             </li>
           ))}
           {open.length === 0 && <li className="text-muted">No open deadlines.</li>}

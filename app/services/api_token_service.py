@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session, joinedload
@@ -150,3 +151,17 @@ def list_for_user(db: Session, user: User) -> list[ApiToken]:
         .order_by(ApiToken.created_at.desc())
         .all()
     )
+
+
+def token_names(db: Session, ids: Iterable[int | None]) -> dict[int | None, str]:
+    """Names of the tokens behind agent-written rows, in one query.
+
+    Rows tagged with a since-deleted token have a NULL id and simply don't
+    appear; callers read ``names.get(row.agent_token_id)``.
+    """
+    wanted = {i for i in ids if i is not None}
+    if not wanted:
+        return {}
+    rows = db.query(ApiToken.id, ApiToken.name).filter(ApiToken.id.in_(wanted)).all()
+    names: dict[int | None, str] = {row[0]: row[1] for row in rows}
+    return names

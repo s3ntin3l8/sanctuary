@@ -2957,6 +2957,8 @@ export interface components {
             action_type: components["schemas"]["ActionItemType"];
             /** Addressee */
             addressee: string | null;
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             /** Description */
             description: string | null;
             /** Due Date */
@@ -3320,6 +3322,8 @@ export interface components {
             action_type: components["schemas"]["ActionItemType"];
             /** Addressee */
             addressee: string | null;
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             /** Description */
             description: string | null;
             /**
@@ -3585,6 +3589,8 @@ export interface components {
         ClaimType: "factual" | "legal" | "procedural";
         /** ClaimView */
         ClaimView: {
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             /** Allowed Transitions */
             allowed_transitions: components["schemas"]["ClaimStatus"][];
             /** Claim Text */
@@ -4326,6 +4332,8 @@ export interface components {
         };
         /** EvidenceView */
         EvidenceView: {
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             confidence: components["schemas"]["RelationshipConfidence"];
             /** Document Date */
             document_date: string | null;
@@ -5245,6 +5253,8 @@ export interface components {
         };
         /** PinView */
         PinView: {
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             /** Id */
             id: number;
             /** Note */
@@ -5463,6 +5473,8 @@ export interface components {
         };
         /** ReactionView */
         ReactionView: {
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             /** Created At */
             created_at: string | null;
             /** Notes */
@@ -5559,6 +5571,8 @@ export interface components {
         RelationshipType: "replies_to" | "references" | "attaches_as_proof" | "supersedes" | "cited_by" | "encloses" | "copy_of";
         /** RelationshipView */
         RelationshipView: {
+            /** Agent Token Name */
+            agent_token_name?: string | null;
             confidence: components["schemas"]["RelationshipConfidence"];
             /**
              * Direction

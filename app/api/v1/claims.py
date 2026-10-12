@@ -38,7 +38,7 @@ from app.schemas.case_detail import (
     TruthMapFilter,
     TruthMapView,
 )
-from app.services import access_service
+from app.services import access_service, api_token_service
 from app.services import claim_proposal_service as proposal_svc
 from app.services import user_settings_service as uss
 from app.services.claim_service import _USER_ALLOWED, ClaimRow, ClaimService
@@ -46,7 +46,18 @@ from app.services.claim_service import _USER_ALLOWED, ClaimRow, ClaimService
 router = APIRouter(tags=["claims"])
 
 
-def _claim_view(row: ClaimRow) -> ClaimView:
+def _claim_names(db: Session, rows: list[ClaimRow]) -> dict[int | None, str]:
+    """Names of the agent tokens behind these claims and their evidence, in one query."""
+    return api_token_service.token_names(
+        db,
+        [
+            *(r.claim.agent_token_id for r in rows),
+            *(e.evidence.agent_token_id for r in rows for e in r.evidence),
+        ],
+    )
+
+
+def _claim_view(row: ClaimRow, names: dict[int | None, str]) -> ClaimView:
     c = row.claim
     return ClaimView(
         id=c.id,
@@ -70,9 +81,11 @@ def _claim_view(row: ClaimRow) -> ClaimView:
                 document_originator=e.document.originator_type,
                 document_date=e.document.issued_date or e.document.ingest_date,
                 reactions=[r.reaction for r in e.reactions],
+                agent_token_name=names.get(e.evidence.agent_token_id),
             )
             for e in row.evidence
         ],
+        agent_token_name=names.get(c.agent_token_id),
     )
 
 
@@ -93,10 +106,13 @@ def _truth_map(
     db: Session, user: User, case_id: str, filter_: TruthMapFilter
 ) -> TruthMapView:
     view = ClaimService(db).get_truth_map(case_id, filter_, viewer=user)
+    names = _claim_names(db, [r for g in view.groups for r in g.claims])
     return TruthMapView(
         filter=filter_,
         groups=[
-            ClaimGroupView(status=g.status, claims=[_claim_view(r) for r in g.claims])
+            ClaimGroupView(
+                status=g.status, claims=[_claim_view(r, names) for r in g.claims]
+            )
             for g in view.groups
         ],
         open_claim_count=view.open_claim_count,
@@ -183,8 +199,9 @@ def _single_claim(db: Session, user: User, claim_id: int) -> ClaimView:
     for g in view.groups:
         for row in g.claims:
             if row.claim.id == claim_id:
-                return _claim_view(row)
-    return _claim_view(ClaimRow(claim=claim))
+                return _claim_view(row, _claim_names(db, [row]))
+    bare = ClaimRow(claim=claim)
+    return _claim_view(bare, _claim_names(db, [bare]))
 
 
 # --- Proposals ---------------------------------------------------------------

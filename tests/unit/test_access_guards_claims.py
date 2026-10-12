@@ -10,10 +10,10 @@ untested in PR #160's review.
 
 import pytest
 
-from app.api.access_guards import claim_access_allowed
 from app.models.database import Case, Claim, ClaimEvidence, Document
 from app.models.enums import CaseStatus, ClaimEvidenceRole, ClaimStatus, Jurisdiction
 from app.services import auth_service
+from app.services.access_service import claim_access_allowed
 
 
 def _make_case(db, case_id, owner_id):

@@ -15,6 +15,7 @@ import {
   useUpdateMetadata,
 } from '../../api/triage'
 import { formatIsoDate, formatShortDate } from '../../format'
+import { AgentBadge } from '../../ui/AgentBadge'
 import { Badge, type Tone } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Field, inputClass } from '../../ui/Field'
@@ -951,6 +952,7 @@ function Relationships({ review }: { review: Review }) {
             <span className="font-mono text-[10px] text-muted">
               {r.rel_type.replace(/_/g, ' ')}
             </span>
+            <AgentBadge name={r.agent_token_name} />
             {r.confidence === 'ai_detected' ? (
               <>
                 <DecisionButton
@@ -1107,6 +1109,7 @@ function Actions({ review }: { review: Review }) {
             />
             <span className="min-w-0 flex-1">
               <span className="block truncate">{a.title}</span>
+              <AgentBadge name={a.agent_token_name} />
               {a.due_date && (
                 <span className="font-mono text-[10px] text-muted">
                   {formatShortDate(a.due_date)}
@@ -1186,6 +1189,13 @@ function Reactions({ review }: { review: Review }) {
       meta="recalled by the AI later"
       dataAttr={{ 'data-reaction-bar': '' }}
     >
+      <div className="mb-1.5 flex flex-wrap gap-1">
+        {[...new Set(review.reactions.map((r) => r.agent_token_name).filter(Boolean))].map(
+          (name) => (
+            <AgentBadge key={name} name={name} />
+          ),
+        )}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {REACTIONS.map(([key, glyph, label]) => (
           <button

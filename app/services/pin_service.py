@@ -17,10 +17,18 @@ class UnknownPassage(ValueError):
 
 
 def create_pin(
-    db: Session, user_id: int, doc: Document, passage_id: str, note: str | None
+    db: Session,
+    user_id: int,
+    doc: Document,
+    passage_id: str,
+    note: str | None,
+    *,
+    agent_token_id: int | None = None,
 ) -> DocumentPin:
     """Anchor ``note`` to one of ``doc``'s key passages. The caller commits."""
     known = {p["id"] for p in key_passages_for_template(doc.key_passages or [])}
     if passage_id not in known:
         raise UnknownPassage(passage_id)
-    return DocumentPinRepository(db).create(doc.id, passage_id, note, user_id=user_id)
+    return DocumentPinRepository(db).create(
+        doc.id, passage_id, note, user_id=user_id, agent_token_id=agent_token_id
+    )

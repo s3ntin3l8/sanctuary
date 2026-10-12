@@ -16,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_utc
-from app.models.database import ApiToken, Case, Document, User
+from app.models.database import ActionItem, ApiToken, Case, Claim, Document, User
 from app.models.enums import ApiTokenAccess
 from app.services import access_service
 
@@ -134,3 +134,60 @@ class McpPrincipal:
             if writable is not None and doc.case_id not in writable:
                 raise ToolError("You can view this document but not edit it.")
         return doc
+
+    def require_claim(
+        self, db: Session, claim_id: int, *, write: bool = False
+    ) -> Claim:
+        """A claim the token may read (or edit).
+
+        Claims are global: one claim can be evidenced from several cases. Reading
+        needs one linked case that is both visible to the owner and in the
+        token's scope; editing also needs owner edit access (as the REST API
+        decides it) and every owner-visible linked case inside the token's
+        writable set, since an edit changes the claim in all of them.
+        """
+        claim = db.get(Claim, claim_id)
+        if claim is None or claim.dismissed_at is not None:
+            raise ToolError(NOT_FOUND)
+        if not access_service.claim_access_allowed(db, self.user, claim_id, edit=False):
+            raise ToolError(NOT_FOUND)
+        linked = access_service.claim_linked_case_ids(db, claim_id)
+        visible: set[str] = set()
+        if linked:
+            visible = {
+                c.id
+                for c in db.query(Case).filter(Case.id.in_(linked))
+                if access_service.can_view_case(db, self.user, c)
+            }
+            readable = self.readable_case_ids(db)
+            if not (visible if readable is None else visible & readable):
+                raise ToolError(NOT_FOUND)
+        elif not self.all_cases:
+            # No linked case: the claim hangs only off untriaged documents. Like
+            # untriaged documents themselves, that is outside any per-case token's
+            # scope (the owner can still reach it with an all-cases token).
+            raise ToolError(NOT_FOUND)
+        if write:
+            if not self.can_write:
+                raise ToolError(READ_ONLY)
+            if not access_service.claim_access_allowed(
+                db, self.user, claim_id, edit=True
+            ):
+                raise ToolError("You can view this claim but not edit it.")
+            writable = self.writable_case_ids(db)
+            # (a claim with no linked case leaves `visible` empty: only all-cases
+            # tokens get here, and the ownership check above is the gate)
+            if writable is not None and not visible <= writable:
+                raise ToolError(
+                    "This claim also belongs to cases outside this token's write scope."
+                )
+        return claim
+
+    def require_action_item(
+        self, db: Session, action_item_id: int, *, write: bool = False
+    ) -> ActionItem:
+        item = db.get(ActionItem, action_item_id)
+        if item is None:
+            raise ToolError(NOT_FOUND)
+        self.require_case(db, item.case_id, write=write)
+        return item

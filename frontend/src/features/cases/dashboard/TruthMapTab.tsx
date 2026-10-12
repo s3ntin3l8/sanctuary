@@ -14,6 +14,7 @@ import {
   useTruthMap,
 } from '../../../api/caseDetail'
 import { formatShortDate } from '../../../format'
+import { AgentBadge } from '../../../ui/AgentBadge'
 import { Badge, type Tone } from '../../../ui/Badge'
 import { Button } from '../../../ui/Button'
 import { Chip } from '../../../ui/Chip'
@@ -284,6 +285,7 @@ function ClaimCard({
         <span>{claim.claim_type}</span>
         <span>· {formatShortDate(claim.first_made_at)}</span>
         <span>· {claim.evidence.length} evidence</span>
+        <AgentBadge name={claim.agent_token_name} />
         <button type="button" onClick={() => setOpen((v) => !v)} className="hover:text-ink">
           {open ? 'hide' : 'show'}
         </button>
@@ -348,6 +350,7 @@ function ClaimCard({
                   {formatShortDate(e.document_date)} · {e.role}
                   {e.reactions.map((r) => ` ${REACTION_GLYPH[r] ?? ''}`)}
                 </span>
+                <AgentBadge name={e.agent_token_name} />
                 {e.excerpt && <span className="block text-muted">“{e.excerpt}”</span>}
               </span>
             </li>

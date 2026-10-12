@@ -17,6 +17,7 @@ class ClaimEvidenceRepository(BaseRepository[ClaimEvidence]):
         role: ClaimEvidenceRole,
         excerpt: str | None = None,
         confidence: RelationshipConfidence = RelationshipConfidence.AI_DETECTED,
+        agent_token_id: int | None = None,
     ) -> ClaimEvidence:
         return self.create(
             claim_id=claim_id,
@@ -24,6 +25,7 @@ class ClaimEvidenceRepository(BaseRepository[ClaimEvidence]):
             role=role,
             excerpt=excerpt,
             confidence=confidence,
+            agent_token_id=agent_token_id,
             ingest_date=now_utc(),
         )
 

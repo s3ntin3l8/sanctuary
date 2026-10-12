@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
 from app import config as app_config
-from app.mcp import tools_analysis, tools_cases, tools_documents
+from app.mcp import tools_analysis, tools_cases, tools_documents, tools_write
 
 INSTRUCTIONS = """\
 Sanctuary is a privacy-first legal case management system. Cases are the primary \
@@ -40,6 +40,7 @@ def create_server() -> MCPServer:
     tools_cases.register(server)
     tools_documents.register(server)
     tools_analysis.register(server)
+    tools_write.register(server)
     return server
 
 

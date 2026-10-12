@@ -50,7 +50,7 @@ from app.schemas.document_review import (
     SummaryBullet,
     SummaryView,
 )
-from app.services import pin_service, reaction_service
+from app.services import api_token_service, pin_service, reaction_service
 from app.services.document_review_service import (
     case_ref,
     pin_view,
@@ -142,7 +142,7 @@ def create_pin(
         ) from exc
     db.commit()
     db.refresh(pin)
-    return pin_view(pin)
+    return pin_view(pin, api_token_service.token_names(db, [pin.agent_token_id]))
 
 
 @router.patch("/pins/{pin_id}", response_model=PinView)
@@ -154,7 +154,7 @@ def update_pin(
     DocumentPinRepository(db).update_note(pin.id, body.note)
     db.commit()
     db.refresh(pin)
-    return pin_view(pin)
+    return pin_view(pin, api_token_service.token_names(db, [pin.agent_token_id]))
 
 
 @router.delete("/pins/{pin_id}", status_code=204, response_class=Response)
@@ -286,8 +286,14 @@ def set_reaction(
         db, user.id, doc, body.reaction, body.notes
     )
     db.commit()
+    names = api_token_service.token_names(db, (r.agent_token_id for r in reactions))
     return [
-        ReactionView(reaction=r.reaction, notes=r.notes, created_at=r.ingest_date)
+        ReactionView(
+            reaction=r.reaction,
+            notes=r.notes,
+            created_at=r.ingest_date,
+            agent_token_name=names.get(r.agent_token_id),
+        )
         for r in reactions
     ]
 

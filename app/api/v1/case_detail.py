@@ -59,6 +59,7 @@ from app.schemas.document_review import ActionStatusUpdate
 from app.services import (
     access_service,
     action_item_service,
+    api_token_service,
     auth_service,
     user_settings_service,
 )
@@ -229,7 +230,8 @@ def set_action_item_status(
     item: ActionItem = Depends(require_action_item_access(edit=True)),
 ):
     item = action_item_service.set_status(db, item, body.status)
-    return action_item_view(item, now_utc())
+    names = api_token_service.token_names(db, [item.agent_token_id])
+    return action_item_view(item, now_utc(), names)
 
 
 # --- Brief -------------------------------------------------------------------

@@ -111,6 +111,7 @@ class RelationshipView(BaseModel):
     rel_type: RelationshipType
     confidence: RelationshipConfidence
     direction: Literal["out", "in"]
+    agent_token_name: str | None = None
 
 
 class GroundView(BaseModel):
@@ -131,6 +132,7 @@ class ActionView(BaseModel):
     status: ActionItemStatus
     location: str | None
     addressee: str | None
+    agent_token_name: str | None = None
 
 
 class CostSignalView(BaseModel):
@@ -145,6 +147,7 @@ class ReactionView(BaseModel):
     reaction: UserReactionType
     notes: str | None
     created_at: datetime | None
+    agent_token_name: str | None = None
 
 
 class ResolvedReference(BaseModel):
@@ -206,6 +209,7 @@ class PinView(BaseModel):
     note: str | None
     user_id: int | None
     updated_at: datetime | None
+    agent_token_name: str | None = None
 
 
 class PinCreate(BaseModel):

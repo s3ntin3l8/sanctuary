@@ -161,6 +161,7 @@ class ClaimRepository(BaseRepository[Claim]):
         claim_type: ClaimType,
         status: ClaimStatus = ClaimStatus.ASSERTED,
         is_precedent: bool = False,
+        agent_token_id: int | None = None,
     ) -> Claim:
         """Create a global claim row. The caller is responsible for adding
         a `ClaimEvidence(role=ASSERTS, document_id=…)` row immediately
@@ -171,6 +172,7 @@ class ClaimRepository(BaseRepository[Claim]):
             claim_type=claim_type,
             status=status,
             is_precedent=is_precedent,
+            agent_token_id=agent_token_id,
             first_made_at=now_utc(),
             last_updated_at=now_utc(),
         )
