@@ -38,8 +38,19 @@ def _stored(db) -> dict:
     return section if isinstance(section, dict) else {}
 
 
-def has_stored_secret(db) -> bool:
-    return bool(_stored(db).get("client_secret"))
+def stored_summary(db) -> tuple[str, bool, str]:
+    """(client_id, has_secret, redirect_uri) as stored, without decrypting."""
+    stored = _stored(db)
+    return (
+        stored.get("client_id") or "",
+        bool(stored.get("client_secret")),
+        stored.get("redirect_uri") or "",
+    )
+
+
+def has_usable_secret(db) -> bool:
+    """A secret is stored or in env. Does not decrypt, so a wrong key can't fail it."""
+    return bool(_stored(db).get("client_secret") or config.GMAIL_CLIENT_SECRET)
 
 
 def suggested_redirect_uri(request) -> str:
@@ -59,6 +70,8 @@ def get_oauth_client(db, request=None) -> OAuthClient:
     redirect_uri = stored.get("redirect_uri") or config.GMAIL_REDIRECT_URI
     if not redirect_uri and request is not None:
         redirect_uri = suggested_redirect_uri(request)
+    # A client_id or secret can only be stored together (the save route requires
+    # a secret on first save), so a stored redirect_uri alone leaves this "env".
     source: Source | None = None
     if client_id or client_secret:
         source = "ui" if stored.get("client_id") or stored_secret else "env"

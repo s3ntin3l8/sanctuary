@@ -71,7 +71,21 @@ def _ai_external(db: Session) -> bool:
 
 
 def _oauth_client_view(db: Session, user: User, request: Request):
-    client = gmail_oauth_config.get_oauth_client(db, request)
+    try:
+        client = gmail_oauth_config.get_oauth_client(db, request)
+    except SecretsError as exc:
+        # Don't take the whole Gmail page down for a key problem.
+        client_id, has_secret, redirect_uri = gmail_oauth_config.stored_summary(db)
+        return GmailOAuthClientView(
+            configured=False,
+            source="ui",
+            client_id=client_id,
+            has_secret=has_secret,
+            redirect_uri=redirect_uri
+            or gmail_oauth_config.suggested_redirect_uri(request),
+            can_edit=user.role == UserRole.ADMIN,
+            error=str(exc),
+        )
     return GmailOAuthClientView(
         configured=client.configured,
         source=client.source,
@@ -138,10 +152,7 @@ def save_oauth_client(
     admin: User = Depends(get_current_admin),
 ):
     """Set the instance-wide Google OAuth client (admin only)."""
-    if (
-        not body.client_secret
-        and not gmail_oauth_config.get_oauth_client(db).client_secret
-    ):
+    if not body.client_secret and not gmail_oauth_config.has_usable_secret(db):
         raise ApiError(422, "client_secret_required", "Enter the client secret.")
     gmail_oauth_config.save_oauth_client(
         db,

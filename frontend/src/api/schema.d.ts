@@ -4733,6 +4733,8 @@ export interface components {
             client_id: string;
             /** Configured */
             configured: boolean;
+            /** Error */
+            error?: string | null;
             /** Has Secret */
             has_secret: boolean;
             /** Redirect Uri */

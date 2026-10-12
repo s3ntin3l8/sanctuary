@@ -55,6 +55,8 @@ class GmailOAuthClientView(BaseModel):
     redirect_uri: str
     # Only admins may change it; everyone sees whether it is set up.
     can_edit: bool
+    # The stored secret cannot be read (SECRETS_ENCRYPTION_KEY wrong or missing).
+    error: str | None = None
 
 
 class GmailOAuthClientUpdate(BaseModel):

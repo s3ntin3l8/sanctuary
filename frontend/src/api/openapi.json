@@ -5755,6 +5755,17 @@
             "title": "Configured",
             "type": "boolean"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
           "has_secret": {
             "title": "Has Secret",
             "type": "boolean"

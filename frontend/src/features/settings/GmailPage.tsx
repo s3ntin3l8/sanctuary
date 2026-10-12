@@ -47,6 +47,7 @@ function OAuthClientCard({ gmail }: { gmail: GmailView }) {
 
   return (
     <SettingsCard title="Google OAuth client" description={description}>
+      {client.error && <Alert>{client.error}</Alert>}
       <form
         className="space-y-3"
         onSubmit={(event) => {

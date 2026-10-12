@@ -124,3 +124,22 @@ def test_non_admin_cannot_change_it(auth_enabled, db_session):
     assert alice.put(f"{URL}/oauth-client", json=BODY).status_code == 403
     assert alice.delete(f"{URL}/oauth-client").status_code == 403
     assert alice.get(URL).json()["oauth_client"]["can_edit"] is False
+
+
+def test_unreadable_secret_does_not_take_the_page_down(db_session, monkeypatch):
+    client.put(f"{URL}/oauth-client", json=BODY)
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    resp = client.get(URL)
+    assert resp.status_code == 200
+    view = resp.json()["oauth_client"]
+    assert view["configured"] is False and view["has_secret"] is True
+    assert view["client_id"] == CLIENT_ID and view["error"]
+    # Saving without a secret still works the shape check; the stored one is kept.
+    assert (
+        client.put(
+            f"{URL}/oauth-client", json={**BODY, "client_secret": None}
+        ).status_code
+        == 200
+    )
