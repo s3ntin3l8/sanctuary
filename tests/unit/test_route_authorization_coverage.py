@@ -159,6 +159,9 @@ _BODY_ID_REVIEWED: dict[str, str] = {
         "case_ids must all be cases the caller can see (api_token_service.mint)"
     ),
     "POST /api/v1/admin/users/{user_id}/reassign-cases": "admin-only route",
+    "PUT /api/v1/settings/gmail/oauth-client": (
+        "client_id is Google's OAuth client id, not a record id; admin-only route"
+    ),
     "PUT /api/v1/settings/ai/roles/{role}": "admin-only route",
     "GET /api/v1/settings/ai/logs": "admin-only route; ids only filter the local runs index",
     "POST /api/v1/cases": "case_id is the id of the new case, not a reference",

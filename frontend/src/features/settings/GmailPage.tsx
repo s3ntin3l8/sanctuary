@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 
 import {
+  useClearGmailOAuthClient,
   useDisconnectGmail,
   useGmail,
   useGmailFilterPreview,
   useGmailSyncNow,
   useResetGmailSync,
+  useSaveGmailOAuthClient,
   useSaveGmailFilters,
   useSetGmailSyncMode,
 } from '../../api/settings'
@@ -26,6 +28,116 @@ import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 type GmailView = Schemas['GmailView']
+
+/** The Google OAuth client every Connect goes through — one per instance, set by an admin. */
+function OAuthClientCard({ gmail }: { gmail: GmailView }) {
+  const client = gmail.oauth_client
+  const save = useSaveGmailOAuthClient()
+  const clear = useClearGmailOAuthClient()
+  const toast = useToast()
+  const [clientId, setClientId] = useState(client.client_id)
+  const [secret, setSecret] = useState('')
+  const [redirectUri, setRedirectUri] = useState(client.redirect_uri)
+
+  const description = client.configured
+    ? client.source === 'env'
+      ? 'Using the GMAIL_* environment variables. Saving here overrides them.'
+      : 'Saved here. Existing connections keep working if you change it; Reconnect to use the new client.'
+    : 'Paste the OAuth client from Google Cloud (docs/gmail-setup.md, step 2) to enable Connect Gmail.'
+
+  return (
+    <SettingsCard title="Google OAuth client" description={description}>
+      {client.error && <Alert>{client.error}</Alert>}
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault()
+          save.mutate(
+            {
+              client_id: clientId.trim(),
+              client_secret: secret.trim() === '' ? null : secret.trim(),
+              redirect_uri: redirectUri.trim(),
+            },
+            {
+              onSuccess: () => {
+                setSecret('')
+                toast('Google OAuth client saved')
+              },
+              onError: (err) => toast(err.message, 'error'),
+            },
+          )
+        }}
+      >
+        <Field label="Client ID" htmlFor="oauth-client-id">
+          <input
+            id="oauth-client-id"
+            value={clientId}
+            disabled={!client.can_edit}
+            placeholder="123456-abc.apps.googleusercontent.com"
+            onChange={(e) => setClientId(e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field
+          label="Client secret"
+          htmlFor="oauth-client-secret"
+          hint="Write-only: stored encrypted and never shown again. Leave empty to keep the stored one."
+        >
+          <input
+            id="oauth-client-secret"
+            type="password"
+            autoComplete="off"
+            value={secret}
+            disabled={!client.can_edit}
+            placeholder={client.has_secret ? '•••• stored' : ''}
+            onChange={(e) => setSecret(e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field
+          label="Redirect URI"
+          htmlFor="oauth-redirect-uri"
+          hint="Register exactly this under Authorized redirect URIs in Google, character for character."
+        >
+          <input
+            id="oauth-redirect-uri"
+            value={redirectUri}
+            disabled={!client.can_edit}
+            onChange={(e) => setRedirectUri(e.target.value)}
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
+        {client.can_edit ? (
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={save.isPending}>
+              Save
+            </Button>
+            {client.source === 'ui' && (
+              <Button
+                variant="secondary"
+                disabled={clear.isPending}
+                onClick={() =>
+                  clear.mutate(undefined, {
+                    onSuccess: (saved) => {
+                      setClientId(saved.oauth_client.client_id)
+                      setRedirectUri(saved.oauth_client.redirect_uri)
+                      toast('Saved client removed')
+                    },
+                    onError: (err) => toast(err.message, 'error'),
+                  })
+                }
+              >
+                Remove
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="text-[11px] text-muted">Only an admin can change this.</div>
+        )}
+      </form>
+    </SettingsCard>
+  )
+}
 
 /** Which part of the mailbox Sanctuary may read. Required: it bounds every list call. */
 function FiltersCard({ gmail }: { gmail: GmailView }) {
@@ -251,6 +363,7 @@ export function GmailPage() {
 
   return (
     <>
+      <OAuthClientCard key={JSON.stringify(gmail.oauth_client)} gmail={gmail} />
       <SettingsCard title="Connection">
         <div className="flex items-center gap-3">
           <Icon name="mail" size={22} className={gmail.connected ? 'text-success' : 'text-muted'} />
@@ -265,9 +378,13 @@ export function GmailPage() {
               {gmail.last_sync_at && ` · synced up to ${formatIsoDate(gmail.last_sync_at)}`}
             </div>
           </div>
-          <a href={gmail.oauth_start_url} className={buttonClass('secondary')}>
-            {gmail.connected ? 'Reconnect' : 'Connect Gmail'}
-          </a>
+          {gmail.oauth_client.configured ? (
+            <a href={gmail.oauth_start_url} className={buttonClass('secondary')}>
+              {gmail.connected ? 'Reconnect' : 'Connect Gmail'}
+            </a>
+          ) : (
+            <span className="text-[11px] text-muted">Set up the Google OAuth client first</span>
+          )}
           {gmail.connected && (
             <Button variant="secondary" onClick={() => setConfirmDisconnect(true)}>
               Disconnect

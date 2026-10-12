@@ -13,7 +13,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
-from app.config import GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI
+from app.services.gmail_oauth_config import OAuthClient
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +48,17 @@ def assert_readonly_scopes(granted: list[str] | tuple[str, ...] | None) -> None:
         )
 
 
-def get_oauth_flow() -> Flow:
+def get_oauth_flow(client: OAuthClient) -> Flow:
     client_config = {
         "web": {
-            "client_id": GMAIL_CLIENT_ID,
-            "client_secret": GMAIL_CLIENT_SECRET,
+            "client_id": client.client_id,
+            "client_secret": client.client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
     }
     return Flow.from_client_config(
-        client_config, scopes=SCOPES, redirect_uri=GMAIL_REDIRECT_URI
+        client_config, scopes=SCOPES, redirect_uri=client.redirect_uri
     )
 
 

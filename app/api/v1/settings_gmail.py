@@ -14,12 +14,14 @@ from sqlalchemy.orm import Session
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
 from app.core.secrets import SecretsError
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_admin, get_current_user, get_db
 from app.models.database import User
-from app.models.enums import AuditEventType
+from app.models.enums import AuditEventType, UserRole
 from app.schemas.settings import (
     GmailFilterPreview,
     GmailFilters,
+    GmailOAuthClientUpdate,
+    GmailOAuthClientView,
     GmailResetSync,
     GmailSyncMode,
     GmailView,
@@ -27,6 +29,7 @@ from app.schemas.settings import (
 from app.services import (
     audit_service,
     gmail_index_service,
+    gmail_oauth_config,
     gmail_runs,
     user_settings_service,
 )
@@ -67,9 +70,36 @@ def _ai_external(db: Session) -> bool:
         return False  # AI keys unreadable: AI calls fail anyway, nothing leaves
 
 
-def _view(db: Session, user: User) -> GmailView:
+def _oauth_client_view(db: Session, user: User, request: Request):
+    try:
+        client = gmail_oauth_config.get_oauth_client(db, request)
+    except SecretsError as exc:
+        # Don't take the whole Gmail page down for a key problem.
+        client_id, has_secret, redirect_uri = gmail_oauth_config.stored_summary(db)
+        return GmailOAuthClientView(
+            configured=False,
+            source="ui",
+            client_id=client_id,
+            has_secret=has_secret,
+            redirect_uri=redirect_uri
+            or gmail_oauth_config.suggested_redirect_uri(request),
+            can_edit=user.role == UserRole.ADMIN,
+            error=str(exc),
+        )
+    return GmailOAuthClientView(
+        configured=client.configured,
+        source=client.source,
+        client_id=client.client_id,
+        has_secret=bool(client.client_secret),
+        redirect_uri=client.redirect_uri,
+        can_edit=user.role == UserRole.ADMIN,
+    )
+
+
+def _view(db: Session, user: User, request: Request) -> GmailView:
     cfg = user_settings_service.get_gmail_config(db, user.id)
     return GmailView(
+        oauth_client=_oauth_client_view(db, user, request),
         connected=bool(cfg.get("gmail_credentials_json")),
         connected_at=cfg.get("gmail_connected_at"),
         last_sync_at=cfg.get("gmail_last_sync_at"),
@@ -105,8 +135,47 @@ def _require_connected(db: Session, user: User) -> None:
 
 
 @router.get("", response_model=GmailView)
-def gmail(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _view(db, user)
+def gmail(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return _view(db, user, request)
+
+
+@router.put("/oauth-client", response_model=GmailView)
+@limiter.limit("20/minute")
+def save_oauth_client(
+    request: Request,
+    body: GmailOAuthClientUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """Set the instance-wide Google OAuth client (admin only)."""
+    if not body.client_secret and not gmail_oauth_config.has_usable_secret(db):
+        raise ApiError(422, "client_secret_required", "Enter the client secret.")
+    gmail_oauth_config.save_oauth_client(
+        db,
+        client_id=body.client_id,
+        client_secret=body.client_secret,
+        redirect_uri=body.redirect_uri,
+        actor_user_id=admin.id,
+    )
+    db.commit()
+    return _view(db, admin, request)
+
+
+@router.delete("/oauth-client", response_model=GmailView)
+@limiter.limit("20/minute")
+def clear_oauth_client(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """Drop the saved client; the GMAIL_* environment fallback applies again."""
+    gmail_oauth_config.clear_oauth_client(db, actor_user_id=admin.id)
+    db.commit()
+    return _view(db, admin, request)
 
 
 @router.put("/filters", response_model=GmailView)
@@ -127,7 +196,7 @@ def save_filters(
     )
     _audit(db, user, "filters")
     db.commit()
-    return _view(db, user)
+    return _view(db, user, request)
 
 
 @router.post("/filters/preview", response_model=GmailFilterPreview)
@@ -173,7 +242,7 @@ def set_sync_mode(
     user_settings_service.set_gmail_sync_mode(db, user.id, body.mode)
     _audit(db, user, f"sync_mode_{body.mode}")
     db.commit()
-    return _view(db, user)
+    return _view(db, user, request)
 
 
 @router.post("/sync", status_code=202, response_class=Response)
@@ -209,7 +278,7 @@ def reset_sync(
     user_settings_service.reset_gmail_sync(db, user.id, since=since.isoformat())
     _audit(db, user, "reset_sync")
     db.commit()
-    return _view(db, user)
+    return _view(db, user, request)
 
 
 @router.delete("", response_model=GmailView)
@@ -246,4 +315,4 @@ def disconnect(
         logger.warning("Could not cancel Gmail runs on disconnect (Redis unavailable)")
     _audit(db, user, "disconnect")
     db.commit()
-    return _view(db, user)
+    return _view(db, user, request)

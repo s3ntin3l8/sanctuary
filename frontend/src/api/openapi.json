@@ -5859,6 +5859,101 @@
         "title": "GmailNewMessages",
         "type": "object"
       },
+      "GmailOAuthClientUpdate": {
+        "properties": {
+          "client_id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          },
+          "redirect_uri": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Redirect Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "redirect_uri"
+        ],
+        "title": "GmailOAuthClientUpdate",
+        "type": "object"
+      },
+      "GmailOAuthClientView": {
+        "description": "The instance-wide Google OAuth client. The secret is never returned.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "has_secret": {
+            "title": "Has Secret",
+            "type": "boolean"
+          },
+          "redirect_uri": {
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ui",
+                  "env"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "configured",
+          "source",
+          "client_id",
+          "has_secret",
+          "redirect_uri",
+          "can_edit"
+        ],
+        "title": "GmailOAuthClientView",
+        "type": "object"
+      },
       "GmailResetSync": {
         "properties": {
           "since": {
@@ -5979,6 +6074,9 @@
             ],
             "title": "Last Sync Result"
           },
+          "oauth_client": {
+            "$ref": "#/components/schemas/GmailOAuthClientView"
+          },
           "oauth_start_url": {
             "title": "Oauth Start Url",
             "type": "string"
@@ -6005,6 +6103,7 @@
           }
         },
         "required": [
+          "oauth_client",
           "connected",
           "connected_at",
           "last_sync_at",
@@ -17344,6 +17443,78 @@
           }
         },
         "summary": "V1 Preview Filters",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/oauth-client": {
+      "delete": {
+        "description": "Drop the saved client; the GMAIL_* environment fallback applies again.",
+        "operationId": "v1_clear_oauth_client_api_v1_settings_gmail_oauth_client_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Clear Oauth Client",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Set the instance-wide Google OAuth client (admin only).",
+        "operationId": "v1_save_oauth_client_api_v1_settings_gmail_oauth_client_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailOAuthClientUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Oauth Client",
         "tags": [
           "settings"
         ]

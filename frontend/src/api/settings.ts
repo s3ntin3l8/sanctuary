@@ -66,6 +66,14 @@ export const useSaveGmailFilters = () =>
   useReplace<S['GmailView'], S['GmailFilters']>('gmail', (body) =>
     unwrap(api.PUT('/api/v1/settings/gmail/filters', { body })),
   )
+export const useSaveGmailOAuthClient = () =>
+  useReplace<S['GmailView'], S['GmailOAuthClientUpdate']>('gmail', (body) =>
+    unwrap(api.PUT('/api/v1/settings/gmail/oauth-client', { body })),
+  )
+export const useClearGmailOAuthClient = () =>
+  useReplace<S['GmailView'], undefined>('gmail', () =>
+    unwrap(api.DELETE('/api/v1/settings/gmail/oauth-client')),
+  )
 export const useGmailFilterPreview = () =>
   useMutation<S['GmailFilterPreview'], ApiError, S['GmailFilters']>({
     mutationFn: (body) => unwrap(api.POST('/api/v1/settings/gmail/filters/preview', { body })),

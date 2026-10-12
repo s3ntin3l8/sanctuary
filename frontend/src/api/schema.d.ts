@@ -2422,6 +2422,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/gmail/oauth-client": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * V1 Save Oauth Client
+         * @description Set the instance-wide Google OAuth client (admin only).
+         */
+        put: operations["v1_save_oauth_client_api_v1_settings_gmail_oauth_client_put"];
+        post?: never;
+        /**
+         * V1 Clear Oauth Client
+         * @description Drop the saved client; the GMAIL_* environment fallback applies again.
+         */
+        delete: operations["v1_clear_oauth_client_api_v1_settings_gmail_oauth_client_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/gmail/reset-sync": {
         parameters: {
             query?: never;
@@ -4784,6 +4808,35 @@ export interface components {
              */
             sync_mode: "off" | "notify" | "auto";
         };
+        /** GmailOAuthClientUpdate */
+        GmailOAuthClientUpdate: {
+            /** Client Id */
+            client_id: string;
+            /** Client Secret */
+            client_secret?: string | null;
+            /** Redirect Uri */
+            redirect_uri: string;
+        };
+        /**
+         * GmailOAuthClientView
+         * @description The instance-wide Google OAuth client. The secret is never returned.
+         */
+        GmailOAuthClientView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Client Id */
+            client_id: string;
+            /** Configured */
+            configured: boolean;
+            /** Error */
+            error?: string | null;
+            /** Has Secret */
+            has_secret: boolean;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /** Source */
+            source: ("ui" | "env") | null;
+        };
         /** GmailResetSync */
         GmailResetSync: {
             /** Since */
@@ -4821,6 +4874,7 @@ export interface components {
             last_sync_error: string | null;
             /** Last Sync Result */
             last_sync_result: string | null;
+            oauth_client: components["schemas"]["GmailOAuthClientView"];
             /** Oauth Start Url */
             oauth_start_url: string;
             /** Own Addresses */
@@ -10944,6 +10998,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GmailFilterPreview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_save_oauth_client_api_v1_settings_gmail_oauth_client_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailOAuthClientUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_clear_oauth_client_api_v1_settings_gmail_oauth_client_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailView"];
                 };
             };
             /** @description Error */

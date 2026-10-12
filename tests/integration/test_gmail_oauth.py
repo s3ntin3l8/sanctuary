@@ -3,14 +3,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app import config
 from app.main import app
 
 client = TestClient(app)
 
 
 @pytest.mark.integration
-def test_gmail_oauth_start_uses_session_and_redirects():
+def test_gmail_oauth_start_uses_session_and_redirects(monkeypatch):
     """GET /api/ingest/gmail/oauth/start redirects to the Google OAuth authorization URL."""
+    monkeypatch.setattr(config, "GMAIL_CLIENT_ID", "id.apps.googleusercontent.com")
+    monkeypatch.setattr(config, "GMAIL_CLIENT_SECRET", "s")  # pragma: allowlist secret
     flow = MagicMock()
     flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
     flow.code_verifier = "verifier-1"

@@ -42,7 +42,51 @@ class PasswordChange(BaseModel):
 SyncMode = Literal["off", "notify", "auto"]
 
 
+class GmailOAuthClientView(BaseModel):
+    """The instance-wide Google OAuth client. The secret is never returned."""
+
+    configured: bool
+    # "ui" = saved in Settings, "env" = GMAIL_* environment fallback.
+    source: Literal["ui", "env"] | None
+    client_id: str
+    has_secret: bool
+    # What Google must have registered: the stored/env value, else the callback
+    # on the host this request came in on.
+    redirect_uri: str
+    # Only admins may change it; everyone sees whether it is set up.
+    can_edit: bool
+    # The stored secret cannot be read (SECRETS_ENCRYPTION_KEY wrong or missing).
+    error: str | None = None
+
+
+class GmailOAuthClientUpdate(BaseModel):
+    client_id: str = Field(min_length=1, max_length=300)
+    # None keeps the stored secret.
+    client_secret: str | None = Field(default=None, max_length=300)
+    redirect_uri: str = Field(min_length=1, max_length=500)
+
+    @field_validator("client_id", "client_secret", "redirect_uri")
+    @classmethod
+    def _strip(cls, v: str | None) -> str | None:
+        return v.strip() if v is not None else None
+
+    @field_validator("client_id")
+    @classmethod
+    def _client_id_shape(cls, v: str) -> str:
+        if not v.endswith(".apps.googleusercontent.com"):
+            raise ValueError("A Google client ID ends in .apps.googleusercontent.com")
+        return v
+
+    @field_validator("redirect_uri")
+    @classmethod
+    def _redirect_scheme(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("The redirect URI must start with http:// or https://")
+        return v
+
+
 class GmailView(BaseModel):
+    oauth_client: GmailOAuthClientView
     connected: bool
     connected_at: str | None
     last_sync_at: str | None
