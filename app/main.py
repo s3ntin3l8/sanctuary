@@ -761,7 +761,14 @@ class AuthGateMiddleware:
             try:
                 token = api_token_service.verify(db, secret)
                 if token is not None:
-                    api_token_service.touch(db, token)
+                    try:
+                        api_token_service.touch(db, token)
+                    except Exception:
+                        # last_used_at is a hint; never fail an authenticated call for it.
+                        db.rollback()
+                        logging.getLogger(__name__).warning(
+                            "could not record api token use", exc_info=True
+                        )
                     token_id, user_id = token.id, token.user_id
             finally:
                 db.close()
