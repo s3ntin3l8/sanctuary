@@ -20,7 +20,7 @@ from mcp_types import INVALID_PARAMS, ListResourcesResult
 from mcp_types import Resource as MCPResource
 from sqlalchemy.orm import Session
 
-from app.mcp import tools_analysis, tools_cases, tools_documents
+from app.mcp import tools_analysis, tools_cases, tools_documents, tools_files
 from app.mcp.db import run, run_for_token
 from app.mcp.principal import McpPrincipal
 from app.mcp.serializers import untrusted
@@ -307,6 +307,21 @@ def register(mcp: MCPServer) -> None:
                 db, p, document_id, 0, RESOURCE_TEXT_CHARS
             )
             return render_document(doc, text)
+
+        return await _read(ctx, build)
+
+    @mcp.resource(
+        "sanctuary://document/{document_id}/original",
+        name="document_original",
+        title="Document original file",
+        description="The stored original (PDF, scan, image …) as binary content; the "
+        "get_original_file tool reports its exact type and checksum. Size-limited and "
+        "audited, because the bytes leave this instance.",
+        mime_type="application/octet-stream",
+    )
+    async def original_resource(document_id: int, ctx: Context) -> bytes:
+        def build(db: Session, p: McpPrincipal) -> bytes:
+            return tools_files.read_original(db, p, document_id, surface="resource")[2]
 
         return await _read(ctx, build)
 

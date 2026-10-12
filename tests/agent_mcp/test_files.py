@@ -172,3 +172,48 @@ def test_per_case_token_cannot_fetch_a_triage_document(
     doc = stored("t.pdf", PDF, owner=alice, case_id=None)
     scoped = mcp_session(make_token(alice, all_cases=False, case_ids=["A-1"]))
     assert _fetch(scoped, doc.id)["isError"]
+
+
+# --- the matching resource template ------------------------------------------
+
+
+def _read_original_resource(session, document_id):
+    body = session.rpc(
+        "resources/read", {"uri": f"sanctuary://document/{document_id}/original"}
+    )
+    if "error" in body:
+        return True, body["error"]["message"]
+    return False, body["result"]["contents"][0]
+
+
+def test_original_resource_returns_the_exact_bytes_and_is_audited(
+    mcp_session, make_token, make_case, stored, alice, db_session
+):
+    make_case("A-1", alice.id)
+    doc = stored("letter.pdf", PDF, owner=alice, case_id="A-1")
+    error, content = _read_original_resource(mcp_session(make_token(alice)), doc.id)
+    assert not error
+    assert base64.b64decode(content["blob"]) == PDF
+    audit = (
+        db_session.query(AuditLog)
+        .filter_by(event_type=AuditEventType.DATA_EXPORTED)
+        .one()
+    )
+    assert audit.target_id == str(doc.id) and audit.actor_label == "mcp:agent"
+    assert "blob" not in str(audit.payload)
+    assert audit.payload["surface"] == "resource"
+
+
+def test_original_resource_is_scoped_and_capped(
+    mcp_session, make_token, make_case, stored, alice, bob, monkeypatch
+):
+    make_case("A-1", alice.id)
+    make_case("B-1", bob.id)
+    mine = stored("a.pdf", PDF, owner=alice, case_id="A-1")
+    theirs = stored("b.pdf", PDF, owner=bob, case_id="B-1")
+    session = mcp_session(make_token(alice))
+    error, message = _read_original_resource(session, theirs.id)
+    assert error and "outside this token's scope" in message
+    monkeypatch.setattr(app.config, "MCP_MAX_DOWNLOAD_MB", 0)
+    error, message = _read_original_resource(session, mine.id)
+    assert error and "read_document_text" in message

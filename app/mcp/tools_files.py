@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from typing import Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -18,14 +19,21 @@ from sqlalchemy.orm import Session
 from app import config
 from app.mcp.db import run
 from app.mcp.principal import McpPrincipal
-from app.mcp.serializers import document_ref
+from app.mcp.serializers import DocumentRef, document_ref
 from app.models.enums import AuditEventType
 from app.services import audit_service, document_files
 
 _MB = 1024 * 1024
 
 
-def get_original_file(db: Session, p: McpPrincipal, document_id: int) -> CallToolResult:
+def read_original(
+    db: Session,
+    p: McpPrincipal,
+    document_id: int,
+    *,
+    surface: Literal["tool", "resource"] = "tool",
+) -> tuple[DocumentRef, document_files.OriginalFile, bytes]:
+    """The document's stored original, size-capped and audited (the bytes leave the instance)."""
     doc = p.require_document(db, document_id)
     ref = document_ref(doc)
     try:
@@ -47,6 +55,8 @@ def get_original_file(db: Session, p: McpPrincipal, document_id: int) -> CallToo
         target_id=str(doc.id),
         payload={
             "tool": "get_original_file",
+            # which MCP surface served the bytes: the tool or the resource template
+            "surface": surface,
             "api_token_id": p.token_id,
             "size_bytes": len(data),
             "filename": original.filename,
@@ -54,6 +64,11 @@ def get_original_file(db: Session, p: McpPrincipal, document_id: int) -> CallToo
         actor_user_id=p.user.id,
         actor_label=p.audit_label,
     )
+    return ref, original, data
+
+
+def get_original_file(db: Session, p: McpPrincipal, document_id: int) -> CallToolResult:
+    ref, original, data = read_original(db, p, document_id)
     sha = hashlib.sha256(data).hexdigest()
     return CallToolResult(
         content=[
@@ -65,7 +80,7 @@ def get_original_file(db: Session, p: McpPrincipal, document_id: int) -> CallToo
             ),
             EmbeddedResource(
                 resource=BlobResourceContents(
-                    uri=f"sanctuary://document/{doc.id}/original",
+                    uri=f"sanctuary://document/{ref.document_id}/original",
                     mime_type=original.media_type,
                     blob=base64.b64encode(data).decode(),
                 )
