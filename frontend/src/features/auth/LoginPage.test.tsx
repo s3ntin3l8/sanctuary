@@ -91,3 +91,14 @@ test('ignores unknown error codes', () => {
   renderAt('/login?error=<script>alert(1)</script>', <LoginPage />)
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
+
+test('single sign-on returns to the page that sent the user to sign in', async () => {
+  stubApi({
+    'GET /api/v1/auth/config': { body: { ...config, oidc_enabled: true } },
+  })
+  renderAt('/login?next=%2Foauth%2Fauthorize%3Fclient_id%3Dc1', <LoginPage />)
+  expect(await screen.findByRole('link', { name: 'Sign in with authentik' })).toHaveAttribute(
+    'href',
+    '/auth/oidc/login?next=%2Foauth%2Fauthorize%3Fclient_id%3Dc1',
+  )
+})

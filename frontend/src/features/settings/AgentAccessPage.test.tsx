@@ -11,6 +11,8 @@ const token = {
   prefix: 'sct_AbCd',
   access: 'read',
   all_cases: true,
+  kind: 'static',
+  oauth_client_name: null,
   cases: [],
   created_at: '2026-10-12T08:00:00Z',
   last_used_at: null,
@@ -117,4 +119,18 @@ test('no banner while MCP is on', async () => {
   renderAt('/settings/agent-access', <AgentAccessPage />)
   await screen.findByText('Claude Code')
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+test('marks tokens granted to an MCP client through OAuth', async () => {
+  stubApi({
+    'GET /api/v1/settings/agent-access': {
+      body: {
+        ...view,
+        tokens: [{ ...token, id: 9, name: 'Claude', kind: 'oauth', oauth_client_name: 'Claude' }],
+      },
+    },
+    'GET /api/v1/cases': { body: directory },
+  })
+  renderAt('/settings/agent-access', <AgentAccessPage />)
+  expect(await screen.findByText('via Claude')).toBeVisible()
 })

@@ -223,6 +223,9 @@ export function AgentAccessPage() {
                       <Badge tone="neutral">
                         {t.access === 'read_write' ? 'Read & write' : 'Read-only'}
                       </Badge>
+                      {t.kind === 'oauth' && (
+                        <Badge tone="accent">via {t.oauth_client_name ?? 'OAuth client'}</Badge>
+                      )}
                     </div>
                     <div className="truncate font-mono text-[10.5px] text-muted">
                       {t.prefix}… · {scopeLabel(t)} · created {formatShortDate(t.created_at)} ·{' '}

@@ -17,6 +17,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app import config
+from app.api.v1.auth import safe_next
 from app.dependencies import get_db
 from app.services import auth_service
 
@@ -52,12 +53,15 @@ def reset_client() -> None:
 
 
 @router.get("/login")
-async def oidc_login(request: Request):
+async def oidc_login(request: Request, next: str | None = None):
     if not config.oidc_enabled():
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404)
     client = _get_client()
+    # Where to land after sign-in (e.g. an OAuth consent page that sent the user
+    # here); kept in the signed session next to Authlib's state/nonce.
+    request.session["oidc_next"] = safe_next(next)
     return await client.authorize_redirect(request, config.OIDC_REDIRECT_URI)
 
 
@@ -98,9 +102,10 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     user.last_login_at = now_utc()
     db.commit()
 
+    destination = safe_next(request.session.get("oidc_next"))
     request.session.clear()
     request.session.update(auth_service.build_session(user))
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(destination, status_code=303)
 
 
 def _login_error(code: str) -> RedirectResponse:

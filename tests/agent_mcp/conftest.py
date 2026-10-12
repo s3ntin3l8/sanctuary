@@ -121,3 +121,11 @@ def mcp_session(mcp_client):
         return McpSession(mcp_client, secret)
 
     return _open
+
+
+@pytest.fixture(autouse=True)
+def _reset_ip_limits():
+    """The OAuth endpoints' per-IP budgets are process-global; tests share an IP."""
+    from app.core import rate_limit
+
+    rate_limit._ip_limiter.storage.reset()

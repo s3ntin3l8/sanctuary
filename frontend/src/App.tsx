@@ -7,6 +7,7 @@ import { AdminAgentAccessPage } from './features/admin/AdminAgentAccessPage'
 import { AdminUsersPage } from './features/admin/AdminUsersPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { SignupPage } from './features/auth/SignupPage'
+import { ConsentPage } from './features/oauth/ConsentPage'
 import { CasesPage } from './features/cases/CasesPage'
 import { CasePage } from './features/cases/dashboard/CasePage'
 import { ContactPage } from './features/contacts/ContactPage'
@@ -38,6 +39,7 @@ import { ToastProvider } from './ui/toast'
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
+  { path: '/oauth/authorize', element: <ConsentPage /> },
   {
     element: <Shell />,
     children: [

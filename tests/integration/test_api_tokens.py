@@ -175,7 +175,7 @@ def test_merging_twice_keeps_token_scope_on_the_final_case(db_session, alice):
 def test_mcp_requires_a_token(auth_enabled, db_session):
     resp = TestClient(app).post("/mcp", json={})
     assert resp.status_code == 401
-    assert resp.headers["www-authenticate"] == "Bearer"
+    assert resp.headers["www-authenticate"].startswith("Bearer resource_metadata=")
 
 
 def test_mcp_requires_a_token_even_when_auth_is_disabled(db_session):

@@ -19,6 +19,9 @@ export function LoginPage() {
   const config = useAuthConfig().data
   const login = useLogin()
 
+  // Single sign-on returns to where the user was headed (e.g. a consent page).
+  const next = params.get('next')
+  const ssoHref = next ? `/auth/oidc/login?next=${encodeURIComponent(next)}` : '/auth/oidc/login'
   const ssoError = SSO_ERRORS[params.get('error') ?? ''] ?? null
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -76,7 +79,7 @@ export function LoginPage() {
             <span className="text-[10px] tracking-[.1em] text-muted uppercase">or</span>
             <div className="h-px flex-1 bg-line" />
           </div>
-          <a href="/auth/oidc/login" className={buttonClass('secondary', 'w-full', 'lg')}>
+          <a href={ssoHref} className={buttonClass('secondary', 'w-full', 'lg')}>
             Sign in with {config.oidc_provider_name}
           </a>
         </>

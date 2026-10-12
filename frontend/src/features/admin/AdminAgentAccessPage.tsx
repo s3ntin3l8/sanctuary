@@ -130,6 +130,9 @@ function TokenRow({ token, onRevoke }: { token: Token; onRevoke: () => void }) {
             <Badge tone="neutral">
               {token.access === 'read_write' ? 'Read & write' : 'Read-only'}
             </Badge>
+            {token.kind === 'oauth' && (
+              <Badge tone="accent">via {token.oauth_client_name ?? 'OAuth client'}</Badge>
+            )}
           </div>
           <div className="truncate font-mono text-[10.5px] text-muted">
             {token.owner_name || token.owner_email} · {token.prefix}… · {scopeLabel(token)} ·

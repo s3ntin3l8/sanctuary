@@ -147,6 +147,14 @@ _BODY_ID_REVIEWED: dict[str, str] = {
     "GET /api/v1/triage": "case/proceeding filters apply to the caller's own bundles",
     "GET /api/v1/upload/target": "case_id resolved via _editable_case",
     "POST /api/v1/upload": "case_id via _editable_case, parent_id via _editable_parent",
+    "GET /api/v1/oauth/authorization-request": (
+        "client_id is an OAuth client, not a user-owned object; it only names the "
+        "requester and the redirect_uri must be one it registered"
+    ),
+    "POST /api/v1/oauth/authorize": (
+        "client_id must be a registered client with this exact redirect_uri; "
+        "case_ids are checked against the caller's visible cases (create_code)"
+    ),
     "POST /api/v1/settings/agent-access": (
         "case_ids must all be cases the caller can see (api_token_service.mint)"
     ),
