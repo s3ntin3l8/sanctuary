@@ -35,6 +35,9 @@ APP_DIR = Path(__file__).resolve().parents[2] / "app"
 # a violation. The chain does not have to start at `.users()`.
 _GMAIL_RESOURCES = {"messages", "threads", "labels", "drafts", "history", "settings"}
 _READ_VERBS = {"get", "list"}
+# Sub-resources reachable from a resource getter, themselves read-only-checked:
+# `settings().sendAs().list()` lists the account's send-as aliases.
+_READ_SUBRESOURCES = {"settings": {"sendAs"}}
 
 
 def _non_read_gmail_uses(source: str) -> list[int]:
@@ -58,6 +61,17 @@ def _non_read_gmail_uses(source: str) -> list[int]:
             continue
         verb = parent.get(node)  # `<resource>()` -> `.verb`
         call = parent.get(verb) if verb is not None else None
+        if (
+            isinstance(verb, ast.Attribute)
+            and verb.attr in _READ_SUBRESOURCES.get(node.func.attr, ())
+            and isinstance(call, ast.Call)
+            and call.func is verb
+            and not call.args
+            and not call.keywords
+        ):
+            # `<resource>().<sub>()` -> require `.get/.list(...)` on the sub-resource.
+            verb = parent.get(call)
+            call = parent.get(verb) if verb is not None else None
         read_only = (
             isinstance(verb, ast.Attribute)
             and verb.attr in _READ_VERBS
@@ -99,6 +113,12 @@ def test_no_gmail_mutating_calls_in_app():
         "x = svc.users().drafts()",
         # `.get` / `.list` as bare attributes, not calls, do not count as reads.
         "svc.users().messages().get",
+        # A send-as alias may be listed, never created/changed/removed.
+        "svc.users().settings().sendAs().create(userId='me', body={})",
+        "svc.users().settings().sendAs().delete(userId='me', sendAsEmail='x')",
+        "x = svc.users().settings().sendAs()",
+        # Other settings sub-resources aren't whitelisted.
+        "svc.users().settings().filters().list(userId='me')",
     ],
 )
 def test_scanner_flags_anything_but_get_and_list(source):
@@ -111,6 +131,7 @@ def test_scanner_flags_anything_but_get_and_list(source):
     [
         "svc.users().messages().get(userId='me', id=x, format='raw').execute()",
         "svc.users().messages().list(userId='me', q='x')",
+        "svc.users().settings().sendAs().list(userId='me').execute()",
         "service.messages().get(id='y')",
         "session.delete(obj); some_list.update({}); payload.send(x)",
         "repo.messages(conversation.id)[:-1]",  # same name, takes an argument

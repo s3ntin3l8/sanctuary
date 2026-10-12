@@ -5384,14 +5384,6 @@
             "default": "",
             "title": "Label Filter",
             "type": "string"
-          },
-          "own_addresses": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Own Addresses",
-            "type": "array"
           }
         },
         "required": [

@@ -147,7 +147,6 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
   const [allowlist, setAllowlist] = useState(gmail.allowlist.join(', '))
   const [label, setLabel] = useState(gmail.label_filter)
   const [includeSent, setIncludeSent] = useState(gmail.include_sent)
-  const [ownAddresses, setOwnAddresses] = useState(gmail.own_addresses.join(', '))
   const [estimate, setEstimate] = useState<number | null>(null)
 
   const body = {
@@ -157,10 +156,6 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
       .filter(Boolean),
     label_filter: label.trim(),
     include_sent: includeSent,
-    own_addresses: ownAddresses
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
   }
   const empty = body.allowlist.length === 0 && body.label_filter === ''
 
@@ -228,20 +223,15 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
             Also import mail I sent to these senders
           </span>
         </div>
-        <Field
-          label="Your addresses"
-          htmlFor="own-addresses"
-          hint="Addresses you write to your lawyer from, e.g. you@gmail.com. Your own mail keeps its text even when it has attachments. Used only when sent mail is imported."
-        >
-          <input
-            id="own-addresses"
-            value={ownAddresses}
-            placeholder="you@gmail.com"
-            disabled={!includeSent}
-            onChange={(e) => edit(() => setOwnAddresses(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
+        {includeSent && (
+          <p className="text-[11px] text-muted" data-testid="own-addresses">
+            {gmail.own_addresses.length > 0
+              ? `Your addresses (from the connected account): ${gmail.own_addresses.join(', ')}. Your own mail keeps its text even when it has attachments.`
+              : gmail.connected
+                ? 'Your addresses are read from the connected account on the next sync.'
+                : 'Your addresses are read from the account when you connect Gmail.'}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" variant="secondary" disabled={empty || save.isPending}>
             Save filters

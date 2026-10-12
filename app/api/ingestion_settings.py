@@ -14,6 +14,7 @@ from app.services import gmail_oauth_config, user_settings_service
 from app.services.ingestion.gmail import (
     GmailScopeError,
     assert_readonly_scopes,
+    detect_own_addresses,
     get_oauth_flow,
 )
 
@@ -115,6 +116,7 @@ async def gmail_oauth_callback(
         user.id,
         credentials_json=creds.to_json(),
         connected_at=now_utc().isoformat(),
+        own_addresses=detect_own_addresses(creds),
     )
     db.commit()
 

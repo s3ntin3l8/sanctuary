@@ -192,7 +192,6 @@ def save_filters(
         allowlist=body.allowlist,
         label_filter=body.label_filter,
         include_sent=body.include_sent,
-        own_addresses=body.own_addresses,
     )
     _audit(db, user, "filters")
     db.commit()
