@@ -15,7 +15,7 @@ from typing import Literal
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.async_utils import run_async
@@ -459,7 +459,7 @@ def create_relationship(
         try:
             recompute_thread_open(target.id, db)
             refresh_review_reasons(source, db, commit=False)
-        except Exception:
+        except (SQLAlchemyError, RuntimeError):
             # The edge and its audit row are already durable; a stale thread
             # flag is repaired by the next scan, so don't fail the call for it.
             db.rollback()
