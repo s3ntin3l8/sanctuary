@@ -276,3 +276,24 @@ def test_reference_format_only_keeps_substantive_notes():
     assert not reference_format_only(
         "'003 F 1221/26' vs '3 F 1221/26', but the letter cites 2 K 92/25"
     )
+
+
+@pytest.mark.unit
+def test_reference_format_only_treats_az_suffix_as_substantive():
+    # "eA" is part of the number: a different register than the bare AZ.
+    assert not reference_format_only(
+        "Hint '3 F 1221/26 eA' vs document '003 F 1221/26'"
+    )
+
+
+@pytest.mark.unit
+def test_reference_format_only_same_suffix_is_formatting():
+    assert reference_format_only("Hint '3 F 1221/26 eA' vs document '003 F 1221/26 EA'")
+
+
+@pytest.mark.unit
+def test_reference_format_only_does_not_swallow_prose_after_az():
+    # "an" is not a suffix, so the AZ stays 3 F 1221/26 on both sides.
+    assert reference_format_only("Hint '3 F 1221/26' vs '003 F 1221/26 an das Gericht'")
+    # "beA" is the electronic mailbox, not a suffix: still the same AZ.
+    assert reference_format_only("Hint '3 F 1221/26' vs '003 F 1221/26 beA'")
