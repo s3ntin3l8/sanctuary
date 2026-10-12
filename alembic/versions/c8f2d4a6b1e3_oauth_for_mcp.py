@@ -71,6 +71,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("code_hash"),
     )
+    # The FK cascades (a purged client or user) and the pruning of expired codes scan these.
+    op.create_index("ix_oauth_codes_client_id", "oauth_codes", ["client_id"])
+    op.create_index("ix_oauth_codes_user_id", "oauth_codes", ["user_id"])
     op.create_table(
         "oauth_grants",
         sa.Column("api_token_id", sa.Integer(), nullable=False),
@@ -84,6 +87,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("api_token_id"),
         sa.UniqueConstraint("refresh_hash"),
+    )
+    # Reuse detection looks a presented refresh token up by its rotated-out hash.
+    op.create_index(
+        "ix_oauth_grants_previous_refresh_hash",
+        "oauth_grants",
+        ["previous_refresh_hash"],
     )
 
 

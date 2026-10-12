@@ -51,6 +51,9 @@ export function ConsentPage() {
         <Alert>
           This authorization request is not valid. Start the connection again from the app.
         </Alert>
+        <a href="/" className="mt-3 inline-block text-[12px] text-tealink hover:underline">
+          Back to the Sanctuary
+        </a>
       </AuthLayout>
     )
   }

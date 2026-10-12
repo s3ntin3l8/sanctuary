@@ -57,7 +57,12 @@ def _hash(secret: str) -> str:
 
 
 def redirect_uri_allowed(uri: str) -> bool:
-    """https, loopback http (RFC 8252), or a private-use app scheme; no fragments."""
+    """https, loopback http (RFC 8252), or a private-use app scheme; no fragments.
+
+    Any scheme outside ``_FORBIDDEN_SCHEMES`` counts as a private-use app scheme
+    (RFC 8252 §7.1) by design; tighten with an explicit allow-list, not by
+    growing the forbidden set.
+    """
     parsed = urlparse(uri)
     if parsed.fragment or not parsed.scheme:
         return False

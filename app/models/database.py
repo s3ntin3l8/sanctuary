@@ -1617,9 +1617,13 @@ class OAuthCode(Base):
         String,
         ForeignKey("oauth_clients.client_id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     redirect_uri: Mapped[str] = mapped_column(String, nullable=False)
     redirect_uri_provided_explicitly: Mapped[bool] = mapped_column(
@@ -1650,7 +1654,9 @@ class OAuthGrant(Base):
         Integer, ForeignKey("api_tokens.id", ondelete="CASCADE"), primary_key=True
     )
     refresh_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    previous_refresh_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_refresh_hash: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
     refresh_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     access_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     resource: Mapped[str | None] = mapped_column(String, nullable=True)

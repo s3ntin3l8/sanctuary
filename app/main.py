@@ -667,6 +667,8 @@ _PUBLIC_PATH_PREFIXES = ("/assets/", "/auth/", "/.well-known/")
 # MCP clients' OAuth endpoints (see app.mcp.oauth): called without a session, so
 # they authenticate themselves (PKCE / one-time codes) and are rate limited.
 # /authorize only redirects to the consent page, which does require the login.
+# The SDK endpoints are mounted at the top level on purpose and matched exactly:
+# a new OAuth path must be added here, or it falls through to the cookie gate.
 _OAUTH_PUBLIC_PATHS = {"/authorize", "/token", "/register", "/revoke"}
 # Cookie-less machine-to-machine POSTs; a browser-based client (MCP Inspector) sends
 # an Origin header that must not trip the cross-origin guard.
