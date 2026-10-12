@@ -1790,6 +1790,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/agent-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Agent Access */
+        get: operations["v1_agent_access_api_v1_settings_agent_access_get"];
+        put?: never;
+        /** V1 Create Token */
+        post: operations["v1_create_token_api_v1_settings_agent_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/agent-access/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Revoke Token */
+        delete: operations["v1_revoke_token_api_v1_settings_agent_access__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ai": {
         parameters: {
             query?: never;
@@ -2987,6 +3022,13 @@ export interface components {
             /** Users */
             users: components["schemas"]["AdminUser"][];
         };
+        /** AgentAccessView */
+        AgentAccessView: {
+            /** Mcp Url */
+            mcp_url: string;
+            /** Tokens */
+            tokens: components["schemas"]["ApiTokenView"][];
+        };
         /** AiHealth */
         AiHealth: {
             /** Detail */
@@ -3063,6 +3105,58 @@ export interface components {
             tesseract_available: boolean;
             /** Worker Concurrency */
             worker_concurrency: number;
+        };
+        /**
+         * ApiTokenAccess
+         * @description What an agent API token may do with the cases in its scope.
+         * @enum {string}
+         */
+        ApiTokenAccess: "read" | "read_write";
+        /** ApiTokenCreate */
+        ApiTokenCreate: {
+            access: components["schemas"]["ApiTokenAccess"];
+            /** All Cases */
+            all_cases: boolean;
+            /**
+             * Case Ids
+             * @default []
+             */
+            case_ids: string[];
+            /** Expires In Days */
+            expires_in_days?: number | null;
+            /** Name */
+            name: string;
+        };
+        /** ApiTokenCreated */
+        ApiTokenCreated: {
+            /** Secret */
+            secret: string;
+            token: components["schemas"]["ApiTokenView"];
+        };
+        /** ApiTokenView */
+        ApiTokenView: {
+            access: components["schemas"]["ApiTokenAccess"];
+            /** All Cases */
+            all_cases: boolean;
+            /** Cases */
+            cases: components["schemas"]["TokenCase"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Id */
+            id: number;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /** Prefix */
+            prefix: string;
+            /** Revoked At */
+            revoked_at: string | null;
         };
         /** AppearanceView */
         AppearanceView: {
@@ -5841,6 +5935,13 @@ export interface components {
         };
         /** TitleUpdate */
         TitleUpdate: {
+            /** Title */
+            title: string;
+        };
+        /** TokenCase */
+        TokenCase: {
+            /** Id */
+            id: string;
             /** Title */
             title: string;
         };
@@ -9392,6 +9493,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_agent_access_api_v1_settings_agent_access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAccessView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_create_token_api_v1_settings_agent_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenCreated"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_revoke_token_api_v1_settings_agent_access__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenView"];
                 };
             };
             /** @description Error */

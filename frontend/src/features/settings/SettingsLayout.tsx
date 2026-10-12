@@ -12,6 +12,7 @@ const GROUPS: Group[] = [
     label: 'Workspace',
     items: [
       { to: '/settings/account', icon: 'manage_accounts', label: 'Account' },
+      { to: '/settings/agent-access', icon: 'smart_toy', label: 'Agent access' },
       { to: '/settings/appearance', icon: 'palette', label: 'Appearance' },
     ],
   },

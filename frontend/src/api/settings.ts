@@ -34,6 +34,30 @@ export const useChangePassword = () =>
     mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/account/password', { body })),
   })
 
+// --- Agent access ------------------------------------------------------------
+
+export const useAgentAccess = () =>
+  useSettingsQuery<S['AgentAccessView']>('agent-access', () =>
+    unwrap(api.GET('/api/v1/settings/agent-access')),
+  )
+function useAgentTokenMutation<T, V>(run: (vars: V) => Promise<T>) {
+  const queryClient = useQueryClient()
+  return useMutation<T, ApiError, V>({
+    mutationFn: run,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'agent-access'] }),
+  })
+}
+export const useCreateAgentToken = () =>
+  useAgentTokenMutation<S['ApiTokenCreated'], S['ApiTokenCreate']>((body) =>
+    unwrap(api.POST('/api/v1/settings/agent-access', { body })),
+  )
+export const useRevokeAgentToken = () =>
+  useAgentTokenMutation<S['ApiTokenView'], number>((token_id) =>
+    unwrap(
+      api.DELETE('/api/v1/settings/agent-access/{token_id}', { params: { path: { token_id } } }),
+    ),
+  )
+
 // --- Gmail -------------------------------------------------------------------
 
 export const useGmail = () =>

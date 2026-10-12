@@ -36,6 +36,9 @@ _ALLOWLIST: dict[str, str] = {
     "GET /ingest/slice/{batch_id}": "SPA index; guarded by the v1 data route",
     "GET /document/{doc_id}": "SPA index; guarded by the v1 data route",
     "GET /cases/{case_id}": "SPA index; guarded by the v1 data route",
+    "DELETE /api/v1/settings/agent-access/{token_id}": (
+        "get_for_user matches the token to the caller; another user's id is a 404"
+    ),
 }
 
 
@@ -144,6 +147,9 @@ _BODY_ID_REVIEWED: dict[str, str] = {
     "GET /api/v1/triage": "case/proceeding filters apply to the caller's own bundles",
     "GET /api/v1/upload/target": "case_id resolved via _editable_case",
     "POST /api/v1/upload": "case_id via _editable_case, parent_id via _editable_parent",
+    "POST /api/v1/settings/agent-access": (
+        "case_ids must all be cases the caller can see (api_token_service.mint)"
+    ),
     "POST /api/v1/admin/users/{user_id}/reassign-cases": "admin-only route",
     "PUT /api/v1/settings/ai/roles/{role}": "admin-only route",
     "GET /api/v1/settings/ai/logs": "admin-only route; ids only filter the local runs index",

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import (
     ActionItem,
+    ApiTokenCase,
     Case,
     CaseShare,
     Conversation,
@@ -189,6 +190,20 @@ def merge_cases(
             shares[user_id] = share
         elif level == CaseAccessLevel.EDITOR:
             existing.permission = CaseAccessLevel.EDITOR
+
+    # Agent tokens scoped to the source case follow the merge.
+    already_scoped = [
+        t
+        for (t,) in db.query(ApiTokenCase.token_id).filter(
+            ApiTokenCase.case_id == target_id
+        )
+    ]
+    db.query(ApiTokenCase).filter(
+        ApiTokenCase.case_id == source_id, ApiTokenCase.token_id.in_(already_scoped)
+    ).delete(synchronize_session=False)
+    db.query(ApiTokenCase).filter(ApiTokenCase.case_id == source_id).update(
+        {ApiTokenCase.case_id: target_id}, synchronize_session=False
+    )
 
     target.parties = _merge_names(
         target.parties, source.parties, key=lambda p: p.get("name")
