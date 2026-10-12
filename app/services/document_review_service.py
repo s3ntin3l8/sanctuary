@@ -42,7 +42,7 @@ from app.schemas.document_review import (
     SummaryBullet,
     SummaryView,
 )
-from app.services import access_service, family_context
+from app.services import access_service, api_token_service, family_context
 from app.services.hud_context import build_hud_context
 from app.services.markdown_render import render_highlighted
 from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
@@ -131,19 +131,21 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
     return DocumentReview(**review_fields(db, user, doc)[0])
 
 
-def pin_view(pin) -> PinView:
+def pin_view(pin, names: dict[int | None, str] | None = None) -> PinView:
     return PinView(
         id=pin.id,
         passage_id=pin.passage_id,
         note=pin.note,
         user_id=pin.user_id,
         updated_at=pin.updated_at,
+        agent_token_name=(names or {}).get(pin.agent_token_id),
     )
 
 
 def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
     """The review view plus everything only the full-screen HUD shows."""
     fields, ctx = review_fields(db, user, doc)
+    names = api_token_service.token_names(db, (p.agent_token_id for p in ctx["pins"]))
     body_html = (
         str(
             render_highlighted(
@@ -159,7 +161,7 @@ def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
     return DocumentReader(
         **fields,
         body_html=body_html,
-        pins=[pin_view(p) for p in ctx["pins"]],
+        pins=[pin_view(p, names) for p in ctx["pins"]],
         nav=ReaderNav(
             prev_doc_id=ctx["prev_doc_id"],
             next_doc_id=ctx["next_doc_id"],
@@ -193,6 +195,18 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
     cases = list(CaseRepository(db).list_for_picker(owner_id=user.id))
     ctx = build_hud_context(
         db, doc, viewer=user, mode="review", context="embedded", cases=cases
+    )
+    names = api_token_service.token_names(
+        db,
+        [
+            *(r.agent_token_id for r in ctx["reactions"]),
+            *(a.agent_token_id for a in ctx["actions"]),
+            *(
+                r["rel_obj"].agent_token_id
+                for rels in (ctx["relationships_out"], ctx["relationships_in"])
+                for r in rels
+            ),
+        ],
     )
     conf = doc.extraction_confidence or {}
     editable = access_service.editable_case_ids(db, user)
@@ -270,6 +284,7 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
                 confidence=r["rel_obj"].confidence
                 or RelationshipConfidence.AI_DETECTED,
                 direction=side,  # type: ignore[arg-type]
+                agent_token_name=names.get(r["rel_obj"].agent_token_id),
             )
             for side, rels in (
                 ("out", ctx["relationships_out"]),
@@ -318,6 +333,7 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
                 status=a.status,
                 location=a.location,
                 addressee=a.addressee,
+                agent_token_name=names.get(a.agent_token_id),
             )
             for a in ctx["actions"]
         ],
@@ -332,7 +348,12 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
             for s in doc.cost_signals
         ],
         "reactions": [
-            ReactionView(reaction=r.reaction, notes=r.notes, created_at=r.ingest_date)
+            ReactionView(
+                reaction=r.reaction,
+                notes=r.notes,
+                created_at=r.ingest_date,
+                agent_token_name=names.get(r.agent_token_id),
+            )
             for r in ctx["reactions"]
         ],
         "bundle_prev_id": ctx["bundle_prev_id"],

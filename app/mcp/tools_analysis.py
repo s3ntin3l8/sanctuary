@@ -15,7 +15,7 @@ from app.mcp.principal import NOT_FOUND, McpPrincipal
 from app.mcp.serializers import DocumentRef, document_ref, iso_date
 from app.models.database import ActionItem, Document, Proceeding
 from app.models.enums import ActionItemStatus
-from app.services import case_overview_service, triage_bundles
+from app.services import api_token_service, case_overview_service, triage_bundles
 from app.services.case_dashboard_service import reaction_map_for_proceeding
 from app.services.case_graph_service import CaseGraphService
 from app.services.case_timeline_service import CaseTimelineService
@@ -83,6 +83,7 @@ class EvidenceItem(BaseModel):
     provenance: str
     reactions: list[str]
     document: DocumentRef
+    agent_token_name: str | None = None
 
 
 class ClaimItem(BaseModel):
@@ -92,6 +93,7 @@ class ClaimItem(BaseModel):
     status: str
     is_precedent: bool
     evidence: list[EvidenceItem]
+    agent_token_name: str | None = None
 
 
 class TruthMap(BaseModel):
@@ -111,6 +113,18 @@ def get_truth_map(
 ) -> TruthMap:
     case = p.require_case(db, case_id)
     view = ClaimService(db).get_truth_map(case.id, status, viewer=p.user)
+    names = api_token_service.token_names(
+        db,
+        [
+            *(r.claim.agent_token_id for g in view.groups for r in g.claims),
+            *(
+                e.evidence.agent_token_id
+                for g in view.groups
+                for r in g.claims
+                for e in r.evidence
+            ),
+        ],
+    )
     claims = []
     for group in view.groups:
         for row in group.claims:
@@ -121,6 +135,7 @@ def get_truth_map(
                     provenance=e.evidence.confidence.value,
                     reactions=[r.reaction.value for r in e.reactions],
                     document=document_ref(e.document),
+                    agent_token_name=names.get(e.evidence.agent_token_id),
                 )
                 for e in row.evidence
                 # Evidence may live in a case this token cannot read.
@@ -137,6 +152,7 @@ def get_truth_map(
                     status=c.status.value,
                     is_precedent=bool(c.is_precedent),
                     evidence=evidence,
+                    agent_token_name=names.get(c.agent_token_id),
                 )
             )
     return TruthMap(
@@ -253,6 +269,7 @@ class ActionItemEntry(BaseModel):
     is_overdue: bool
     proceeding_id: int | None
     source_document: DocumentRef | None
+    agent_token_name: str | None = None
 
 
 def list_action_items(
@@ -269,9 +286,10 @@ def list_action_items(
     items = q.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.id.asc()).all()
     refs = _refs(db, p, {i.source_document_id for i in items if i.source_document_id})
     today = now_utc()
+    names = api_token_service.token_names(db, (i.agent_token_id for i in items))
     out = []
     for i in items:
-        view = case_overview_service.action_item_view(i, today)
+        view = case_overview_service.action_item_view(i, today, names)
         out.append(
             ActionItemEntry(
                 action_item_id=i.id,
@@ -286,6 +304,7 @@ def list_action_items(
                 source_document=refs.get(i.source_document_id)
                 if i.source_document_id
                 else None,
+                agent_token_name=view.agent_token_name,
             )
         )
     return out

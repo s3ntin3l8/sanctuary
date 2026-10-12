@@ -160,6 +160,23 @@ def dismiss_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
 # ---------------------------------------------------------------------------
 
 
+def apply_evidence_status_transition(target: Claim, role: ClaimEvidenceRole) -> None:
+    """The conservative status moves a user-accepted evidence link triggers:
+
+    - CONTESTS on an ASSERTED claim → CONTESTED
+    - REFUTES on a non-ESTABLISHED claim → REFUTED
+    - ESTABLISHED claims (court findings) are never auto-flipped
+    """
+    if target.status == ClaimStatus.ESTABLISHED:
+        return
+    if role == ClaimEvidenceRole.CONTESTS and target.status == ClaimStatus.ASSERTED:
+        target.status = ClaimStatus.CONTESTED
+        target.last_updated_at = _now()
+    elif role == ClaimEvidenceRole.REFUTES:
+        target.status = ClaimStatus.REFUTED
+        target.last_updated_at = _now()
+
+
 def confirm_evidence(proposal_id: int, db: Session) -> ClaimEvidenceProposal | None:
     """Apply a proposed evidence link. Writes the ClaimEvidence row and runs
     the conservative status-transition rules:
@@ -209,16 +226,7 @@ def confirm_evidence(proposal_id: int, db: Session) -> ClaimEvidenceProposal | N
             )
         )
 
-    if target.status != ClaimStatus.ESTABLISHED:
-        if (
-            prop.proposed_role == ClaimEvidenceRole.CONTESTS
-            and target.status == ClaimStatus.ASSERTED
-        ):
-            target.status = ClaimStatus.CONTESTED
-            target.last_updated_at = _now()
-        elif prop.proposed_role == ClaimEvidenceRole.REFUTES:
-            target.status = ClaimStatus.REFUTED
-            target.last_updated_at = _now()
+    apply_evidence_status_transition(target, prop.proposed_role)
 
     prop.status = ProposalStatus.CONFIRMED
     prop.resolved_at = _now()

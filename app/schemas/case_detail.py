@@ -82,6 +82,7 @@ class CaseActionItem(BaseModel):
     proceeding_id: int | None
     source_document_id: int | None
     is_overdue: bool
+    agent_token_name: str | None = None
 
 
 class CaseDocument(BaseModel):
@@ -321,6 +322,7 @@ class EvidenceView(BaseModel):
     document_originator: OriginatorType
     document_date: datetime | None
     reactions: list[UserReactionType]
+    agent_token_name: str | None = None
 
 
 class ClaimView(BaseModel):
@@ -333,6 +335,7 @@ class ClaimView(BaseModel):
     last_updated_at: datetime
     allowed_transitions: list[ClaimStatus]
     evidence: list[EvidenceView]
+    agent_token_name: str | None = None
 
 
 class ClaimGroupView(BaseModel):

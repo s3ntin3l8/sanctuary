@@ -22,12 +22,16 @@ from app.models.database import (
 from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
+    ClaimType,
     OriginatorType,
     ProposalStatus,
+    RelationshipConfidence,
 )
 from app.repositories.claim import ClaimRepository
+from app.repositories.claim_evidence import ClaimEvidenceRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.services import access_service
+from app.services.claim_proposal_service import apply_evidence_status_transition
 
 TruthMapFilter = Literal["open", "established", "refuted", "all"]
 
@@ -471,6 +475,75 @@ class ClaimService:
         if updated is None:
             raise ValueError(f"Claim {claim_id} not found")
         return updated
+
+    def create_user_claim(
+        self,
+        doc: Document,
+        claim_text: str,
+        claim_type: ClaimType,
+        excerpt: str | None,
+        *,
+        agent_token_id: int | None = None,
+    ) -> Claim:
+        """A claim the user (or their agent) states, originating in ``doc``.
+
+        Writes the claim and, immediately, its ``ASSERTS`` evidence row: that row
+        is the "originated by" link and the only thing that ties a claim to a
+        case. The caller checks access and commits.
+        """
+        claim = self._claim_repo.create_claim(
+            claim_text, claim_type, agent_token_id=agent_token_id
+        )
+        ClaimEvidenceRepository(self._db).link(
+            claim.id,
+            doc.id,
+            ClaimEvidenceRole.ASSERTS,
+            excerpt,
+            confidence=RelationshipConfidence.USER_CREATED,
+            agent_token_id=agent_token_id,
+        )
+        return claim
+
+    def link_user_evidence(
+        self,
+        claim: Claim,
+        doc: Document,
+        role: ClaimEvidenceRole,
+        excerpt: str | None,
+        *,
+        agent_token_id: int | None = None,
+    ) -> tuple[ClaimEvidence, bool]:
+        """Record that ``doc`` bears on ``claim`` in ``role``; returns (row, changed).
+
+        A document holds one link per claim. An existing row is updated to this
+        explicit decision (as confirming a suggestion does), except the
+        originating ``ASSERTS`` row, which is left exactly as it is
+        (``changed`` is False). Like a confirmed suggestion, a CONTESTS/REFUTES
+        link moves an unsettled claim's status. The caller commits.
+        """
+        repo = ClaimEvidenceRepository(self._db)
+        existing = repo.evidence_for(claim.id, doc.id)
+        if existing is not None:
+            if existing.role == ClaimEvidenceRole.ASSERTS:
+                return existing, False
+            existing.role = role
+            existing.confidence = RelationshipConfidence.USER_CREATED
+            existing.agent_token_id = agent_token_id
+            if excerpt:
+                existing.excerpt = excerpt
+            row = existing
+        else:
+            row = repo.link(
+                claim.id,
+                doc.id,
+                role,
+                excerpt,
+                confidence=RelationshipConfidence.USER_CREATED,
+                agent_token_id=agent_token_id,
+            )
+        apply_evidence_status_transition(claim, role)
+        self._db.flush()
+        return row, True
 
     def dismiss_claim(self, claim_id: int) -> Claim:
         """Soft-delete a claim. Hides it from the Truth Map, the HUD, and the

@@ -38,7 +38,7 @@ from app.schemas.case_detail import (
     PartyView,
     ProceedingView,
 )
-from app.services import access_service
+from app.services import access_service, api_token_service
 from app.services.case_dashboard_service import _PARTY_ROLE_ORDER
 from app.services.case_service import (
     _compute_dormancy_alert,
@@ -104,7 +104,9 @@ def summary_of(costs: list[LegalCost], exposure_cents: int) -> FinancialsSummary
     )
 
 
-def action_item_view(a: ActionItem, today) -> CaseActionItem:
+def action_item_view(
+    a: ActionItem, today, names: dict[int | None, str] | None = None
+) -> CaseActionItem:
     return CaseActionItem(
         id=a.id,
         title=a.title,
@@ -119,6 +121,7 @@ def action_item_view(a: ActionItem, today) -> CaseActionItem:
         is_overdue=a.status == ActionItemStatus.OPEN
         and a.due_date is not None
         and a.due_date < today,
+        agent_token_name=(names or {}).get(a.agent_token_id),
     )
 
 
@@ -200,6 +203,7 @@ def build_case_detail(
             ],
         )
     )
+    action_names = api_token_service.token_names(db, (a.agent_token_id for a in items))
     detail = CaseDetail(
         id=case.id,
         title=case.title,
@@ -219,7 +223,7 @@ def build_case_detail(
         documents=documents,
         new_doc_count=sum(1 for d in documents if d.is_new),
         last_visit=last_visit,
-        action_items=[action_item_view(a, today) for a in items],
+        action_items=[action_item_view(a, today, action_names) for a in items],
         parties=[
             PartyView(
                 name=str(p.get("name", "")),

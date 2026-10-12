@@ -1,6 +1,7 @@
 import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
 
 import { type Pin, useDeletePin, useUpdatePin } from '../../api/documents'
+import { AgentBadge } from '../../ui/AgentBadge'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
 
@@ -101,6 +102,7 @@ function PinCard({
           <Icon name="close" size={12} />
         </button>
       </header>
+      <AgentBadge name={pin.agent_token_name} />
       <textarea
         aria-label="Pin note"
         value={note}

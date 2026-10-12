@@ -56,6 +56,7 @@ def insert_edge_if_absent(
     relationship_type: RelationshipType,
     confidence: RelationshipConfidence = RelationshipConfidence.AI_DETECTED,
     notes: str | None = None,
+    agent_token_id: int | None = None,
 ) -> bool:
     """Insert an edge unless (from, to, type) already exists or was rejected by
     the user; True if inserted.
@@ -85,6 +86,7 @@ def insert_edge_if_absent(
             relationship_type=relationship_type,
             confidence=confidence,
             notes=notes,
+            agent_token_id=agent_token_id,
             ingest_date=now_utc(),
         )
         .on_conflict_do_nothing(constraint="uq_document_relationships_edge")
@@ -146,6 +148,7 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
         relationship_type: RelationshipType,
         confidence: RelationshipConfidence = RelationshipConfidence.AI_DETECTED,
         notes: str | None = None,
+        agent_token_id: int | None = None,
     ) -> DocumentRelationship:
         """Idempotent: returns the existing edge if (from, to, type) already
         exists, otherwise creates a new one. AI re-runs would otherwise
@@ -158,6 +161,7 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
             relationship_type=relationship_type,
             confidence=confidence,
             notes=notes,
+            agent_token_id=agent_token_id,
         )
         self.db.commit()
         edge = (

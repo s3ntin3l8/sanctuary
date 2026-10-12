@@ -53,12 +53,18 @@ class UserReactionRepository(BaseRepository[UserReaction]):
         notes: str | None = None,
         *,
         user_id: int,
+        agent_token_id: int | None = None,
     ) -> UserReaction:
-        """Idempotent upsert — creates if absent, updates notes if present."""
+        """Idempotent upsert — creates if absent, updates notes if present.
+
+        ``agent_token_id`` tags who wrote the row (an MCP agent); an edit of the
+        notes re-tags it to the latest writer, so a user's own edit clears it.
+        """
         existing = self.find(document_id, reaction)
         if existing:
             if notes is not None:
                 existing.notes = notes
+                existing.agent_token_id = agent_token_id
                 self.db.flush()
             return existing
         return self.create(
@@ -66,6 +72,7 @@ class UserReactionRepository(BaseRepository[UserReaction]):
             reaction=reaction,
             notes=notes,
             user_id=user_id,
+            agent_token_id=agent_token_id,
         )
 
     def get_by_document_ids(self, document_ids: list[int]) -> list[UserReaction]:

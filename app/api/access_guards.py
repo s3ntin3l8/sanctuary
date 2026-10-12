@@ -31,7 +31,6 @@ from app.models.database import (
     ActionItem,
     Case,
     Claim,
-    ClaimEvidence,
     ClaimEvidenceProposal,
     ClaimMergeProposal,
     Conversation,
@@ -233,80 +232,12 @@ def require_cost_signal_access(*, edit: bool = False):
     return _dep
 
 
-def claim_linked_case_ids(db: Session, claim_id: int) -> set[str]:
-    """Every distinct case_id reachable from a claim's evidence documents.
-
-    Claims are global (see Claim's own docstring): the same claim can be
-    evidence-linked from documents in different cases, potentially owned by
-    different users. Callers must never expose the *identity or content* of
-    linked cases the user cannot see (#159) — see `_check_case_ids`.
-    """
-    rows = (
-        db.query(Document.case_id)
-        .join(ClaimEvidence, ClaimEvidence.document_id == Document.id)
-        .filter(ClaimEvidence.claim_id == claim_id, Document.case_id.isnot(None))
-        .distinct()
-        .all()
-    )
-    return {row[0] for row in rows if row[0] and row[0] != "_TRIAGE"}
-
-
-def claim_linked_owner_ids(db: Session, claim_id: int) -> set[int]:
-    """Owner ids of every document that evidences this claim, regardless of
-    case. Fallback for claims with no real-case evidence yet (e.g. sourced
-    only from _TRIAGE documents), where claim_linked_case_ids is empty and
-    ownership of the evidencing documents is the only available signal."""
-    rows = (
-        db.query(Document.owner_id)
-        .join(ClaimEvidence, ClaimEvidence.document_id == Document.id)
-        .filter(ClaimEvidence.claim_id == claim_id)
-        .distinct()
-        .all()
-    )
-    return {row[0] for row in rows if row[0] is not None}
-
-
-def _check_case_ids(db: Session, user: User, case_ids: set[str], *, edit: bool) -> bool:
-    """View = access to at least one case_id. Edit = edit access to every linked
-    case the user can *see*; cases they cannot see are ignored entirely.
-
-    Ignoring invisible cases is deliberate (#159): requiring edit access to
-    them would make "edit denied" reveal that a claim is also referenced from
-    a case the caller can't see. The accepted trade-off is that an edit to a
-    claim shared across cases changes it for every linked case.
-    """
-    if not case_ids:
-        return False
-    cases = db.query(Case).filter(Case.id.in_(case_ids)).all()  # one query, not K
-    visible = [c for c in cases if access_service.can_view_case(db, user, c)]
-    if not visible:
-        return False
-    if not edit:
-        return True
-    return all(access_service.can_edit_case(db, user, c) for c in visible)
-
-
-def claim_access_allowed(db: Session, user: User, claim_id: int, *, edit: bool) -> bool:
-    case_ids = claim_linked_case_ids(db, claim_id)
-    if case_ids:
-        return _check_case_ids(db, user, case_ids, edit=edit)
-    owner_ids = claim_linked_owner_ids(db, claim_id)
-    if not owner_ids:
-        return False
-    if access_service.is_admin(user):
-        return True
-    # Another user's untriaged documents are invisible to this user, so they
-    # don't count (same rule as _check_case_ids): owning one evidencing
-    # document is enough to view or edit.
-    return user.id in owner_ids
-
-
 def require_claim_access(*, edit: bool = False):
     """Resolve `claim_id` from the path.
 
-    Claims can span multiple cases (see claim_linked_case_ids). Viewing
+    Claims can span multiple cases (see access_service.claim_linked_case_ids). Viewing
     requires access to at least one linked case; editing requires edit access
-    to every linked case the user can see (see `_check_case_ids`). A claim
+    to every linked case the user can see (see `access_service.can_access_case_ids`). A claim
     with no real-case evidence yet (only _TRIAGE) falls back to ownership of
     its evidencing documents.
     """
@@ -317,7 +248,9 @@ def require_claim_access(*, edit: bool = False):
         user: User = Depends(get_current_user),
     ) -> Claim:
         claim = db.query(Claim).filter(Claim.id == claim_id).first()
-        if claim is None or not claim_access_allowed(db, user, claim_id, edit=edit):
+        if claim is None or not access_service.claim_access_allowed(
+            db, user, claim_id, edit=edit
+        ):
             raise HTTPException(status_code=404, detail="Not found")
         return claim
 
@@ -333,8 +266,10 @@ def merge_proposal_access_allowed(
     every case linked to *either* claim. Shared by require_merge_proposal_access
     and the batch merge route (claims.py), which must apply the same rule
     per-proposal rather than trusting the URL's case_id alone."""
-    new_allowed = claim_access_allowed(db, user, proposal.new_claim_id, edit=edit)
-    existing_allowed = claim_access_allowed(
+    new_allowed = access_service.claim_access_allowed(
+        db, user, proposal.new_claim_id, edit=edit
+    )
+    existing_allowed = access_service.claim_access_allowed(
         db, user, proposal.existing_claim_id, edit=edit
     )
     return (
@@ -394,7 +329,7 @@ def require_evidence_proposal_access(*, edit: bool = False):
         doc_allowed = doc is not None and check_owned_or_case_access(
             db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=edit
         )
-        claim_allowed = claim_access_allowed(
+        claim_allowed = access_service.claim_access_allowed(
             db, user, proposal.target_claim_id, edit=edit
         )
         allowed = (

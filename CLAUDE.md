@@ -40,7 +40,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * `DocumentPin` — passage-anchored margin annotations (distinct from `UserReaction`; stores span offsets)
 * `LegalCost` — German RVG/GKG/JVEG cost tracking per proceeding; `CostCategory` + `CostStatus` enums
 * `Entity` — extracted named entities (`EntityType`: person, org, court, law_firm, …)
-* `ApiToken` + `ApiTokenCase` — bearer credential an external agent uses on the MCP endpoint (`/mcp`, bearer-only, enforced in `AuthGateMiddleware` regardless of `AUTH_ENABLED`). Acts as its owner and can never exceed them: `all_cases` is a true wildcard (future cases included), otherwise the `ApiTokenCase` rows; `access` is `read` or `read_write`. Only the sha256 of the secret is stored; revocation is soft. Managed in Settings → Agent access (`/api/v1/settings/agent-access`)
+* `ApiToken` + `ApiTokenCase` — bearer credential an external agent uses on the MCP endpoint (`/mcp`, bearer-only, enforced in `AuthGateMiddleware` regardless of `AUTH_ENABLED`). Acts as its owner and can never exceed them: `all_cases` is a true wildcard (future cases included), otherwise the `ApiTokenCase` rows; `access` is `read` or `read_write`. Only the sha256 of the secret is stored; revocation is soft. Managed in Settings → Agent access (`/api/v1/settings/agent-access`). Rows an agent writes (`UserReaction`, `DocumentPin`, `Claim`, `ClaimEvidence`, `ActionItem`, `DocumentRelationship`, `IngestBatch`) carry a nullable `agent_token_id` (null = the user's own); the SPA shows a "via agent" badge and `ActionItem`s with a tag survive AI re-enrichment
 * `UserSettings` — single-user preferences (model selection, UI flags)
 * `Conversation` + `ConversationMessage` — chat sessions with case context
 

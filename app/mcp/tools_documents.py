@@ -18,7 +18,12 @@ from app.mcp.principal import McpPrincipal
 from app.mcp.serializers import DocumentRef, document_ref, iso_date, untrusted
 from app.models.database import Document
 from app.models.enums import SignificanceTier
-from app.services import access_service, document_review_service, embeddings
+from app.services import (
+    access_service,
+    api_token_service,
+    document_review_service,
+    embeddings,
+)
 from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 from app.services.search_service import SearchService
 
@@ -190,8 +195,12 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
                 "direction": rel.direction,
                 "confidence": rel.confidence.value,
                 "document": document_ref(other).model_dump(),
+                "agent_token_name": rel.agent_token_name,
             }
         )
+    pin_names = api_token_service.token_names(
+        db, (pin.agent_token_id for pin in ctx["pins"])
+    )
     return {
         "document": document_ref(doc).model_dump(),
         "case_id": doc.case_id,
@@ -245,15 +254,24 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
                 "due_date": iso_date(a.due_date),
                 "type": a.action_type.value,
                 "status": a.status.value,
+                "agent_token_name": a.agent_token_name,
             }
             for a in fields["actions"]
         ],
         "your_reactions": [
-            {"reaction": r.reaction.value, "notes": r.notes}
+            {
+                "reaction": r.reaction.value,
+                "notes": r.notes,
+                "agent_token_name": r.agent_token_name,
+            }
             for r in fields["reactions"]
         ],
         "your_pins": [
-            {"passage_id": pin.passage_id, "note": pin.note}
+            {
+                "passage_id": pin.passage_id,
+                "note": pin.note,
+                "agent_token_name": pin_names.get(pin.agent_token_id),
+            }
             for pin in ctx["pins"]
             if pin.user_id == p.user.id
         ],

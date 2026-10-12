@@ -92,6 +92,8 @@ Sanctuary exposes a [Model Context Protocol](https://modelcontextprotocol.io) en
    Clients that cannot send a static header can use the `mcp-remote` bridge: `npx mcp-remote https://<your-host>/mcp --header "Authorization: Bearer sct_…"`.
 3. Ask the agent to work with your cases: it can list cases, read overviews, documents (with AI summaries and key passages), the Truth Map, timeline, deadlines and costs, and search by keyword or meaning.
 
+With a **read & write** token the agent can also annotate (reactions, pins), add claims and evidence to the Truth Map, create and update deadlines, and link documents. Everything an agent writes is attributed to you but tagged with the token that wrote it ("via agent · name" badge in the document view, Truth Map and deadlines) and recorded in the audit log.
+
 A token acts as you and can never see more than you can. Every call is rate limited per token and tokens can be revoked at any time.
 
 **Network exposure:** `/mcp` is meant to sit behind your TLS reverse proxy like the rest of the app. It authenticates with a bearer token only (never cookies), so DNS-rebinding and cross-site request attacks gain nothing without the token itself; the SDK's Host-header allow-list is therefore disabled. To pin the endpoint to your public hostname anyway, set `MCP_ALLOWED_HOSTS=sanctuary.example.org` (comma-separated; other Hosts get 421). Keep tokens secret, prefer expiry, and revoke what you no longer use.

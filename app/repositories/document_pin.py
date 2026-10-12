@@ -15,8 +15,10 @@ class DocumentPinRepository:
         note: str | None = None,
         *,
         user_id: int,
+        agent_token_id: int | None = None,
     ) -> DocumentPin:
         pin = DocumentPin(
+            agent_token_id=agent_token_id,
             document_id=document_id,
             passage_id=passage_id,
             note=note,

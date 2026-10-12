@@ -16,7 +16,7 @@ VALID_ADDRESSEES = {"user", "opposing", "third_party", "court"}
 
 
 def purge_action_items_from_doc(source_doc_id: int, db: Session) -> int:
-    """Delete non-superseded ActionItems sourced from this document.
+    """Delete non-superseded, AI-extracted ActionItems sourced from this document.
 
     Mirrors the Streitwert-erase pattern: when the action-item court gate
     rejects a re-enrichment (originator flipped court→party, or the doc was
@@ -29,6 +29,7 @@ def purge_action_items_from_doc(source_doc_id: int, db: Session) -> int:
         .filter(
             ActionItem.source_document_id == source_doc_id,
             ActionItem.superseded.is_(False),
+            ActionItem.agent_token_id.is_(None),
         )
         .delete(synchronize_session=False)
     )
@@ -83,6 +84,9 @@ def create_from_payload(
             ActionItem.superseded.is_(
                 False
             ),  # tombstones are permanent guards — never erase
+            # Deadlines an external agent added are the user's records, not
+            # stale AI output: re-enrichment must not wipe them.
+            ActionItem.agent_token_id.is_(None),
         ).delete(synchronize_session=False)
 
     # Compare on `.date()` — `due_date` from strptime is naive, but

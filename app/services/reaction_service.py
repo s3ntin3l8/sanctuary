@@ -31,3 +31,27 @@ def set_reaction(
         repo.set_reaction(doc.id, reaction, notes, user_id=user_id)
     db.flush()
     return list(repo.get_by_document(doc.id))
+
+
+def ensure_reaction(
+    db: Session,
+    user_id: int,
+    doc: Document,
+    reaction: UserReactionType,
+    notes: str | None,
+    *,
+    agent_token_id: int | None = None,
+) -> list[UserReaction]:
+    """Make sure ``doc`` carries ``reaction`` (never removes one).
+
+    Unlike :func:`set_reaction` this is idempotent: setting a reaction that is
+    already there keeps it (with ``notes`` it updates them). Reactions are one
+    per (document, type), so an agent re-asserting the user's own flag must not
+    toggle it off. The caller commits.
+    """
+    repo = UserReactionRepository(db)
+    repo.set_reaction(
+        doc.id, reaction, notes, user_id=user_id, agent_token_id=agent_token_id
+    )
+    db.flush()
+    return list(repo.get_by_document(doc.id))

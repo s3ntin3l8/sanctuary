@@ -133,6 +133,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
         location: str | None = None,
         proceeding_id: int | None = None,
         source_document_id: int | None = None,
+        agent_token_id: int | None = None,
     ) -> ActionItem:
         return self.create(
             case_id=case_id,
@@ -143,6 +144,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
             location=location,
             proceeding_id=proceeding_id,
             source_document_id=source_document_id,
+            agent_token_id=agent_token_id,
             status=ActionItemStatus.OPEN,
             ingest_date=now_utc(),
         )
