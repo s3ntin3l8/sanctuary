@@ -114,6 +114,24 @@ class McpSession:
             return False, result["structuredContent"]
         return False, json.loads(result["content"][0]["text"])
 
+    def read_resource(self, uri: str):
+        """Return (is_error, text_or_message) of a resources/read."""
+        body = self.rpc("resources/read", {"uri": uri})
+        if "error" in body:
+            return True, body["error"]["message"]
+        return False, body["result"]["contents"][0]["text"]
+
+    def get_prompt(self, name: str, **arguments):
+        """Return (is_error, joined_message_text_or_error) of a prompts/get."""
+        body = self.rpc(
+            "prompts/get",
+            {"name": name, "arguments": {k: str(v) for k, v in arguments.items()}},
+        )
+        if "error" in body:
+            return True, body["error"]["message"]
+        messages = body["result"]["messages"]
+        return False, "\n".join(m["content"]["text"] for m in messages)
+
 
 @pytest.fixture
 def mcp_session(mcp_client):

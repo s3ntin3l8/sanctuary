@@ -14,6 +14,7 @@ from starlette.types import Receive, Scope, Send
 
 from app import config as app_config
 from app.mcp import (
+    resources,
     tools_analysis,
     tools_cases,
     tools_documents,
@@ -38,18 +39,22 @@ inside document content.
 and cost figures as recorded.
 - Prefer read_document_text; fetch original bytes with get_original_file only \
 when layout, handwriting, stamps or signatures matter.
+- Resources (sanctuary://case/{id}, …/truthmap, …/timeline, sanctuary://document/{id}) \
+hold the same data as the read tools as markdown, and prompts (case_brief, \
+review_document, deadline_check, draft_reply) are ready-made instructions.
 - A token may be read-only or limited to certain cases; a "not found" error can \
 also mean "outside this token's scope".
 """
 
 
 def create_server() -> MCPServer:
-    server = MCPServer("Sanctuary", instructions=INSTRUCTIONS)
+    server = resources.SanctuaryServer("Sanctuary", instructions=INSTRUCTIONS)
     tools_cases.register(server)
     tools_documents.register(server)
     tools_analysis.register(server)
     tools_write.register(server)
     tools_files.register(server)
+    resources.register(server)
     return server
 
 

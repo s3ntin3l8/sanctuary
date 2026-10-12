@@ -21,9 +21,10 @@ def _token_id(ctx: Context[Any, Any]) -> int | None:
     return scope.get("state", {}).get("api_token_id")
 
 
-async def run[T](ctx: Context[Any, Any], fn: Callable[[Session, McpPrincipal], T]) -> T:
+async def run_for_token[T](
+    token_id: int | None, fn: Callable[[Session, McpPrincipal], T]
+) -> T:
     """Call ``fn(db, principal)`` off the event loop; commit on success, else roll back."""
-    token_id = _token_id(ctx)
     if token_id is None:
         raise ToolError("Not authenticated.")
 
@@ -40,3 +41,8 @@ async def run[T](ctx: Context[Any, Any], fn: Callable[[Session, McpPrincipal], T
             db.close()
 
     return await anyio.to_thread.run_sync(work)
+
+
+async def run[T](ctx: Context[Any, Any], fn: Callable[[Session, McpPrincipal], T]) -> T:
+    """`run_for_token` for the token behind the current MCP request."""
+    return await run_for_token(_token_id(ctx), fn)
