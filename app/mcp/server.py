@@ -19,6 +19,7 @@ from app.mcp import (
     tools_cases,
     tools_documents,
     tools_files,
+    tools_ingest,
     tools_write,
 )
 
@@ -55,6 +56,7 @@ def create_server() -> MCPServer:
     tools_write.register(server)
     tools_files.register(server)
     resources.register(server)
+    tools_ingest.register(server)
     return server
 
 

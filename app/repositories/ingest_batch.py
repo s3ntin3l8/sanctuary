@@ -73,6 +73,7 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
         proceeding_id: int | None = None,
         received_at: datetime | None = None,
         owner_id: int | None = None,
+        agent_token_id: int | None = None,
     ) -> IngestBatch:
         return self.create(
             source_type=source_type,
@@ -85,4 +86,5 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             received_at=received_at or now_utc(),
             status=IngestBatchStatus.PENDING,
             ingest_date=now_utc(),
+            agent_token_id=agent_token_id,
         )
