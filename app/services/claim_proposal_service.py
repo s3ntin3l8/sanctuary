@@ -191,11 +191,13 @@ def confirm_evidence(proposal_id: int, db: Session) -> ClaimEvidenceProposal | N
         .first()
     )
     if existing is not None:
+        # The originating ASSERTS row is left exactly as it is: confirming a
+        # suggestion must not rebrand what the machine recorded as the user's.
         if existing.role != ClaimEvidenceRole.ASSERTS:
             existing.role = prop.proposed_role
-        existing.confidence = RelationshipConfidence.USER_CONFIRMED
-        if prop.excerpt:
-            existing.excerpt = prop.excerpt
+            existing.confidence = RelationshipConfidence.USER_CONFIRMED
+            if prop.excerpt:
+                existing.excerpt = prop.excerpt
     else:
         db.add(
             ClaimEvidence(

@@ -22,7 +22,9 @@ down_revision: str | Sequence[str] | None = "b7e3a9c1d5f2"  # pragma: allowlist 
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Enum columns store member *names*. Mirrors EVIDENCE_ROLE_STRENGTH.
+# Enum columns store member *names*. SQL mirror of EVIDENCE_ROLE_STRENGTH in
+# app/models/enums.py: the two are separate sources of truth, so a new role must
+# be added to both.
 _STRENGTH = """CASE {col}
         WHEN 'ASSERTS' THEN 5 WHEN 'REFUTES' THEN 4 WHEN 'CONTESTS' THEN 3
         WHEN 'SUPPORTS' THEN 2 ELSE 1 END"""

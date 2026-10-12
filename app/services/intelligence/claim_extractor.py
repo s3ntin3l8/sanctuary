@@ -245,6 +245,8 @@ def _apply_claims(
 
         role = ClaimEvidenceRole(role_raw)
         excerpt = (item.get("excerpt") or "")[:500]
+        # Only the stronger role's excerpt is kept for a claim; the weaker one's
+        # is dropped with its role (one link per claim and document).
         prior = chosen.get(claim_id)
         if (
             prior is None
