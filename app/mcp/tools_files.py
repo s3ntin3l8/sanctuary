@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from typing import Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -26,7 +27,11 @@ _MB = 1024 * 1024
 
 
 def read_original(
-    db: Session, p: McpPrincipal, document_id: int
+    db: Session,
+    p: McpPrincipal,
+    document_id: int,
+    *,
+    surface: Literal["tool", "resource"] = "tool",
 ) -> tuple[DocumentRef, document_files.OriginalFile, bytes]:
     """The document's stored original, size-capped and audited (the bytes leave the instance)."""
     doc = p.require_document(db, document_id)
@@ -50,6 +55,8 @@ def read_original(
         target_id=str(doc.id),
         payload={
             "tool": "get_original_file",
+            # which MCP surface served the bytes: the tool or the resource template
+            "surface": surface,
             "api_token_id": p.token_id,
             "size_bytes": len(data),
             "filename": original.filename,

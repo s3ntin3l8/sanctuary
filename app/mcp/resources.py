@@ -321,7 +321,7 @@ def register(mcp: MCPServer) -> None:
     )
     async def original_resource(document_id: int, ctx: Context) -> bytes:
         def build(db: Session, p: McpPrincipal) -> bytes:
-            return tools_files.read_original(db, p, document_id)[2]
+            return tools_files.read_original(db, p, document_id, surface="resource")[2]
 
         return await _read(ctx, build)
 

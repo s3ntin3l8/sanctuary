@@ -201,6 +201,7 @@ def test_original_resource_returns_the_exact_bytes_and_is_audited(
     )
     assert audit.target_id == str(doc.id) and audit.actor_label == "mcp:agent"
     assert "blob" not in str(audit.payload)
+    assert audit.payload["surface"] == "resource"
 
 
 def test_original_resource_is_scoped_and_capped(
