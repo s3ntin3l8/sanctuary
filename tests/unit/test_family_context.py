@@ -392,3 +392,47 @@ def test_a_letter_that_only_got_the_batch_case_is_still_filed_by_its_own_az(env)
     assert resolved.proceeding_id == live.id
     assert standalone.case_id == "FC-1"
     assert standalone.proceeding_id == live.id
+
+
+def test_a_relays_proceeding_governs_what_it_forwards_even_under_another_az(env):
+    db, _batch, proc, doc = env
+    live = proc(az=AZ)
+    old = proc(az="3 F 2022/23")
+    relay = doc(
+        "Bekanntgabe Antragsschrift",
+        case_id="FC-1",
+        az=AZ,
+        proceeding=live,
+        role=DocumentRole.COVER_LETTER,
+        originator=OriginatorType.COURT,
+        court_relay=True,
+    )
+    motion = doc("motion filed under the closed AZ", parent=relay, az="3 F 2022/23")
+    kept = doc(
+        "confirmed",
+        parent=relay,
+        az="3 F 2022/23",
+        proceeding=old,
+        confirmed_at=datetime.now(),
+    )
+
+    fc.propagate(db, relay)
+
+    assert motion.proceeding_id == live.id
+    assert motion.az_court == "3 F 2022/23"  # observed, still shown
+    assert kept.proceeding_id == old.id  # a person's decision stands
+    assert db.query(Proceeding).count() == 2  # nothing created, forked or closed
+
+
+def test_a_partys_filing_still_keeps_its_exhibits_own_proceeding(env):
+    db, _batch, proc, doc = env
+    live = proc(az=AZ)
+    other = proc(az=OTHER_AZ)
+    motion = doc(
+        "motion", case_id="FC-1", az=AZ, proceeding=live, role=DocumentRole.COVER_LETTER
+    )
+    ruling = doc("copied ruling", parent=motion, az=OTHER_AZ)
+
+    fc.propagate(db, motion)
+
+    assert ruling.proceeding_id == other.id

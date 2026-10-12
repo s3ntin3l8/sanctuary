@@ -22,6 +22,7 @@ from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.ai_run_index import record_run
 from app.services.ingestion import ocr_crosscheck
+from app.services.intelligence._court_identity import court_name_offset
 from app.services.intelligence.prompts import SLICING_CUT_SYSTEM, SLICING_OUTLINE_SYSTEM
 from app.services.intelligence.schemas import CutJudgment, SliceOutline
 
@@ -178,6 +179,65 @@ def _boundary_signals(prev_head: str, prev_tail: str, curr_head: str) -> list[st
     if _signal_repeated_header(prev_head, curr_head):
         signals.append("repeated_header")
     return signals
+
+
+# ---------------------------------------------------------------------------
+# Court relays
+# ---------------------------------------------------------------------------
+# The sentence that makes a court letter a relay ("anbei wird Ihnen … übersandt")
+# usually sits mid-page, outside the stored head and tail, so it is read from the
+# full OCR text while it is still at hand and kept per page.
+# The court name must open the page (markdown or scan noise may precede it).
+_LETTERHEAD_CHARS = 80
+_LETTERHEAD_MAX_OFFSET = 15
+_RELAY_CUE_CHARS = 200
+_RELAY_CUE_LOOKBACK = 60
+_RELAY_CUE_PROMPT_CHARS = 120
+_RE_ADDRESSEE_PREFIX = re.compile(r"\bAn(?:\s+(?:das|den))?\s*:?\s*$", re.IGNORECASE)
+# Forwarding wording only: "Stellung nehmen" alone asks for a reply and "Abschrift"
+# alone turns up in boilerplate about filing copies, so neither is a cue.
+_RE_RELAY_CUE = re.compile(
+    r"übersende|übersandt|übersenden|\banbei\b|\banliegend|beigefügt"
+    r"|in der Anlage|zur Kenntnisnahme|\bBekanntgabe\b",
+    re.IGNORECASE,
+)
+_RE_SENTENCE_BREAK = re.compile(r"[.!?]\s|\n\s*\n")
+_RE_SALUTATION_NAME = re.compile(
+    r"Sehr\s+geehrte[rn]?\s+((?:Damen\s+und\s+Herren|Herr|Frau)[^,\n]{0,40})",
+    re.IGNORECASE,
+)
+
+
+def _page_court_letterhead(text: str) -> bool:
+    """The page opens with a court's name as its sender, not as an addressee
+    ("An: Amtsgericht Ingolstadt" heads a filing to the court)."""
+    head = text.strip()[:_LETTERHEAD_CHARS]
+    at = court_name_offset(head)
+    return (
+        at is not None
+        and at <= _LETTERHEAD_MAX_OFFSET
+        and not _RE_ADDRESSEE_PREFIX.search(head[:at])
+    )
+
+
+def _page_relay_cue(text: str) -> str | None:
+    """The sentence around the first forwarding phrase, flattened."""
+    match = _RE_RELAY_CUE.search(text)
+    if match is None:
+        return None
+    # Scans often lack the full stop: never reach back further than a line or so.
+    start = max(0, match.start() - _RELAY_CUE_LOOKBACK)
+    for brk in _RE_SENTENCE_BREAK.finditer(text, start, match.start()):
+        start = brk.end()
+    end_match = _RE_SENTENCE_BREAK.search(text, match.end())
+    sentence = text[start : end_match.end() if end_match else len(text)]
+    return " ".join(sentence.replace("*", " ").split())[:_RELAY_CUE_CHARS]
+
+
+def _page_salutation(text: str) -> str | None:
+    """Whom the page addresses ("herr hansen"), lower-cased."""
+    match = _RE_SALUTATION_NAME.search(text)
+    return " ".join(match.group(1).lower().split()) if match else None
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +487,9 @@ def _outline_prompt(parts: list[_Part], pages: list[dict]) -> str | None:
             block += (
                 f"\n...ends:\n{pages[part.last - 1]['text_tail'][-tail_chars:].strip()}"
             )
+        first_page = pages[part.first - 1]
+        if first_page.get("court_letterhead") and first_page.get("relay_cue"):
+            block += f"\nForwards: {first_page['relay_cue'][:_RELAY_CUE_PROMPT_CHARS]}"
         blocks.append(block)
     return "\n\n".join(blocks)
 
@@ -477,6 +540,53 @@ def _apply_outline(
         kind, why = answer
         notes = f"{cut['notes']} · outline: {why}".strip(" ·")
         result.append({**cut, "kind": kind, "notes": notes})
+    return result
+
+
+def _apply_relay_spans(
+    proposed_cuts: list[dict], parts: list[_Part], pages: list[dict]
+) -> list[dict]:
+    """Fold what a court relay forwards under it.
+
+    A part opening with a court letterhead and a forwarding sentence is a relay;
+    every part after it is its enclosure until a court letter to the same
+    recipient (salutation) follows, which is a new letter and may be a relay
+    itself. Letters the relay carries, addressed to anyone else or filed under
+    another Aktenzeichen, stay inside: the court decides where it files what it
+    forwards. Deterministic, like the marker-page rule: the outline model cannot
+    see the forwarding sentence when it sits past the stored head.
+    """
+    part_at = {p.first: p for p in parts[1:]}
+    relay: dict | None = None
+    flip: dict[int, str] = {}
+
+    def facts(part: _Part) -> dict:
+        return pages[part.first - 1]
+
+    first = facts(parts[0]) if parts else {}
+    if first.get("court_letterhead") and first.get("relay_cue"):
+        relay = first
+    for part in parts[1:]:
+        page = facts(part)
+        if relay is not None:
+            closes = page.get("court_letterhead") and (
+                relay.get("salutation") is None
+                or page.get("salutation") == relay.get("salutation")
+            )
+            if closes:
+                relay = None
+            else:
+                flip[part.first] = relay["relay_cue"]
+        if relay is None and page.get("court_letterhead") and page.get("relay_cue"):
+            relay = page
+    result = []
+    for cut in proposed_cuts:
+        cue = flip.get(cut["page"])
+        if cue is None or cut["page"] not in part_at or cut["kind"] == "attachment":
+            result.append(cut)
+            continue
+        notes = f"{cut['notes']} · relay: {cue[:60]}".strip(" ·")
+        result.append({**cut, "kind": "attachment", "notes": notes})
     return result
 
 
@@ -578,6 +688,9 @@ def prepare(batch_id: int) -> None:
                         "text_head": text[:_TEXT_HEAD_CHARS],
                         "text_tail": text[-_TEXT_TAIL_CHARS:],
                         "blank": len(text.strip()) < _BLANK_PAGE_CHARS,
+                        "court_letterhead": _page_court_letterhead(text),
+                        "relay_cue": _page_relay_cue(text),
+                        "salutation": _page_salutation(text),
                         "thumbnail_path": str(thumb_path),
                     }
                 )
@@ -695,6 +808,9 @@ def prepare(batch_id: int) -> None:
             proposed_cuts = _apply_outline(
                 proposed_cuts, parts, outline, frozenset(marker_pages)
             )
+
+        if len(parts) > 1:
+            proposed_cuts = _apply_relay_spans(proposed_cuts, parts, page_data)
 
         meta = dict(batch.meta or {})
         meta["slicing"] = {
