@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.mcp import tools_analysis, tools_cases, tools_documents
 from app.mcp.db import run, run_for_token
 from app.mcp.principal import McpPrincipal
+from app.mcp.serializers import untrusted
 
 # How much of a document's text the document resource inlines; the rest is paged
 # through the read_document_text tool.
@@ -181,18 +182,22 @@ def render_document(doc: dict[str, Any], text: tools_documents.DocumentText) -> 
     )
     if doc.get("az_court"):
         out.append(f"- Court file no.: {doc['az_court']}")
+    # Everything below the header is derived from third-party document content.
+    derived: list[str] = []
     if doc.get("summary"):
-        out += ["", "## AI summary"]
-        out += [f"- {b['kind']}: {b['text']}" for b in doc["summary"]]
+        derived += ["## AI summary"]
+        derived += [f"- {b['kind']}: {b['text']}" for b in doc["summary"]]
     if doc.get("key_passages"):
-        out += ["", "## Key passages (cite by passage id)"]
+        derived += ["", "## Key passages (cite by passage id)"]
         for kp in doc["key_passages"]:
-            out.append(f"- `{kp['passage_id']}` ({kp.get('kind')}): “{kp['text']}”")
+            derived.append(f"- `{kp['passage_id']}` ({kp.get('kind')}): “{kp['text']}”")
     if doc.get("claims"):
-        out += ["", "## Claims this document touches"]
-        out += [
+        derived += ["", "## Claims this document touches"]
+        derived += [
             f"- #{c['claim_id']} ({c['status']}): {c['text']}" for c in doc["claims"]
         ]
+    if derived:
+        out += ["", untrusted("\n".join(derived))]
     out += ["", "## Text"]
     if text.next_offset is not None:
         out.append(
@@ -220,26 +225,31 @@ def _case_resource(case: tools_cases.CaseSummary) -> MCPResource:
 
 
 class SanctuaryServer(MCPServer):
-    """MCPServer whose resources/list shows only the cases the caller's token may read."""
+    """MCPServer whose resources/list shows only the cases the caller's token may read.
+
+    Depends on SDK internals pinned by ``mcp==2.3.0`` in requirements.txt
+    (``_handle_list_resources``): revisit this class when bumping the SDK.
+    """
 
     async def _handle_list_resources(
         self, ctx: Any, params: Any
     ) -> ListResourcesResult:
         scope = getattr(ctx.request, "scope", None) or {}
         token_id = scope.get("state", {}).get("api_token_id")
-        cases = await run_for_token(
-            token_id, lambda db, p: tools_cases.list_cases(db, p)
+        start = tools_documents._decode_cursor(getattr(params, "cursor", None))
+        fetched = await run_for_token(
+            token_id,
+            lambda db, p: tools_cases.list_cases(
+                db, p, limit=LIST_PAGE_SIZE + 1, offset=start
+            ),
         )
-        cursor = getattr(params, "cursor", None)
-        try:
-            start = max(0, int(cursor)) if cursor else 0
-        except ValueError:
-            start = 0
-        page = cases[start : start + LIST_PAGE_SIZE]
-        more = start + LIST_PAGE_SIZE < len(cases)
+        page = fetched[:LIST_PAGE_SIZE]
+        more = len(fetched) > LIST_PAGE_SIZE
         return ListResourcesResult(
             resources=[_case_resource(c) for c in page],
-            next_cursor=str(start + LIST_PAGE_SIZE) if more else None,
+            next_cursor=(
+                tools_documents._encode_cursor(start + LIST_PAGE_SIZE) if more else None
+            ),
         )
 
 

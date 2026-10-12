@@ -30,7 +30,13 @@ class CaseSummary(BaseModel):
 
 
 def list_cases(
-    db: Session, p: McpPrincipal, status: str | None = None, query: str | None = None
+    db: Session,
+    p: McpPrincipal,
+    status: str | None = None,
+    query: str | None = None,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[CaseSummary]:
     readable = p.readable_case_ids(db)
     q = db.query(Case).filter(Case.id != "_TRIAGE")
@@ -41,7 +47,12 @@ def list_cases(
     if query:
         like = f"%{query}%"
         q = q.filter(Case.title.ilike(like) | Case.id.ilike(like))
-    cases = q.order_by(Case.ingest_date.desc().nullslast(), Case.id).all()
+    q = q.order_by(Case.ingest_date.desc().nullslast(), Case.id)
+    if offset:
+        q = q.offset(offset)
+    if limit is not None:
+        q = q.limit(limit)
+    cases = q.all()
     ids = [c.id for c in cases]
     docs = DocumentRepository(db).bulk_count_by_case(ids)
     review = DocumentRepository(db).bulk_count_needs_review_by_case(ids)
