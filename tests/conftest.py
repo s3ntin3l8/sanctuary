@@ -11,6 +11,8 @@ os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
 # connection and fail with a retry-limit RuntimeError. No test in this suite
 # exercises real (non-eager) dispatch, so there is nothing to opt out for.
 os.environ["CELERY_TASK_ALWAYS_EAGER"] = "true"
+# Rate-limit counters in-process: the suite needs no Redis.
+os.environ["RATE_LIMIT_STORAGE_URI"] = "memory://"
 # Fixed throwaway Fernet key (forced, so a developer's real .env key never
 # encrypts test data) for the stored-credential encryption.
 os.environ["SECRETS_ENCRYPTION_KEY"] = (

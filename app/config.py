@@ -171,6 +171,10 @@ SCAN_PROCESSING_STALE_SECONDS = int(
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+# Where rate-limit counters live (a `limits` storage URI). Defaults to Redis so
+# the budget is shared across workers; "memory://" keeps it per-process.
+RATE_LIMIT_STORAGE_URI = os.getenv("RATE_LIMIT_STORAGE_URI", REDIS_URL)
+
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
 
 # Optional Host allow-list for /mcp (comma-separated, e.g. "sanctuary.example.org").
