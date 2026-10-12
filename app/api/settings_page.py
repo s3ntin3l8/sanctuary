@@ -14,6 +14,7 @@ router = APIRouter(tags=["pages"], include_in_schema=False)
 
 SETTINGS_TABS = (
     "account",
+    "agent-access",
     "gmail",
     "identity",
     "ai",

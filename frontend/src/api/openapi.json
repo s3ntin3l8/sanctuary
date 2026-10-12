@@ -344,6 +344,27 @@
         "title": "AdminUsersView",
         "type": "object"
       },
+      "AgentAccessView": {
+        "properties": {
+          "mcp_url": {
+            "title": "Mcp Url",
+            "type": "string"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/ApiTokenView"
+            },
+            "title": "Tokens",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mcp_url",
+          "tokens"
+        ],
+        "title": "AgentAccessView",
+        "type": "object"
+      },
       "AiHealth": {
         "properties": {
           "detail": {
@@ -584,6 +605,162 @@
           "reindex_job"
         ],
         "title": "AiSettingsView",
+        "type": "object"
+      },
+      "ApiTokenAccess": {
+        "description": "What an agent API token may do with the cases in its scope.",
+        "enum": [
+          "read",
+          "read_write"
+        ],
+        "title": "ApiTokenAccess",
+        "type": "string"
+      },
+      "ApiTokenCreate": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ApiTokenAccess"
+          },
+          "all_cases": {
+            "title": "All Cases",
+            "type": "boolean"
+          },
+          "case_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Case Ids",
+            "type": "array"
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "access",
+          "all_cases"
+        ],
+        "title": "ApiTokenCreate",
+        "type": "object"
+      },
+      "ApiTokenCreated": {
+        "properties": {
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/ApiTokenView"
+          }
+        },
+        "required": [
+          "token",
+          "secret"
+        ],
+        "title": "ApiTokenCreated",
+        "type": "object"
+      },
+      "ApiTokenView": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ApiTokenAccess"
+          },
+          "all_cases": {
+            "title": "All Cases",
+            "type": "boolean"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/TokenCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "access",
+          "all_cases",
+          "cases",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+          "revoked_at"
+        ],
+        "title": "ApiTokenView",
         "type": "object"
       },
       "AppearanceView": {
@@ -9684,6 +9861,24 @@
         "title": "TitleUpdate",
         "type": "object"
       },
+      "TokenCase": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "TokenCase",
+        "type": "object"
+      },
       "TriageActionDate": {
         "properties": {
           "due_date": {
@@ -15036,6 +15231,118 @@
           }
         },
         "summary": "V1 Update Profile",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/agent-access": {
+      "get": {
+        "operationId": "v1_agent_access_api_v1_settings_agent_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Agent Access",
+        "tags": [
+          "settings"
+        ]
+      },
+      "post": {
+        "operationId": "v1_create_token_api_v1_settings_agent_access_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Create Token",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/agent-access/{token_id}": {
+      "delete": {
+        "operationId": "v1_revoke_token_api_v1_settings_agent_access__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Revoke Token",
         "tags": [
           "settings"
         ]

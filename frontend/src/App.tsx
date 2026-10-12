@@ -18,6 +18,7 @@ import { AccountPage } from './features/settings/AccountPage'
 import { AboutPage } from './features/settings/AboutPage'
 import { AiPage } from './features/settings/AiPage'
 import { AiLogsPage } from './features/settings/AiLogsPage'
+import { AgentAccessPage } from './features/settings/AgentAccessPage'
 import { AppearancePage } from './features/settings/AppearancePage'
 import { DataPage } from './features/settings/DataPage'
 import { ExportPage } from './features/settings/ExportPage'
@@ -53,6 +54,7 @@ const router = createBrowserRouter([
         children: [
           { path: '/settings', element: <Navigate to="/settings/account" replace /> },
           { path: '/settings/account', element: <AccountPage /> },
+          { path: '/settings/agent-access', element: <AgentAccessPage /> },
           { path: '/settings/appearance', element: <AppearancePage /> },
           { path: '/settings/ai', element: <AiPage /> },
           { path: '/settings/ai/logs', element: <AiLogsPage /> },

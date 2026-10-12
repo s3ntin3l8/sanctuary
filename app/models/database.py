@@ -67,6 +67,7 @@ from app.core.validators import normalize_case_id
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    ApiTokenAccess,
     AuditEventType,
     BriefState,
     CaseAccessLevel,
@@ -1488,6 +1489,70 @@ class CaseShare(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
+    )
+
+
+class ApiToken(Base):
+    """A bearer credential an external agent uses against the MCP endpoint.
+
+    Acts as its ``user``: the token can never see or edit more than that user
+    can. ``all_cases`` is a true wildcard (cases created later are covered);
+    otherwise the reachable cases are the ``ApiTokenCase`` rows. Only the
+    sha256 of the secret is stored. Revocation is soft so rows written by the
+    token keep resolving to a name.
+
+    ``prefix`` keeps the first characters of the secret purely so the user can
+    tell tokens apart in the list. Threat model: a database dump reveals those
+    few characters, which is a negligible head start against a 256-bit random
+    secret; do not lengthen it.
+    """
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # unique=True with index=True emits ONE unique index (ix_api_tokens_token_hash),
+    # the one verify() looks up by; there is no second non-unique twin.
+    token_hash: Mapped[str] = mapped_column(
+        String, unique=True, nullable=False, index=True
+    )
+    # First characters of the secret, so the user can tell tokens apart.
+    prefix: Mapped[str] = mapped_column(String, nullable=False)
+    access: Mapped[ApiTokenAccess] = mapped_column(
+        SAEnum(ApiTokenAccess), nullable=False
+    )
+    all_cases: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User"] = relationship("User")
+    cases: Mapped[list["ApiTokenCase"]] = relationship(
+        "ApiTokenCase", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class ApiTokenCase(Base):
+    """One case in a non-wildcard token's scope."""
+
+    __tablename__ = "api_token_cases"
+
+    token_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("api_tokens.id", ondelete="CASCADE"), primary_key=True
+    )
+    # Also indexed on its own: merge_cases and case cascades look rows up by
+    # case_id alone, which the (token_id, case_id) primary key cannot serve.
+    case_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
+        primary_key=True,
+        index=True,
     )
 
 

@@ -333,6 +333,13 @@ class CaseType(enum.StrEnum):
     CRIMINAL = "criminal"
 
 
+class ApiTokenAccess(enum.StrEnum):
+    """What an agent API token may do with the cases in its scope."""
+
+    READ = "read"
+    READ_WRITE = "read_write"
+
+
 class AuditEventType(enum.StrEnum):
     CASE_DELETED = "case_deleted"
     DOCUMENT_DELETED = "document_deleted"
@@ -356,3 +363,5 @@ class AuditEventType(enum.StrEnum):
     CASE_MERGED = "case_merged"
     PROCEEDING_MERGED = "proceeding_merged"
     DATA_EXPORTED = "data_exported"
+    API_TOKEN_CREATED = "api_token_created"
+    API_TOKEN_REVOKED = "api_token_revoked"

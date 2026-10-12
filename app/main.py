@@ -581,6 +581,13 @@ class OriginGuardMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope, receive)
+        # Bearer-authenticated MCP calls carry no ambient credentials, so there
+        # is no CSRF surface to guard (browser-based MCP clients send an Origin).
+        # Keyed on the same scope-state key AuthGateMiddleware sets after verifying
+        # the token; the two must stay in lockstep (never skip on a header alone).
+        if scope.get("state", {}).get("api_token_id") is not None:
+            await self.app(scope, receive, send)
+            return
         if request.method in _MUTATING_METHODS and not _same_origin(request):
             await Response("Cross-origin mutation blocked", status_code=403)(
                 scope, receive, send
@@ -644,6 +651,24 @@ _PUBLIC_EXACT_PATHS = {
 _PUBLIC_PATH_PREFIXES = ("/assets/", "/auth/")
 
 
+def _is_mcp_path(path: str) -> bool:
+    return path == "/mcp" or path.startswith("/mcp/")
+
+
+def _bearer_secret(request: Request) -> str | None:
+    # "Bearer <secret>"; any amount of whitespace after the scheme is tolerated.
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    return value.strip() or None if scheme.lower() == "bearer" else None
+
+
+def _mcp_denied(status: int, code: str, detail: str, **headers: str) -> Response:
+    return JSONResponse(
+        {"detail": detail, "code": code},
+        status_code=status,
+        headers={"WWW-Authenticate": "Bearer", **headers} if status == 401 else headers,
+    )
+
+
 def _is_public_path(path: str) -> bool:
     return path in _PUBLIC_EXACT_PATHS or any(
         path.startswith(p) for p in _PUBLIC_PATH_PREFIXES
@@ -688,6 +713,13 @@ class AuthGateMiddleware:
         request = Request(scope, receive)
         from app.config import AUTH_ENABLED
 
+        # The MCP endpoint takes only an agent bearer token — never the session
+        # cookie, and regardless of AUTH_ENABLED (an unauthenticated dev
+        # instance must not hand case data to anything that can reach /mcp).
+        if _is_mcp_path(request.url.path):
+            await self._authenticate_mcp(request, scope, receive, send)
+            return
+
         # Dev mode: no gating. The current user is bound lazily downstream
         # (get_current_user) on the request-scoped session, so the
         # gate never touches a database here (keeps it engine-agnostic for tests).
@@ -715,6 +747,44 @@ class AuthGateMiddleware:
             return
 
         scope.setdefault("state", {})["auth_user_id"] = uid
+        await self.app(scope, receive, send)
+
+    async def _authenticate_mcp(self, request: Request, scope, receive, send) -> None:
+        from app.core.rate_limit import hit_token_limit
+        from app.dependencies import SessionLocal
+        from app.services import api_token_service
+
+        secret = _bearer_secret(request)
+        token_id = user_id = None
+        if secret:
+            db = SessionLocal()
+            try:
+                token = api_token_service.verify(db, secret)
+                if token is not None:
+                    try:
+                        api_token_service.touch(db, token)
+                    except Exception:
+                        # last_used_at is a hint; never fail an authenticated call for it.
+                        db.rollback()
+                        logging.getLogger(__name__).warning(
+                            "could not record api token use", exc_info=True
+                        )
+                    token_id, user_id = token.id, token.user_id
+            finally:
+                db.close()
+        if token_id is None:
+            await _mcp_denied(
+                401, "invalid_token", "Missing, invalid, revoked or expired token."
+            )(scope, receive, send)
+            return
+        if not hit_token_limit(token_id):
+            await _mcp_denied(
+                429, "rate_limited", "Too many requests.", **{"Retry-After": "60"}
+            )(scope, receive, send)
+            return
+        state = scope.setdefault("state", {})
+        state["auth_user_id"] = user_id
+        state["api_token_id"] = token_id
         await self.app(scope, receive, send)
 
 
