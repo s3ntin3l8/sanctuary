@@ -180,7 +180,10 @@ def token_names(db: Session, ids: Iterable[int | None]) -> dict[int | None, str]
 
 _MCP_ENABLED_KEY = "mcp_enabled"
 _SWITCH_CACHE_KEY = "mcp:instance_enabled"
-_SWITCH_CACHE_TTL = 5  # seconds; the gate reads this on every /mcp request
+# seconds; the gate reads this on every /mcp request. The cache is per process:
+# a toggle takes effect immediately in the worker that handled it and within this
+# TTL in any other uvicorn worker.
+_SWITCH_CACHE_TTL = 5
 
 
 def mcp_enabled(db: Session) -> bool:
