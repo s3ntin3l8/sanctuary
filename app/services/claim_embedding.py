@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.database import Claim
-from app.services.ai_config import get_embed_config
+from app.services.ai_config import EmbedConfig, get_embed_config
 from app.services.ai_provider import embed_provider
 from app.services.intelligence._ai_call import _parse_litellm_error_summary
 from app.services.model_gate import model_gate
@@ -25,13 +25,19 @@ from app.services.model_gate import model_gate
 logger = logging.getLogger(__name__)
 
 
-async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
-    """Compute the embedding for a claim's text. Returns None on any failure
-    (logged at ERROR with the litellm body summary when available). Caller
-    decides whether to retry / skip — upsert_claim_embedding additionally
-    records the failure on the Claim row via embedding_failed_at."""
+def load_embed_config(db: Session) -> EmbedConfig:
+    """Resolve the active embedding config (plain values, no session attached).
+    Lets a caller embed with `embed_text` while holding no DB session."""
     embed_provider.reload_from_db(db)
-    cfg = get_embed_config(db)
+    return get_embed_config(db)
+
+
+async def embed_text(claim_text: str, cfg: EmbedConfig) -> list[float] | None:
+    """Compute the embedding for a claim's text with a resolved config. Needs no
+    DB session. Returns None on any failure (logged at ERROR with the litellm
+    body summary when available). Caller decides whether to retry / skip —
+    upsert_claim_embedding additionally records the failure on the Claim row
+    via embedding_failed_at."""
     try:
         params = await embed_provider.get_embedding_params(cfg.embed_model, claim_text)
         # See app/services/embeddings.py — embed family is compat with all in
@@ -68,6 +74,11 @@ async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
     except Exception as exc:  # noqa: BLE001
         logger.error("claim embedding failed: %s", exc)
         return None
+
+
+async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
+    """`embed_text` with the config resolved from `db` (the common case)."""
+    return await embed_text(claim_text, load_embed_config(db))
 
 
 async def upsert_claim_embedding(claim_id: int, db: Session) -> bool:
@@ -181,7 +192,20 @@ async def nearest_claims(
     embedding = await embed_claim_text(query_text, db)
     if embedding is None:
         return []
+    return nearest_claims_by_vector(
+        embedding, db, k=k, case_id=case_id, exclude_claim_id=exclude_claim_id
+    )
 
+
+def nearest_claims_by_vector(
+    embedding: list[float],
+    db: Session,
+    *,
+    k: int = 5,
+    case_id: str | None = None,
+    exclude_claim_id: int | None = None,
+) -> list[tuple[int, float]]:
+    """`nearest_claims` for an already-computed embedding (no provider call)."""
     # pgvector KNN, then filter in Python (or via a follow-up join). We
     # over-fetch a bit for case-scoping headroom.
     fetch_k = k * 4 if case_id else k

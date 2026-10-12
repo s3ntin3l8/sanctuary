@@ -9,9 +9,10 @@ leaves an ``MCP_WRITE`` audit row.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
+import anyio.to_thread
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
@@ -46,7 +47,12 @@ from app.services import (
     pin_service,
     reaction_service,
 )
-from app.services.claim_embedding import nearest_claims, upsert_claim_embedding
+from app.services.ai_config import EmbedConfig
+from app.services.claim_embedding import (
+    embed_text,
+    load_embed_config,
+    nearest_claims_by_vector,
+)
 from app.services.claim_service import ClaimService
 
 logger = logging.getLogger(__name__)
@@ -172,6 +178,19 @@ class ClaimCreated(BaseModel):
     similar_claims: list[SimilarClaim]
 
 
+def prepare_claim(
+    db: Session, p: McpPrincipal, case_id: str, text: str, document_id: int
+) -> tuple[str, EmbedConfig]:
+    """Step 1 of create_claim: access checks and text validation, no writes.
+    Returns the cleaned text and the embed config, so the embedding call can run
+    with no DB session open."""
+    case = p.require_case(db, case_id, write=True)
+    doc = p.require_document(db, document_id, write=True)
+    if doc.case_id != case.id:
+        raise ToolError("That document is not in this case.")
+    return _text(text, "text", min_len=5), load_embed_config(db)
+
+
 def create_claim(
     db: Session,
     p: McpPrincipal,
@@ -180,7 +199,11 @@ def create_claim(
     claim_type: ClaimType,
     document_id: int,
     excerpt: str | None,
+    *,
+    embedding: list[float] | None,
 ) -> ClaimCreated:
+    """Step 3 of create_claim: `embedding` was computed outside any session
+    (None = the provider failed; recorded on the claim for the maintenance sweep)."""
     case = p.require_case(db, case_id, write=True)
     doc = p.require_document(db, document_id, write=True)
     if doc.case_id != case.id:
@@ -188,25 +211,28 @@ def create_claim(
     claim_text = _text(text, "text", min_len=5)
 
     similar: list[SimilarClaim] = []
-    try:  # best effort: the embedding provider may be down
-        near = run_async(
-            nearest_claims(claim_text, db, k=_SIMILAR_CLAIMS, case_id=case.id)
-        )
-        by_id = {
-            c.id: c for c in db.query(Claim).filter(Claim.id.in_([i for i, _ in near]))
-        }
-        similar = [
-            SimilarClaim(
-                claim_id=i,
-                text=by_id[i].claim_text,
-                status=by_id[i].status.value,
-                distance=round(float(d), 4),
-            )
-            for i, d in near
-            if i in by_id and by_id[i].dismissed_at is None
-        ]
-    except Exception as exc:  # noqa: BLE001
-        logger.info("create_claim: similar-claim lookup skipped: %s", exc)
+    if embedding is not None:
+        try:  # best effort; a savepoint keeps a SQL error from aborting the transaction
+            with db.begin_nested():
+                near = nearest_claims_by_vector(
+                    embedding, db, k=_SIMILAR_CLAIMS, case_id=case.id
+                )
+                by_id = {
+                    c.id: c
+                    for c in db.query(Claim).filter(Claim.id.in_([i for i, _ in near]))
+                }
+            similar = [
+                SimilarClaim(
+                    claim_id=i,
+                    text=by_id[i].claim_text,
+                    status=by_id[i].status.value,
+                    distance=round(float(d), 4),
+                )
+                for i, d in near
+                if i in by_id and by_id[i].dismissed_at is None
+            ]
+        except Exception as exc:  # noqa: BLE001
+            logger.info("create_claim: similar-claim lookup skipped: %s", exc)
 
     claim = ClaimService(db).create_user_claim(
         doc,
@@ -215,21 +241,21 @@ def create_claim(
         _optional_text(excerpt, "excerpt"),
         agent_token_id=p.token_id,
     )
+    if embedding is None:
+        claim.embedding_failed_at = datetime.now(UTC)
+    else:
+        claim.embedding = embedding
+        claim.embedding_failed_at = None
     _audit(
         db, p, "create_claim", "claim", claim.id, case_id=case.id, document_id=doc.id
     )
-    out = ClaimCreated(
+    return ClaimCreated(
         claim_id=claim.id,
         claim_type=claim.claim_type.value,
         status=claim.status.value,
         document_id=doc.id,
         similar_claims=similar,
     )
-    try:  # commits; a failure is recorded on the claim for the maintenance sweep
-        run_async(upsert_claim_embedding(claim.id, db))
-    except Exception as exc:  # noqa: BLE001
-        logger.info("create_claim: embedding skipped: %s", exc)
-    return out
 
 
 class EvidenceLinked(BaseModel):
@@ -527,10 +553,24 @@ def register(mcp: MCPServer) -> None:
         Check get_truth_map first: `similar_claims` in the result lists the
         nearest existing claims in the case (lower distance = more similar), and
         creation is never blocked by them. Needs a read-write token."""
+        # Three steps so no DB connection is held across the embedding call.
+        claim_text, cfg = await run(
+            ctx, lambda db, p: prepare_claim(db, p, case_id, text, document_id)
+        )
+        embedding = await anyio.to_thread.run_sync(
+            lambda: run_async(embed_text(claim_text, cfg))
+        )
         return await run(
             ctx,
             lambda db, p: create_claim(
-                db, p, case_id, text, ClaimType(claim_type), document_id, excerpt
+                db,
+                p,
+                case_id,
+                claim_text,
+                ClaimType(claim_type),
+                document_id,
+                excerpt,
+                embedding=embedding,
             ),
         )
 
