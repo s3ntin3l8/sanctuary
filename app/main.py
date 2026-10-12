@@ -32,6 +32,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Route
 
 from app.api.v1.errors import (
     error_response,
@@ -51,6 +52,7 @@ from app.config import (
 from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
 from app.core.secrets import SecretsError
+from app.mcp.server import mcp_gateway
 from app.spa import ImmutableStaticFiles, spa_index
 from app.version import get_build_info
 
@@ -247,6 +249,15 @@ def _dump_session_cookie(data: dict) -> str:
 # --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # The MCP endpoint's session manager must run for the app's whole life,
+    # including under pytest (the app lifespan below returns early there).
+    async with mcp_gateway.lifespan():
+        async with _app_lifespan(app):
+            yield
+
+
+@asynccontextmanager
+async def _app_lifespan(app: FastAPI):
     for scan_dir in (
         SCAN_INCOMING_DIR,
         SCAN_PROCESSING_DIR,
@@ -955,6 +966,8 @@ app.include_router(home_router)
 app.include_router(spa_pages_router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)
+# The exact path /mcp (Mount would redirect it to /mcp/); auth is in AuthGateMiddleware.
+app.router.routes.append(Route("/mcp", mcp_gateway))
 
 
 if __name__ == "__main__":

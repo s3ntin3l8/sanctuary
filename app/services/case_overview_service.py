@@ -8,13 +8,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.timezone import now_utc
 from app.helpers import build_cost_summary
 from app.models.database import (
     ActionItem,
     Case,
+    CostSignal,
     Document,
     IngestBatch,
     LegalCost,
@@ -29,13 +30,21 @@ from app.schemas.case_detail import (
     CaseActionItem,
     CaseDetail,
     CaseDocument,
+    CostRow,
+    CostSignalDoc,
     FinancialsSummary,
+    FinancialsView,
+    InstanceExposure,
     PartyView,
     ProceedingView,
 )
 from app.services import access_service
 from app.services.case_dashboard_service import _PARTY_ROLE_ORDER
-from app.services.case_service import _compute_dormancy_alert
+from app.services.case_service import (
+    _compute_dormancy_alert,
+    build_case_level_costs,
+    build_proceeding_exposure,
+)
 from app.services.triage_bundles import (
     actionable_review_reasons,
     summary_awaits_approval,
@@ -229,3 +238,90 @@ def build_case_detail(
         dormancy_alert=_compute_dormancy_alert(case, db),
     )
     return detail
+
+
+def cost_row(c: LegalCost) -> CostRow:
+    return CostRow(
+        id=c.id,
+        case_id=c.case_id,
+        proceeding_id=c.proceeding_id,
+        title=c.title,
+        category=c.category,
+        status=c.status,
+        rvg_position=c.rvg_position,
+        amount_net=c.amount_net,
+        vat_rate=c.vat_rate,
+        amount_gross=c.amount_gross,
+        amount_paid=c.amount_paid,
+        amount_reimbursed=c.amount_reimbursed,
+        is_reimbursable=c.is_reimbursable,
+        issued_at=c.issued_at,
+        due_at=c.due_at,
+        paid_at=c.paid_at,
+        streitwert=c.streitwert,
+        gebuehren_faktor=c.gebuehren_faktor,
+        notes=c.notes,
+        auto_created=bool(c.auto_created),
+        source_document_id=c.source_document_id,
+    )
+
+
+def build_financials(db: Session, case: Case) -> FinancialsView:
+    instances = []
+    for row in build_proceeding_exposure(case.id, db):
+        proc = row["proceeding"]
+        instances.append(
+            InstanceExposure(
+                proceeding_id=proc.id,
+                court_name=proc.court_name,
+                court_level=proc.court_level,
+                az_court=proc.az_court,
+                streitwert=row.get("streitwert"),
+                allocation_source=row.get("allocation_source") or "",
+                own_lawyer_gross=row["own_lawyer_gross"],
+                own_lawyer_source=row["own_lawyer_source"],
+                court_fee=row["court_fee"],
+                court_fee_share=row["court_fee_share"],
+                court_fee_charged=row["court_fee_charged"],
+                court_fee_source=row["court_fee_source"],
+                opposing_gross=row["opposing_gross"],
+                opposing_source=row["opposing_source"],
+                subtotal=row["subtotal"],
+                own_theoretical=row["own_theoretical"],
+                court_theoretical=row["court_theoretical"],
+                opposing_theoretical=row["opposing_theoretical"],
+                invoices_own=[cost_row(c) for c in row["invoices_own"]],
+                invoices_court=[cost_row(c) for c in row["invoices_court"]],
+                invoices_opposing=[cost_row(c) for c in row["invoices_opposing"]],
+                invoices_other=[cost_row(c) for c in row["invoices_other"]],
+            )
+        )
+    signals = (
+        db.query(CostSignal)
+        .options(joinedload(CostSignal.source_document))
+        .filter(CostSignal.case_id == case.id)
+        .order_by(CostSignal.issued_at.desc().nullslast(), CostSignal.id.desc())
+        .all()
+    )
+    signal_docs = [
+        CostSignalDoc(
+            id=s.source_document.id,
+            title=s.source_document.title,
+            issued_date=s.source_document.issued_date,
+            originator_type=s.source_document.originator_type,
+            signal_type=s.signal_type,
+            signal_id=s.id,
+            amount=s.amount,
+            description=s.description,
+            client_role=(s.allocation or {}).get("client_role"),
+            role_source="auto" if (s.allocation or {}).get("auto_detected") else None,
+        )
+        for s in signals
+        if s.source_document is not None
+    ]
+    return FinancialsView(
+        summary=case_financial_summary(case, db),
+        instances=instances,
+        case_level_costs=[cost_row(c) for c in build_case_level_costs(case.id, db)],
+        signal_docs=signal_docs,
+    )

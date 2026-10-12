@@ -62,6 +62,8 @@ All routes follow REST conventions. See `app/api/` for the complete listing: `ap
 
 **First-class views:** Cases (`/cases`, `/cases/{id}` SPA; `/api/v1/cases/{id}` detail, `/graph`, `/timeline`, `/truthmap`, `/financials`, `/shares`, `/api/v1/claims/*`, `/api/v1/costs/*`, `/api/v1/proceedings/*`), Triage (`/triage` SPA, `/api/v1/triage/*`, `/api/v1/documents/*`, `/api/v1/upload`, `/api/v1/slicing/*`), Document HUD (`/document/{id}` SPA, `/api/v1/documents/{id}/reader`, pins `/api/v1/pins/*`), Chat (`/api/v1/chat/*`, SSE streaming), Contacts (`/contacts?name=` SPA, `/api/v1/contacts`), Costs ledger (`/costs` SPA, `/api/v1/costs`, `/api/v1/cases/{id}/costs`), Search (`/search` SPA, `/api/v1/search`), Settings (`/settings/*` SPA, `/api/v1/settings/*`, `/api/v1/admin/*`), Slicing review (`/ingest/slice/{batch_id}` SPA).
 
+**MCP endpoint:** `/mcp` (Streamable HTTP, stateless; `app/mcp/`, mounted in `app/main.py` via `McpGateway`) lets external agents read case data with a bearer `ApiToken`. Every tool takes a `McpPrincipal` (`app/mcp/principal.py`) and enforces access through it (`require_case`, `require_document`, `readable_case_ids`) — never ad hoc. Tool bodies are plain sync `f(db, principal, …)` functions run on a worker thread by `app/mcp/db.run`; shared logic lives in services (`case_overview_service`, `document_review_service`, …), never imported from `app/api`. Document text is returned fenced with `serializers.untrusted()`.
+
 ## Navigation and ID conventions
 
 * **Sidebar** is a 56px icon-rail nav (Home, Triage, Cases; theme, search/⌘K, processing queue, profile menu → Settings). It is not a case list. SPA: `frontend/src/shell/`.
