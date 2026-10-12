@@ -98,6 +98,7 @@ def test_mcp_and_oauth_routes_survive_the_default_rate_limiter(
         "/.well-known/oauth-protected-resource/mcp",
     ):
         assert mcp_client.get(path).status_code == 200, path
+    # 401 from AuthGateMiddleware: the request got past slowapi to the auth layer.
     assert mcp_client.post("/mcp", json={}).status_code == 401
     # The OAuth POST endpoints (wrapped by _handler) reach their own handlers.
     assert mcp_client.post("/register", json={}).status_code == 400
@@ -105,3 +106,14 @@ def test_mcp_and_oauth_routes_survive_the_default_rate_limiter(
     assert mcp_client.post("/revoke", data={}).status_code == 400
     session = mcp_session(make_token(alice))
     assert "result" in session.rpc("tools/list")
+
+
+def test_exempt_asgi_registers_the_key_slowapi_looks_up():
+    from app.core.rate_limit import exempt_asgi, limiter
+
+    class Endpoint:
+        async def __call__(self, scope, receive, send): ...
+
+    endpoint = exempt_asgi(Endpoint(), "probe")
+    assert f"{endpoint.__module__}.{endpoint.__name__}" in limiter._exempt_routes
+    assert endpoint.__module__ == "app.core.rate_limit"

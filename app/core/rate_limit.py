@@ -41,10 +41,14 @@ limiter = Limiter(
 def exempt_asgi(endpoint: ASGIApp, name: str) -> ASGIApp:
     """Exempt a raw ASGI endpoint from slowapi's default limit and return it.
 
-    SlowAPIMiddleware names the matched route as ``endpoint.__module__.__name__``,
-    which a class-instance ASGI app (the /mcp gateway, CORS/guard wrappers) lacks:
-    the lookup raises and the request 500s. These endpoints carry their own
-    limits (per-token for /mcp, per-IP in the OAuth guard), so exempt them.
+    SlowAPIMiddleware names the matched route by joining the endpoint's
+    ``__module__`` and ``__name__`` with a dot, which a class-instance ASGI app
+    (the /mcp gateway, or the CORS / guard / body-limit wrappers around the OAuth
+    handlers) lacks: the lookup raises and the request 500s. These endpoints carry
+    their own limits (per-token for /mcp, per-IP in the OAuth guard), so exempt them.
+
+    Side effect: ``__name__`` and ``__module__`` are rewritten on ``endpoint``
+    itself for the life of the process, so introspection sees the synthetic name.
     """
     # Both dunders must be set before exempt(): it keys _exempt_routes on
     # "{__module__}.{__name__}", the same string the middleware looks up. Its
