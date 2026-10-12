@@ -158,6 +158,17 @@ def test_merging_cases_moves_token_scope(db_session, alice):
     assert scope(both) == ["DST-1"]
 
 
+def test_merging_twice_keeps_token_scope_on_the_final_case(db_session, alice):
+    for cid in ("SRC-1", "MID-1", "DST-1"):
+        _case(db_session, cid, alice.id)
+    token, _ = _mint(db_session, alice, all_cases=False, case_ids=["SRC-1"])
+    merge_service.merge_cases(db_session, "SRC-1", "MID-1", actor_user_id=alice.id)
+    merge_service.merge_cases(db_session, "MID-1", "DST-1", actor_user_id=alice.id)
+    db_session.commit()
+    rows = db_session.query(ApiTokenCase).filter_by(token_id=token.id).all()
+    assert [r.case_id for r in rows] == ["DST-1"]
+
+
 # --- /mcp bearer gate --------------------------------------------------------
 
 
@@ -220,7 +231,8 @@ def test_cross_origin_bearer_post_is_not_blocked(auth_enabled, db_session, alice
     _, secret = _mint(db_session, alice)
     headers = {**_bearer(secret), "Origin": "https://inspector.example"}
     resp = TestClient(app).post("/mcp", json={}, headers=headers)
-    assert resp.status_code != 403
+    # Past the gate and the origin guard; whatever the route then answers.
+    assert resp.status_code not in (401, 403)
 
 
 def test_token_is_rate_limited(auth_enabled, db_session, alice, monkeypatch):

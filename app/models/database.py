@@ -1500,6 +1500,11 @@ class ApiToken(Base):
     otherwise the reachable cases are the ``ApiTokenCase`` rows. Only the
     sha256 of the secret is stored. Revocation is soft so rows written by the
     token keep resolving to a name.
+
+    ``prefix`` keeps the first characters of the secret purely so the user can
+    tell tokens apart in the list. Threat model: a database dump reveals those
+    few characters, which is a negligible head start against a 256-bit random
+    secret; do not lengthen it.
     """
 
     __tablename__ = "api_tokens"

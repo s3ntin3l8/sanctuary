@@ -52,6 +52,7 @@ def mint(
     elif not wanted:
         raise TokenScopeError("Pick at least one case, or choose all cases.")
     else:
+        # None = admin: an admin may scope a token to any case.
         visible = access_service.visible_case_ids(db, user)
         if visible is not None:
             unknown = wanted - visible
@@ -108,7 +109,11 @@ def verify(db: Session, secret: str) -> ApiToken | None:
 
 
 def touch(db: Session, token: ApiToken) -> None:
-    """Stamp ``last_used_at`` (at most once a minute) and commit."""
+    """Stamp ``last_used_at`` (at most once a minute) and commit ``db``.
+
+    The auth gate calls this on its own short-lived session, outside any
+    request transaction; keep it to that single column.
+    """
     now = now_utc()
     if token.last_used_at is None or now - token.last_used_at > _LAST_USED_RESOLUTION:
         token.last_used_at = now
