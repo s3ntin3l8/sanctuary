@@ -293,6 +293,17 @@ def test_settings_rejects_empty_or_foreign_scope(auth_enabled, db_session, alice
         assert resp.json()["code"] == "invalid_scope"
 
 
+def test_settings_rejects_a_name_without_letters_or_digits(
+    auth_enabled, db_session, alice
+):
+    client = _login("alice@example.com")
+    resp = client.post(
+        "/api/v1/settings/agent-access",
+        json={"name": " . ", "access": "read", "all_cases": True, "case_ids": []},
+    )
+    assert resp.status_code == 422
+
+
 def test_users_cannot_see_or_revoke_each_others_tokens(auth_enabled, db_session, alice):
     bob = auth_service.create_user(
         db_session, email="bob@example.com", password=PASSWORD

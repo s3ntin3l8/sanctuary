@@ -583,6 +583,8 @@ class OriginGuardMiddleware:
         request = Request(scope, receive)
         # Bearer-authenticated MCP calls carry no ambient credentials, so there
         # is no CSRF surface to guard (browser-based MCP clients send an Origin).
+        # Keyed on the same scope-state key AuthGateMiddleware sets after verifying
+        # the token; the two must stay in lockstep (never skip on a header alone).
         if scope.get("state", {}).get("api_token_id") is not None:
             await self.app(scope, receive, send)
             return

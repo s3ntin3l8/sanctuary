@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import ApiTokenAccess
 
@@ -38,6 +38,14 @@ class ApiTokenCreate(BaseModel):
     all_cases: bool
     case_ids: list[str] = []
     expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+
+    @field_validator("name")
+    @classmethod
+    def _name_is_readable(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not any(ch.isalnum() for ch in value):
+            raise ValueError("Give the token a name with a letter or digit.")
+        return value
 
 
 class ApiTokenCreated(BaseModel):
