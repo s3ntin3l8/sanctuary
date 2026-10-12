@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 
 import type { Schemas } from '../../api/client'
 import {
@@ -60,6 +61,13 @@ export function AdminAgentAccessPage() {
         title={`Tokens (${view.tokens.length})`}
         description="Every user's agent tokens. Activity counts the agent's audited actions (writes) over the last 7 days."
       >
+        <p className="mb-3 text-[12px] text-muted">
+          Create your own token under{' '}
+          <Link to="/settings/agent-access" className="text-tealink hover:underline">
+            Settings → Agent access
+          </Link>
+          .
+        </p>
         {view.tokens.length === 0 ? (
           <p className="text-[12px] text-muted">No tokens yet.</p>
         ) : (

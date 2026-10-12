@@ -36,6 +36,21 @@ limiter = Limiter(
     in_memory_fallback_enabled=True,
 )
 
+
+def exempt_asgi(endpoint, name: str):
+    """Exempt a raw ASGI endpoint from slowapi's default limit and return it.
+
+    SlowAPIMiddleware names the matched route as ``endpoint.__module__.__name__``,
+    which a class-instance ASGI app (the /mcp gateway, CORS/guard wrappers) lacks:
+    the lookup raises and the request 500s. These endpoints carry their own
+    limits (per-token for /mcp, per-IP in the OAuth guard), so exempt them.
+    """
+    endpoint.__name__ = name
+    endpoint.__module__ = __name__
+    limiter.exempt(endpoint)
+    return endpoint
+
+
 # Warn at most once per minute when the limiter storage is unreachable.
 _last_warn_at: float = 0.0
 _WARN_INTERVAL = 60.0
