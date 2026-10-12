@@ -279,6 +279,10 @@ def propagate_batch(db: Session, batch_id: int) -> list[Document]:
                     m.case_id = case_id
                     mark_case(m, "inherited")
                     changed[m.id] = m
+            # Now that the family is in a case, its members can be filed under
+            # the proceeding their own Aktenzeichen names.
+            for m in propagate(db, members[0]):
+                changed[m.id] = m
         if not batch.case_id or batch.case_id == _TRIAGE:
             batch.case_id = case_id
 

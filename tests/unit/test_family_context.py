@@ -377,3 +377,18 @@ def test_filing_context_keeps_the_originator_when_the_title_is_long(env):
 
     assert "(opposing)" in block
     assert len(block.split("Enclosed in: ")[1].splitlines()[0]) <= 140
+
+
+def test_a_letter_that_only_got_the_batch_case_is_still_filed_by_its_own_az(env):
+    """A standalone letter takes the batch's case through the fallback; its own
+    Aktenzeichen must then still find the proceeding of that case."""
+    db, batch, proc, doc = env
+    live = proc(az=AZ)
+    resolved = doc("motion", case_id="FC-1", az=AZ, proceeding=live)
+    standalone = doc("later letter", az=AZ)
+
+    fc.propagate_batch(db, batch.id)
+
+    assert resolved.proceeding_id == live.id
+    assert standalone.case_id == "FC-1"
+    assert standalone.proceeding_id == live.id

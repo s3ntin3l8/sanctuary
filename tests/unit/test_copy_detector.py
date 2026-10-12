@@ -318,3 +318,86 @@ def test_the_claims_and_relationship_tasks_skip_a_copy(env):
     assert claims["reason"] == "copy_of" and rels["reason"] == "copy_of"
     extract.assert_not_called()
     detect.assert_not_called()
+
+
+def test_a_copy_already_analysed_is_cleaned_when_its_original_arrives(env):
+    """The harder order: the copy's CLAIMS and RELATIONSHIPS ran to completion
+    before the original existed. Its machine-made outputs go; a person's stay."""
+    from app.models.database import ActionItem
+    from app.models.enums import ActionItemStatus, ActionItemType
+    from app.services import pipeline_status
+    from app.tasks.enrich_document import _link_copies
+
+    db, batch, doc = env
+    other = doc(batch(), content="Ein ganz anderes Schreiben " * 12, sender="X")
+    copy = doc(
+        batch(), role=DocumentRole.ENCLOSURE, ingest_date=DAY + timedelta(days=9)
+    )
+    pipeline_status.initialize(copy, batched=True, db=db)
+    for stage in (PipelineStage.CLAIMS, PipelineStage.RELATIONSHIPS):
+        pipeline_status.mark_completed(copy.id, stage, db)
+    claim = Claim(
+        claim_text="Der Verfahrenswert beträgt 4000 Euro",
+        claim_type=ClaimType.FACTUAL,
+        status=ClaimStatus.ASSERTED,
+        first_made_at=datetime.now(),
+        last_updated_at=datetime.now(),
+    )
+    db.add(claim)
+    db.flush()
+    db.add(
+        ClaimEvidence(
+            claim_id=claim.id, document_id=copy.id, role=ClaimEvidenceRole.ASSERTS
+        )
+    )
+    db.add(
+        ActionItem(
+            case_id="_TRIAGE",
+            source_document_id=copy.id,
+            title="Beschwerde einlegen",
+            due_date=DAY + timedelta(days=400),
+            action_type=ActionItemType.DEADLINE,
+            status=ActionItemStatus.OPEN,
+        )
+    )
+    db.add_all(
+        [
+            DocumentRelationship(
+                from_document_id=copy.id,
+                to_document_id=other.id,
+                relationship_type=RelationshipType.REFERENCES,
+                confidence=RelationshipConfidence.AI_DETECTED,
+            ),
+            DocumentRelationship(
+                from_document_id=copy.id,
+                to_document_id=other.id,
+                relationship_type=RelationshipType.REPLIES_TO,
+                confidence=RelationshipConfidence.USER_CONFIRMED,
+            ),
+        ]
+    )
+    db.commit()
+
+    original = doc(batch(), ingest_date=DAY + timedelta(days=200))
+    db.commit()
+    with (
+        patch("app.dependencies.get_db_session", return_value=db),
+        patch.object(db, "close"),
+    ):
+        assert _link_copies(original.id) is None
+
+    db.expire_all()
+    stages = pipeline_status.stages_dict(db.get(Document, copy.id))
+    assert stages[PipelineStage.CLAIMS.value]["status"] == "skipped"
+    assert stages[PipelineStage.RELATIONSHIPS.value]["reason"] == "copy_of"
+    assert db.get(Claim, claim.id) is None
+    assert db.query(ActionItem).count() == 0
+    kept = {
+        r.relationship_type
+        for r in db.query(DocumentRelationship).filter(
+            DocumentRelationship.relationship_type != RelationshipType.COPY_OF
+        )
+    }
+    assert kept == {RelationshipType.REPLIES_TO}  # the person's edge stays
+    (edge,) = _edges(db, copy.id)
+    assert edge.to_document_id == original.id

@@ -277,6 +277,8 @@ class CaseGraphService:
         # A document filed again (an exhibit that copies an earlier letter) is
         # not a second row: it folds onto its original, which counts its copies.
         proceeding_doc_ids = {doc.id for doc in all_docs}
+        # Counted whatever the edge's confidence: a person-confirmed copy folds
+        # like a detected one.
         copy_originals = {
             copy_id: original_id
             for copy_id, original_id in self.db.query(
