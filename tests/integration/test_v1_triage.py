@@ -309,7 +309,7 @@ def test_batch_retry_skips_bundle_with_running_stage(db_session):
 def test_assign_keeps_bundle_in_triage_then_confirm_removes_it(db_session, sample_case):
     admin = _admin(db_session)
     batch, docs = _batch(db_session, admin.id)
-    with patch("app.api.v1.triage.reset_and_reenrich"):
+    with patch("app.services.triage_routing_service.reset_and_reenrich"):
         resp = client.post(
             "/api/v1/triage/confirm",
             json={
@@ -346,7 +346,7 @@ def test_assign_keeps_bundle_in_triage_then_confirm_removes_it(db_session, sampl
 def test_confirm_creates_new_case(db_session):
     admin = _admin(db_session)
     batch, _ = _batch(db_session, admin.id)
-    with patch("app.api.v1.triage.reset_and_reenrich"):
+    with patch("app.services.triage_routing_service.reset_and_reenrich"):
         resp = client.post(
             "/api/v1/triage/confirm",
             json={
@@ -400,7 +400,7 @@ def test_loose_document_confirm_and_batch_assign(db_session, sample_case):
     db_session.add(loose)
     batch, _ = _batch(db_session, admin.id)
     db_session.commit()
-    with patch("app.api.v1.triage.reset_and_reenrich"):
+    with patch("app.services.triage_routing_service.reset_and_reenrich"):
         resp = client.post(
             "/api/v1/triage/batch/assign",
             json={
@@ -427,7 +427,7 @@ def test_batch_confirm_uses_each_bundles_suggestion(db_session, sample_case):
     suggested.case_id = None
     nothing, _ = _batch(db_session, admin.id, "NoSuggestion")
     db_session.commit()
-    with patch("app.api.v1.triage.reset_and_reenrich"):
+    with patch("app.services.triage_routing_service.reset_and_reenrich"):
         body = client.post(
             "/api/v1/triage/batch/confirm",
             json={"keys": [f"batch-{suggested.id}", f"batch-{nothing.id}"]},
@@ -538,7 +538,7 @@ def test_moving_last_doc_off_a_draft_deletes_the_draft(db_session):
     db_session.add_all([mover, stays])
     db_session.commit()
 
-    with patch("app.api.v1.triage.reset_and_reenrich"):
+    with patch("app.services.triage_routing_service.reset_and_reenrich"):
         resp = client.post(
             "/api/v1/triage/confirm",
             json={

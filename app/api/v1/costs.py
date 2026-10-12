@@ -12,7 +12,7 @@ from app.api.access_guards import (
     require_cost_access,
     require_cost_signal_access,
 )
-from app.api.v1.case_detail import _cost_row, summary_of
+from app.api.v1.case_detail import _cost_row
 from app.api.v1.errors import ApiError
 from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
@@ -28,6 +28,7 @@ from app.schemas.case_detail import (
     CostsOverview,
 )
 from app.services import access_service
+from app.services.case_overview_service import summary_of
 from app.services.case_service import recompute_total_cost_exposure
 from app.services.cost_service import CostService, _derive_status, costs_due
 

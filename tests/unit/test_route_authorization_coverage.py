@@ -166,10 +166,10 @@ _BODY_ID_REVIEWED: dict[str, str] = {
     ),
     "POST /api/v1/gmail/import": "gmail_ids are resolved within the caller's own index",
     "POST /api/v1/triage/confirm": (
-        "batch/doc ownership via _key_owned, case via _require_editable_target"
+        "batch/doc ownership via _key_owned, case via require_editable_target"
     ),
     "POST /api/v1/triage/batch/assign": (
-        "keys owner-checked per bundle, case via _require_editable_target"
+        "keys owner-checked per bundle, case via require_editable_target"
     ),
     "PUT /api/v1/triage/bundles/{batch_id}/cover": (
         "set_cover_letter requires the doc to be in the guarded batch"
