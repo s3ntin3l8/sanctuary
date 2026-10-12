@@ -82,5 +82,6 @@ def require_key_if_secrets_stored(db) -> None:
         data = row[0] if isinstance(row[0], dict) else {}
         for inst in (data.get("ai") or {}).get("instances", []):
             stored.append(inst.get("api_key"))
+        stored.append((data.get("gmail_oauth") or {}).get("client_secret"))
     if any(is_encrypted(v) for v in stored):
         _fernet()  # raises the "SECRETS_ENCRYPTION_KEY is not set" error

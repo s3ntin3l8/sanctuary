@@ -10,7 +10,7 @@ from app.core.rate_limit import limiter
 from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import User
-from app.services import user_settings_service
+from app.services import gmail_oauth_config, user_settings_service
 from app.services.ingestion.gmail import (
     GmailScopeError,
     assert_readonly_scopes,
@@ -30,10 +30,21 @@ OAUTH_VERIFIER_KEY = "oauth_code_verifier"
 
 @router.get("/gmail/oauth/start")
 @limiter.limit("20/minute")
-async def gmail_oauth_start(request: Request, user: User = Depends(get_current_user)):
+async def gmail_oauth_start(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    client = gmail_oauth_config.get_oauth_client(db, request)
+    if not client.configured:
+        raise HTTPException(
+            status_code=409,
+            detail="Google OAuth client is not configured. "
+            "Set it up in Settings → Gmail first.",
+        )
     state = secrets.token_urlsafe(32)
     request.session[OAUTH_STATE_COOKIE] = state
-    flow = get_oauth_flow()
+    flow = get_oauth_flow(client)
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
         # No include_granted_scopes: it would fold scopes granted to this OAuth
@@ -63,7 +74,7 @@ async def gmail_oauth_callback(
         logger.warning("OAuth state mismatch: expected=%s got=%s", saved_state, state)
         raise HTTPException(status_code=400, detail="OAuth state mismatch")
 
-    flow = get_oauth_flow()
+    flow = get_oauth_flow(gmail_oauth_config.get_oauth_client(db, request))
     try:
         flow.fetch_token(code=code, code_verifier=code_verifier)
     except OAuth2Error as exc:

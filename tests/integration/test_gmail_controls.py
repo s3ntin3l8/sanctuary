@@ -68,6 +68,12 @@ def _oauth_callback(granted_scopes, fetch_error=None):
 # --- OAuth callback ----------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def env_oauth_client(monkeypatch):
+    monkeypatch.setattr(config, "GMAIL_CLIENT_ID", "id.apps.googleusercontent.com")
+    monkeypatch.setattr(config, "GMAIL_CLIENT_SECRET", "s")  # pragma: allowlist secret
+
+
 def test_start_does_not_request_previously_granted_scopes():
     flow = MagicMock()
     flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
@@ -400,7 +406,7 @@ def test_start_and_callback_agree_on_pkce_with_a_real_google_flow(db_session):
                 "expires_at": time.time() + 3600,
             }
 
-    def _make():
+    def _make(_client):
         return _Flow.from_client_config(
             {
                 "web": {

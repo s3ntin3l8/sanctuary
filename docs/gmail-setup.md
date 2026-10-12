@@ -43,15 +43,11 @@ In the [Google Cloud console](https://console.cloud.google.com/) (the OAuth scre
 
 ## 3. Tell Sanctuary
 
-Add to `.env` (the file your containers/`make run` read):
+As an admin, open **Settings → Gmail → Google OAuth client** and paste the client ID and secret. The **Redirect URI** field is pre-filled with the callback on the host you are browsing from; register exactly that value in Google. No restart is needed. The secret is stored encrypted (`SECRETS_ENCRYPTION_KEY`) and never shown again; leave the field empty on later saves to keep it.
 
-```ini
-GMAIL_CLIENT_ID=<client id>
-GMAIL_CLIENT_SECRET=<client secret>
-GMAIL_REDIRECT_URI=https://<your-sanctuary-host>/api/ingest/gmail/oauth/callback
-```
+Changing the client does not break existing connections (each stores its own token); click *Reconnect* to move a connection to the new client.
 
-`GMAIL_REDIRECT_URI` must match the URI registered in Google **character for character**. Then restart so the new environment is picked up: `docker compose up -d` (env files are read when containers are created) or restart `make run`.
+**Headless alternative:** set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` and optionally `GMAIL_REDIRECT_URI` in `.env` and restart (`docker compose up -d` or `make run`). They are the fallback: anything saved in Settings wins.
 
 ## 4. Connect
 
@@ -102,7 +98,7 @@ Fetched mail is cached *before* it is ingested, so a message that failed to inge
 
 | Symptom | Cause / fix |
 |---|---|
-| Google: `Error 400: redirect_uri_mismatch` | `GMAIL_REDIRECT_URI` differs from the URI in the OAuth client (scheme, host, path, trailing slash). |
+| Google: `Error 400: redirect_uri_mismatch` | the Redirect URI in Settings → Gmail (or `GMAIL_REDIRECT_URI`) differs from the URI in the OAuth client (scheme, host, path, trailing slash). |
 | No client secret to copy (the *Client secrets* list is empty) | None has been created yet — click **Add secret** on the client and copy it right away (section 2, step 5). No *Client secrets* section at all means the client is not a *Web application*; create one. |
 | Google: *Access blocked* / `access_denied` | Your account is not a **test user** on the consent screen (step 2). |
 | **Reconnect required** | The token was revoked or expired (weekly while in *Testing*). Click *Reconnect*. |

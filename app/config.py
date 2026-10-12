@@ -145,12 +145,11 @@ def oidc_enabled() -> bool:
 # secret can't strand stored tokens. Generated into .env by `make setup`.
 SECRETS_ENCRYPTION_KEY = os.getenv("SECRETS_ENCRYPTION_KEY", "")
 
-# Gmail OAuth Configuration
+# Gmail OAuth client — env fallback; Settings → Gmail overrides it (gmail_oauth_config).
 GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
-GMAIL_REDIRECT_URI = os.getenv(
-    "GMAIL_REDIRECT_URI", "http://localhost:8000/api/ingest/gmail/oauth/callback"
-)
+# Empty = use the callback route on the host the request came in on.
+GMAIL_REDIRECT_URI = os.getenv("GMAIL_REDIRECT_URI", "")
 
 # Scan folder ingest
 SCAN_INGEST_ROOT = DATA_DIR / "scans"

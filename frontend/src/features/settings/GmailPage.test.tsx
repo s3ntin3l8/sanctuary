@@ -6,6 +6,14 @@ import { renderAt, stubApi } from '../../test/render'
 import { GmailPage } from './GmailPage'
 
 const gmail = {
+  oauth_client: {
+    configured: true,
+    source: 'ui',
+    client_id: '1-a.apps.googleusercontent.com',
+    has_secret: true,
+    redirect_uri: 'https://s.test/api/ingest/gmail/oauth/callback',
+    can_edit: true,
+  },
   connected: true,
   connected_at: '2026-10-01T09:00:00+00:00',
   last_sync_at: '2026-10-07T08:00:00+00:00',
@@ -235,4 +243,37 @@ test('gmail: turning off sent mail disables the address field', async () => {
     .setup()
     .click(await screen.findByRole('switch', { name: /Also import mail I sent/ }))
   expect(screen.getByLabelText('Your addresses')).toBeDisabled()
+})
+
+test('gmail: saving the OAuth client without touching the secret sends none', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/gmail': { body: gmail },
+    'PUT /api/v1/settings/gmail/oauth-client': { body: gmail },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  const id = await screen.findByLabelText('Client ID')
+  await userEvent.clear(id)
+  await userEvent.type(id, '2-b.apps.googleusercontent.com')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() =>
+    expect(sentTo(fetch, 'PUT', '/api/v1/settings/gmail/oauth-client')).toBeTruthy(),
+  )
+  const request = sentTo(fetch, 'PUT', '/api/v1/settings/gmail/oauth-client')
+  const sent = await request?.clone().json()
+  expect(sent).toMatchObject({ client_id: '2-b.apps.googleusercontent.com', client_secret: null })
+})
+
+test('gmail: Connect is replaced by a hint until the OAuth client is set up', async () => {
+  stubApi({
+    'GET /api/v1/settings/gmail': {
+      body: {
+        ...gmail,
+        connected: false,
+        oauth_client: { ...gmail.oauth_client, configured: false, source: null, has_secret: false },
+      },
+    },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  expect(await screen.findByText('Set up the Google OAuth client first')).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Connect Gmail' })).not.toBeInTheDocument()
 })
