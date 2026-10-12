@@ -467,6 +467,16 @@ _LAWYER_REF_RE = re.compile(
 
 _NOTE_INTERNAL_ID_RE = re.compile(r"\b\d{1,6}\s*[/-]\s*\d{2,4}\b")
 
+# AZ as it appears in a validation note: the subject pattern plus the register
+# suffix that is part of the number ("3 F 1221/26 eA" is not "3 F 1221/26").
+# The suffix is a case-sensitive whitelist so prose after the number ("… 26 an
+# das Gericht", "… 26 beA") is never swallowed. Kept out of the shared subject
+# regex, which deliberately stops at the year.
+_NOTE_AZ_RE = re.compile(
+    r"\b(\d{1,3}\s?[A-Z]{1,2}\s?\d{1,5}/\d{2,4}(?-i:\s?(?:eA|EA|e|E|B))?)\b",
+    re.IGNORECASE,
+)
+
 
 def reference_format_only(note: str) -> bool:
     """True when ``note`` only differs in how one reference is written.
@@ -475,9 +485,9 @@ def reference_format_only(note: str) -> bool:
     names the same Aktenzeichen twice: every AZ (or internal id) token in it
     normalises to a single value, so nothing substantive is in dispute.
     """
-    az_tokens = [m.group(1) for m in _SUBJECT_AZ_COURT_RE.finditer(note)]
+    az_tokens = [m.group(1) for m in _NOTE_AZ_RE.finditer(note)]
     # Mask the AZ spans so their "1221/26" tails aren't read as internal ids.
-    rest = _SUBJECT_AZ_COURT_RE.sub(" ", note)
+    rest = _NOTE_AZ_RE.sub(" ", note)
     id_tokens = _NOTE_INTERNAL_ID_RE.findall(rest)
 
     collapsed = False
