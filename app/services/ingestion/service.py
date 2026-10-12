@@ -94,6 +94,7 @@ def create_manual_upload_batch(
     filenames: list[str],
     case_id: str | None = None,
     owner_id: int | None = None,
+    agent_token_id: int | None = None,
 ) -> int:
     """Create an IngestBatch row for one upload action.
 
@@ -110,6 +111,7 @@ def create_manual_upload_batch(
         subject=subject,
         case_id=case_id,
         owner_id=owner_id,
+        agent_token_id=agent_token_id,
     )
     batch.status = IngestBatchStatus.PROCESSING
     db.flush()
@@ -802,6 +804,7 @@ async def upload_bytes_to_case(
     owner_id: int,
     case_id: str | None = None,
     parent_id: int | None = None,
+    agent_token_id: int | None = None,
 ) -> tuple[Document, int]:
     """Ingest one file as its own manual batch and queue it for processing.
 
@@ -815,7 +818,11 @@ async def upload_bytes_to_case(
     from app.tasks.document_processing import process_document_task
 
     batch_id = create_manual_upload_batch(
-        db, filenames=[filename], case_id=case_id, owner_id=owner_id
+        db,
+        filenames=[filename],
+        case_id=case_id,
+        owner_id=owner_id,
+        agent_token_id=agent_token_id,
     )
     db.commit()
     try:
