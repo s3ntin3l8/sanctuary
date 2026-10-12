@@ -456,8 +456,16 @@ def create_relationship(
         # Commit here so recompute_thread_open sees the new edge; run()'s own
         # commit afterwards finds nothing pending.
         db.commit()
-        recompute_thread_open(target.id, db)
-        refresh_review_reasons(source, db, commit=False)
+        try:
+            recompute_thread_open(target.id, db)
+            refresh_review_reasons(source, db, commit=False)
+        except Exception:
+            # The edge and its audit row are already durable; a stale thread
+            # flag is repaired by the next scan, so don't fail the call for it.
+            db.rollback()
+            logging.getLogger(__name__).warning(
+                "thread scan after MCP relationship failed", exc_info=True
+            )
     return RelationshipOut(
         relationship_id=edge.id,
         from_document_id=source.id,

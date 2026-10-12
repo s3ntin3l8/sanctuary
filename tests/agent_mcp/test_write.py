@@ -231,6 +231,24 @@ def test_another_users_claim_is_invisible(
     )
 
 
+def test_a_claim_with_no_linked_case_needs_an_all_cases_token(
+    mcp_session, make_token, make_case, make_doc, make_claim, alice
+):
+    """Claims evidenced only by the owner's untriaged documents are outside any
+    per-case token's scope (like untriaged documents); an all-cases token, i.e.
+    the owner acting broadly, reaches them via the same ownership fallback REST uses."""
+    make_case("A-1", alice.id)
+    claim = make_claim(make_doc("Untriaged", owner=alice, case_id=None))
+    scoped = mcp_session(
+        make_token(alice, access=RW, all_cases=False, case_ids=["A-1"])
+    )
+    assert "outside" in _fails(
+        scoped, "set_claim_status", claim_id=claim.id, status="established"
+    )
+    wide = mcp_session(make_token(alice, access=RW))
+    assert _ok(wide, "set_claim_status", claim_id=claim.id, status="established")
+
+
 # --- annotations -------------------------------------------------------------
 
 
