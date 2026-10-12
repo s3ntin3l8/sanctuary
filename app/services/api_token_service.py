@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.cache import cache
 from app.core.timezone import now_utc
 from app.models.database import ApiToken, ApiTokenCase, AppSettings, User
-from app.models.enums import ApiTokenAccess, AuditEventType
+from app.models.enums import ApiTokenAccess, ApiTokenKind, AuditEventType
 from app.services import access_service, audit_service
 
 SECRET_PREFIX = "sct_"  # pragma: allowlist secret
@@ -36,17 +36,10 @@ def hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
-def mint(
-    db: Session,
-    user: User,
-    *,
-    name: str,
-    access: ApiTokenAccess,
-    all_cases: bool,
-    case_ids: list[str] | None = None,
-    expires_at: datetime | None = None,
-) -> tuple[ApiToken, str]:
-    """Create a token for ``user`` and return it with its one-time secret."""
+def _scope_case_ids(
+    db: Session, user: User, *, all_cases: bool, case_ids: list[str] | None
+) -> set[str]:
+    """The case ids a token may be scoped to; raises if the scope is not allowed."""
     wanted = set(case_ids or [])
     if all_cases:
         if wanted:
@@ -60,6 +53,29 @@ def mint(
             unknown = wanted - visible
             if unknown:
                 raise TokenScopeError(f"Unknown case: {sorted(unknown)[0]}")
+    return wanted
+
+
+def check_scope(
+    db: Session, user: User, *, all_cases: bool, case_ids: list[str] | None
+) -> None:
+    _scope_case_ids(db, user, all_cases=all_cases, case_ids=case_ids)
+
+
+def mint(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    access: ApiTokenAccess,
+    all_cases: bool,
+    case_ids: list[str] | None = None,
+    expires_at: datetime | None = None,
+    kind: ApiTokenKind = ApiTokenKind.STATIC,
+    oauth_client_id: str | None = None,
+) -> tuple[ApiToken, str]:
+    """Create a token for ``user`` and return it with its one-time secret."""
+    wanted = _scope_case_ids(db, user, all_cases=all_cases, case_ids=case_ids)
 
     secret = SECRET_PREFIX + secrets.token_urlsafe(32)
     token = ApiToken(
@@ -70,6 +86,8 @@ def mint(
         access=access,
         all_cases=all_cases,
         expires_at=expires_at,
+        kind=kind,
+        oauth_client_id=oauth_client_id,
         cases=[ApiTokenCase(case_id=cid) for cid in sorted(wanted)],
     )
     db.add(token)
@@ -85,6 +103,8 @@ def mint(
             "access": access.value,
             "all_cases": all_cases,
             "case_ids": sorted(wanted),
+            "kind": kind.value,
+            "oauth_client_id": oauth_client_id,
         },
         actor_user_id=user.id,
     )
@@ -100,13 +120,19 @@ def verify(db: Session, secret: str) -> ApiToken | None:
         return None
     token = (
         db.query(ApiToken)
-        .options(joinedload(ApiToken.user))
+        .options(joinedload(ApiToken.user), joinedload(ApiToken.grant))
         .filter(ApiToken.token_hash == hash_secret(secret))
         .first()
     )
     if token is None or token.revoked_at is not None or not token.user.is_active:
         return None
-    if token.expires_at is not None and token.expires_at <= now_utc():
+    now = now_utc()
+    if token.expires_at is not None and token.expires_at <= now:
+        return None
+    # An OAuth token's secret is a short-lived access token (renewed by refresh).
+    if token.kind == ApiTokenKind.OAUTH and (
+        token.grant is None or token.grant.access_expires_at <= now
+    ):
         return None
     return token
 
@@ -124,7 +150,12 @@ def touch(db: Session, token: ApiToken) -> None:
 
 
 def revoke(
-    db: Session, token: ApiToken, *, actor_user_id: int, by_admin: bool = False
+    db: Session,
+    token: ApiToken,
+    *,
+    actor_user_id: int,
+    by_admin: bool = False,
+    reason: str | None = None,
 ) -> None:
     if token.revoked_at is not None:
         return
@@ -139,6 +170,7 @@ def revoke(
             "name": token.name,
             "owner_user_id": token.user_id,
             "by_admin": by_admin,
+            "reason": reason,
         },
         actor_user_id=actor_user_id,
     )
@@ -155,7 +187,11 @@ def get_for_user(db: Session, user: User, token_id: int) -> ApiToken | None:
 def list_for_user(db: Session, user: User) -> list[ApiToken]:
     return (
         db.query(ApiToken)
-        .options(joinedload(ApiToken.cases))
+        .options(
+            joinedload(ApiToken.cases),
+            joinedload(ApiToken.grant),
+            joinedload(ApiToken.oauth_client),
+        )
         .filter(ApiToken.user_id == user.id)
         .order_by(ApiToken.created_at.desc())
         .all()

@@ -1643,6 +1643,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/oauth/authorization-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Authorization Request */
+        get: operations["v1_authorization_request_api_v1_oauth_authorization_request_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Authorize */
+        post: operations["v1_authorize_api_v1_oauth_authorize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/pins/{pin_id}": {
         parameters: {
             query?: never;
@@ -3083,10 +3117,13 @@ export interface components {
             expires_at: string | null;
             /** Id */
             id: number;
+            kind: components["schemas"]["ApiTokenKind"];
             /** Last Used At */
             last_used_at: string | null;
             /** Name */
             name: string;
+            /** Oauth Client Name */
+            oauth_client_name: string | null;
             /** Owner Email */
             owner_email: string;
             /** Owner Id */
@@ -3250,6 +3287,12 @@ export interface components {
             secret: string;
             token: components["schemas"]["ApiTokenView"];
         };
+        /**
+         * ApiTokenKind
+         * @description How an API token was issued: pasted from Settings, or granted via OAuth.
+         * @enum {string}
+         */
+        ApiTokenKind: "static" | "oauth";
         /** ApiTokenView */
         ApiTokenView: {
             access: components["schemas"]["ApiTokenAccess"];
@@ -3266,10 +3309,13 @@ export interface components {
             expires_at: string | null;
             /** Id */
             id: number;
+            kind: components["schemas"]["ApiTokenKind"];
             /** Last Used At */
             last_used_at: string | null;
             /** Name */
             name: string;
+            /** Oauth Client Name */
+            oauth_client_name: string | null;
             /** Prefix */
             prefix: string;
             /** Revoked At */
@@ -3301,6 +3347,55 @@ export interface components {
             oidc_provider_name: string;
             /** Signup Enabled */
             signup_enabled: boolean;
+        };
+        /** AuthorizationRequestView */
+        AuthorizationRequestView: {
+            /** Client Name */
+            client_name: string;
+            /** Mcp Enabled */
+            mcp_enabled: boolean;
+            /** Redirect Host */
+            redirect_host: string;
+        };
+        /** AuthorizeDecision */
+        AuthorizeDecision: {
+            /** @default read */
+            access: components["schemas"]["ApiTokenAccess"];
+            /**
+             * All Cases
+             * @default false
+             */
+            all_cases: boolean;
+            /**
+             * Case Ids
+             * @default []
+             */
+            case_ids: string[];
+            /** Client Id */
+            client_id: string;
+            /** Code Challenge */
+            code_challenge: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "deny";
+            /** Redirect Uri */
+            redirect_uri: string;
+            /**
+             * Redirect Uri Provided Explicitly
+             * @default true
+             */
+            redirect_uri_provided_explicitly: boolean;
+            /** Resource */
+            resource?: string | null;
+            /** State */
+            state?: string | null;
+        };
+        /** AuthorizeResult */
+        AuthorizeResult: {
+            /** Redirect Url */
+            redirect_url: string;
         };
         /** BatchAssign */
         BatchAssign: {
@@ -9375,6 +9470,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationsView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_authorization_request_api_v1_oauth_authorization_request_get: {
+        parameters: {
+            query: {
+                client_id: string;
+                redirect_uri: string;
+                code_challenge: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationRequestView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_authorize_api_v1_oauth_authorize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizeResult"];
                 };
             };
             /** @description Error */

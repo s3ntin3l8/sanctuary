@@ -51,3 +51,8 @@ def contacts_page() -> Response:
 @router.get("/search")
 def search_page() -> Response:
     return spa_index()
+
+
+@router.get("/oauth/authorize")
+def oauth_consent_page() -> Response:
+    return spa_index()

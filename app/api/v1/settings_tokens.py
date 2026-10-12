@@ -36,9 +36,16 @@ def token_view(db: Session, token: ApiToken) -> ApiTokenView:
         access=token.access,
         all_cases=token.all_cases,
         cases=[TokenCase(id=i, title=titles.get(i, i)) for i in sorted(ids)],
+        kind=token.kind,
+        oauth_client_name=(
+            (token.oauth_client.info or {}).get("client_name")
+            if token.oauth_client
+            else None
+        ),
         created_at=token.created_at,
         last_used_at=token.last_used_at,
-        expires_at=token.expires_at,
+        # An OAuth grant lapses when its (sliding) refresh token does.
+        expires_at=token.grant.refresh_expires_at if token.grant else token.expires_at,
         revoked_at=token.revoked_at,
     )
 

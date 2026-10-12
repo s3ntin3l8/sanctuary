@@ -42,7 +42,8 @@ def _token_id_of_row():
 def _status(token: ApiToken) -> TokenStatus:
     if token.revoked_at is not None:
         return "revoked"
-    if token.expires_at is not None and token.expires_at <= now_utc():
+    expires = token.grant.refresh_expires_at if token.grant else token.expires_at
+    if expires is not None and expires <= now_utc():
         return "expired"
     return "active"
 
@@ -50,7 +51,12 @@ def _status(token: ApiToken) -> TokenStatus:
 def _view(db: Session) -> AdminAgentAccessView:
     tokens = (
         db.query(ApiToken)
-        .options(joinedload(ApiToken.cases), joinedload(ApiToken.user))
+        .options(
+            joinedload(ApiToken.cases),
+            joinedload(ApiToken.user),
+            joinedload(ApiToken.grant),
+            joinedload(ApiToken.oauth_client),
+        )
         .order_by(ApiToken.created_at.desc())
         .all()
     )

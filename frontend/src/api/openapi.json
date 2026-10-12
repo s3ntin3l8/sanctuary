@@ -303,6 +303,9 @@
             "title": "Id",
             "type": "integer"
           },
+          "kind": {
+            "$ref": "#/components/schemas/ApiTokenKind"
+          },
           "last_used_at": {
             "anyOf": [
               {
@@ -318,6 +321,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "oauth_client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Client Name"
           },
           "owner_email": {
             "title": "Owner Email",
@@ -371,6 +385,8 @@
           "access",
           "all_cases",
           "cases",
+          "kind",
+          "oauth_client_name",
           "created_at",
           "last_used_at",
           "expires_at",
@@ -837,6 +853,15 @@
         "title": "ApiTokenCreated",
         "type": "object"
       },
+      "ApiTokenKind": {
+        "description": "How an API token was issued: pasted from Settings, or granted via OAuth.",
+        "enum": [
+          "static",
+          "oauth"
+        ],
+        "title": "ApiTokenKind",
+        "type": "string"
+      },
       "ApiTokenView": {
         "properties": {
           "access": {
@@ -874,6 +899,9 @@
             "title": "Id",
             "type": "integer"
           },
+          "kind": {
+            "$ref": "#/components/schemas/ApiTokenKind"
+          },
           "last_used_at": {
             "anyOf": [
               {
@@ -889,6 +917,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "oauth_client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Client Name"
           },
           "prefix": {
             "title": "Prefix",
@@ -914,6 +953,8 @@
           "access",
           "all_cases",
           "cases",
+          "kind",
+          "oauth_client_name",
           "created_at",
           "last_used_at",
           "expires_at",
@@ -983,6 +1024,118 @@
           "oidc_provider_name"
         ],
         "title": "AuthConfig",
+        "type": "object"
+      },
+      "AuthorizationRequestView": {
+        "properties": {
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "mcp_enabled": {
+            "title": "Mcp Enabled",
+            "type": "boolean"
+          },
+          "redirect_host": {
+            "title": "Redirect Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_name",
+          "redirect_host",
+          "mcp_enabled"
+        ],
+        "title": "AuthorizationRequestView",
+        "type": "object"
+      },
+      "AuthorizeDecision": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ApiTokenAccess",
+            "default": "read"
+          },
+          "all_cases": {
+            "default": false,
+            "title": "All Cases",
+            "type": "boolean"
+          },
+          "case_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Case Ids",
+            "type": "array"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "code_challenge": {
+            "title": "Code Challenge",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "deny"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "redirect_uri_provided_explicitly": {
+            "default": true,
+            "title": "Redirect Uri Provided Explicitly",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "client_id",
+          "redirect_uri",
+          "code_challenge",
+          "decision"
+        ],
+        "title": "AuthorizeDecision",
+        "type": "object"
+      },
+      "AuthorizeResult": {
+        "properties": {
+          "redirect_url": {
+            "title": "Redirect Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_url"
+        ],
+        "title": "AuthorizeResult",
         "type": "object"
       },
       "BatchAssign": {
@@ -15199,6 +15352,107 @@
         "summary": "V1 Notifications",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/oauth/authorization-request": {
+      "get": {
+        "operationId": "v1_authorization_request_api_v1_oauth_authorization_request_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "redirect_uri",
+            "required": true,
+            "schema": {
+              "title": "Redirect Uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code_challenge",
+            "required": true,
+            "schema": {
+              "title": "Code Challenge",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Authorization Request",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/authorize": {
+      "post": {
+        "operationId": "v1_authorize_api_v1_oauth_authorize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizeDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Authorize",
+        "tags": [
+          "oauth"
         ]
       }
     },

@@ -68,6 +68,7 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     ApiTokenAccess,
+    ApiTokenKind,
     AuditEventType,
     BriefState,
     CaseAccessLevel,
@@ -1539,6 +1540,16 @@ class ApiToken(Base):
         SAEnum(ApiTokenAccess), nullable=False
     )
     all_cases: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # OAUTH tokens are grants made by an MCP client through the consent page: the
+    # bearer secret is a short-lived access token that rotates (see OAuthGrant).
+    kind: Mapped[ApiTokenKind] = mapped_column(
+        SAEnum(ApiTokenKind), default=ApiTokenKind.STATIC, nullable=False
+    )
+    oauth_client_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("oauth_clients.client_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
@@ -1549,6 +1560,10 @@ class ApiToken(Base):
     user: Mapped["User"] = relationship("User")
     cases: Mapped[list["ApiTokenCase"]] = relationship(
         "ApiTokenCase", cascade="all, delete-orphan", passive_deletes=True
+    )
+    oauth_client: Mapped["OAuthClient | None"] = relationship("OAuthClient")
+    grant: Mapped["OAuthGrant | None"] = relationship(
+        "OAuthGrant", uselist=False, cascade="all, delete-orphan", passive_deletes=True
     )
 
 
@@ -1568,6 +1583,77 @@ class ApiTokenCase(Base):
         primary_key=True,
         index=True,
     )
+
+
+class OAuthClient(Base):
+    """A dynamically registered MCP client (public, PKCE-only).
+
+    ``info`` is the RFC 7591 client record the SDK's registration handler built
+    (redirect URIs, client name, grant types), kept verbatim so the SDK's own
+    request validation runs against exactly what was registered.
+    """
+
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String, primary_key=True)
+    info: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+
+
+class OAuthCode(Base):
+    """A one-time authorization code awaiting exchange at the token endpoint.
+
+    Holds the consent decision (who, which cases, read or read-write); the
+    ``ApiToken`` is only created when the code is redeemed, so an unused code
+    leaves no credential behind. Stored hashed; deleted on use.
+    """
+
+    __tablename__ = "oauth_codes"
+
+    code_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("oauth_clients.client_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    redirect_uri: Mapped[str] = mapped_column(String, nullable=False)
+    redirect_uri_provided_explicitly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    code_challenge: Mapped[str] = mapped_column(String, nullable=False)
+    resource: Mapped[str | None] = mapped_column(String, nullable=True)
+    access: Mapped[ApiTokenAccess] = mapped_column(
+        SAEnum(ApiTokenAccess), nullable=False
+    )
+    all_cases: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    case_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class OAuthGrant(Base):
+    """Rotating credentials behind an OAuth ``ApiToken``.
+
+    The token's ``token_hash`` is the hash of the current access token (valid
+    until ``access_expires_at``); the refresh token is stored hashed and rotated
+    on every use. The previous refresh hash is kept so presenting an already
+    rotated token — a sign it leaked — revokes the whole grant.
+    """
+
+    __tablename__ = "oauth_grants"
+
+    api_token_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("api_tokens.id", ondelete="CASCADE"), primary_key=True
+    )
+    refresh_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    previous_refresh_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    resource: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class AuditLog(Base):

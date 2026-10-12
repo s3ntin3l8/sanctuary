@@ -340,6 +340,13 @@ class ApiTokenAccess(enum.StrEnum):
     READ_WRITE = "read_write"
 
 
+class ApiTokenKind(enum.StrEnum):
+    """How an API token was issued: pasted from Settings, or granted via OAuth."""
+
+    STATIC = "static"
+    OAUTH = "oauth"
+
+
 class AuditEventType(enum.StrEnum):
     CASE_DELETED = "case_deleted"
     DOCUMENT_DELETED = "document_deleted"

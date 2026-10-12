@@ -11,6 +11,8 @@ const token = {
   prefix: 'sct_AbCd',
   access: 'read_write',
   all_cases: false,
+  kind: 'static',
+  oauth_client_name: null,
   cases: [{ id: 'ADV-024-A', title: 'Vogt v. Meier' }],
   created_at: '2026-10-12T08:00:00Z',
   last_used_at: null,
@@ -114,4 +116,17 @@ test('expands the recent activity of a token', async () => {
   await user.click(await screen.findByRole('button', { name: 'Activity (3)' }))
   expect(await screen.findByText('add_pin')).toBeVisible()
   expect(screen.getByText('document 12')).toBeVisible()
+})
+
+test('marks tokens granted to an MCP client through OAuth', async () => {
+  stubApi({
+    'GET /api/v1/admin/agent-access': {
+      body: {
+        mcp_enabled: true,
+        tokens: [{ ...token, id: 9, name: 'Claude', kind: 'oauth', oauth_client_name: 'Claude' }],
+      },
+    },
+  })
+  renderAt('/admin/agent-access', <AdminAgentAccessPage />)
+  expect(await screen.findByText('via Claude')).toBeVisible()
 })

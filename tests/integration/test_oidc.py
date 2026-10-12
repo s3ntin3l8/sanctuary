@@ -1,6 +1,7 @@
 """OIDC / authentik (Phase 2): account linking + route behaviour."""
 
 import pytest
+from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -171,3 +172,56 @@ def _reset_oidc_client():
     auth_oidc.reset_client()
     yield
     auth_oidc.reset_client()
+
+
+def test_oidc_login_carries_next_through_to_the_callback(
+    auth_enabled, db_session, monkeypatch
+):
+    """A consent page that sent the user to sign in is where SSO lands them."""
+    _enable_oidc(monkeypatch)
+    u = auth_service.create_user(
+        db_session, email="sso@example.com", password="password123"
+    )
+    u.oidc_issuer = ISS
+    u.oidc_subject = "sub-sso"
+    db_session.commit()
+
+    class _FakeClient:
+        async def authorize_redirect(self, request, redirect_uri):
+            return RedirectResponse("https://idp.example/authorize")
+
+        async def authorize_access_token(self, request):
+            return {"userinfo": {"sub": "sub-sso", "email": "sso@example.com"}}
+
+    from app.api import auth_oidc
+
+    monkeypatch.setattr(auth_oidc, "_get_client", lambda: _FakeClient())
+    client = TestClient(app, follow_redirects=False)
+    client.get("/auth/oidc/login?next=%2Foauth%2Fauthorize%3Fclient_id%3Dc1")
+    resp = client.get("/auth/oidc/callback?code=abc&state=xyz")
+    assert resp.headers["location"] == "/oauth/authorize?client_id=c1"
+
+
+def test_oidc_login_refuses_an_off_site_next(auth_enabled, db_session, monkeypatch):
+    _enable_oidc(monkeypatch)
+    u = auth_service.create_user(
+        db_session, email="sso@example.com", password="password123"
+    )
+    u.oidc_issuer = ISS
+    u.oidc_subject = "sub-sso"
+    db_session.commit()
+
+    class _FakeClient:
+        async def authorize_redirect(self, request, redirect_uri):
+            return RedirectResponse("https://idp.example/authorize")
+
+        async def authorize_access_token(self, request):
+            return {"userinfo": {"sub": "sub-sso", "email": "sso@example.com"}}
+
+    from app.api import auth_oidc
+
+    monkeypatch.setattr(auth_oidc, "_get_client", lambda: _FakeClient())
+    client = TestClient(app, follow_redirects=False)
+    client.get("/auth/oidc/login?next=https%3A%2F%2Fevil.example")
+    resp = client.get("/auth/oidc/callback?code=abc&state=xyz")
+    assert resp.headers["location"] == "/"

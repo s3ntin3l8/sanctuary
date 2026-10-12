@@ -52,6 +52,7 @@ from app.config import (
 from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
 from app.core.secrets import SecretsError
+from app.mcp.oauth import oauth_routes
 from app.mcp.server import mcp_gateway
 from app.spa import ImmutableStaticFiles, spa_index
 from app.version import get_build_info
@@ -596,7 +597,10 @@ class OriginGuardMiddleware:
         # is no CSRF surface to guard (browser-based MCP clients send an Origin).
         # Keyed on the same scope-state key AuthGateMiddleware sets after verifying
         # the token; the two must stay in lockstep (never skip on a header alone).
-        if scope.get("state", {}).get("api_token_id") is not None:
+        if (
+            scope.get("state", {}).get("api_token_id") is not None
+            or request.url.path in _OAUTH_MACHINE_PATHS
+        ):
             await self.app(scope, receive, send)
             return
         if request.method in _MUTATING_METHODS and not _same_origin(request):
@@ -659,7 +663,14 @@ _PUBLIC_EXACT_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/signup",
 }
-_PUBLIC_PATH_PREFIXES = ("/assets/", "/auth/")
+_PUBLIC_PATH_PREFIXES = ("/assets/", "/auth/", "/.well-known/")
+# MCP clients' OAuth endpoints (see app.mcp.oauth): called without a session, so
+# they authenticate themselves (PKCE / one-time codes) and are rate limited.
+# /authorize only redirects to the consent page, which does require the login.
+_OAUTH_PUBLIC_PATHS = {"/authorize", "/token", "/register", "/revoke"}
+# Cookie-less machine-to-machine POSTs; a browser-based client (MCP Inspector) sends
+# an Origin header that must not trip the cross-origin guard.
+_OAUTH_MACHINE_PATHS = {"/token", "/register", "/revoke"}
 
 
 def _is_mcp_path(path: str) -> bool:
@@ -672,17 +683,28 @@ def _bearer_secret(request: Request) -> str | None:
     return value.strip() or None if scheme.lower() == "bearer" else None
 
 
-def _mcp_denied(status: int, code: str, detail: str, **headers: str) -> Response:
+def _mcp_denied(
+    request: Request, status: int, code: str, detail: str, **headers: str
+) -> Response:
+    if status == 401:
+        # RFC 9728: tell OAuth-capable clients where to discover the auth server.
+        from app.mcp.oauth import RESOURCE_METADATA_PATH
+
+        metadata = f"{str(request.base_url).rstrip('/')}{RESOURCE_METADATA_PATH}"
+        headers = {
+            "WWW-Authenticate": f'Bearer resource_metadata="{metadata}"',
+            **headers,
+        }
     return JSONResponse(
-        {"detail": detail, "code": code},
-        status_code=status,
-        headers={"WWW-Authenticate": "Bearer", **headers} if status == 401 else headers,
+        {"detail": detail, "code": code}, status_code=status, headers=headers
     )
 
 
 def _is_public_path(path: str) -> bool:
-    return path in _PUBLIC_EXACT_PATHS or any(
-        path.startswith(p) for p in _PUBLIC_PATH_PREFIXES
+    return (
+        path in _PUBLIC_EXACT_PATHS
+        or path in _OAUTH_PUBLIC_PATHS
+        or any(path.startswith(p) for p in _PUBLIC_PATH_PREFIXES)
     )
 
 
@@ -771,7 +793,10 @@ class AuthGateMiddleware:
         try:
             if not api_token_service.mcp_enabled(db):
                 await _mcp_denied(
-                    503, "mcp_disabled", "MCP access is disabled on this instance."
+                    request,
+                    503,
+                    "mcp_disabled",
+                    "MCP access is disabled on this instance.",
                 )(scope, receive, send)
                 return
         finally:
@@ -794,12 +819,19 @@ class AuthGateMiddleware:
                 db.close()
         if token_id is None:
             await _mcp_denied(
-                401, "invalid_token", "Missing, invalid, revoked or expired token."
+                request,
+                401,
+                "invalid_token",
+                "Missing, invalid, revoked or expired token.",
             )(scope, receive, send)
             return
         if not hit_token_limit(token_id):
             await _mcp_denied(
-                429, "rate_limited", "Too many requests.", **{"Retry-After": "60"}
+                request,
+                429,
+                "rate_limited",
+                "Too many requests.",
+                **{"Retry-After": "60"},
             )(scope, receive, send)
             return
         state = scope.setdefault("state", {})
@@ -977,6 +1009,7 @@ app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)
 # The exact path /mcp (Mount would redirect it to /mcp/); auth is in AuthGateMiddleware.
 app.router.routes.append(Route("/mcp", mcp_gateway))
+app.router.routes.extend(oauth_routes())
 
 
 if __name__ == "__main__":

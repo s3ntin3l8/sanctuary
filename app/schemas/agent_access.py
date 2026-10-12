@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import ApiTokenAccess
+from app.models.enums import ApiTokenAccess, ApiTokenKind
 
 
 class TokenCase(BaseModel):
@@ -22,6 +22,9 @@ class ApiTokenView(BaseModel):
     access: ApiTokenAccess
     all_cases: bool
     cases: list[TokenCase]
+    # "oauth" = granted to an MCP client through the consent page.
+    kind: ApiTokenKind
+    oauth_client_name: str | None
     created_at: datetime
     last_used_at: datetime | None
     expires_at: datetime | None

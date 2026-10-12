@@ -27,3 +27,15 @@ _token_limiter = FixedWindowRateLimiter(MemoryStorage())
 def hit_token_limit(token_id: int) -> bool:
     """Count one call for ``token_id``; False once its window budget is spent."""
     return _token_limiter.hit(MCP_TOKEN_RATE_LIMIT, "mcp-token", str(token_id))
+
+
+# Per-client-IP budgets for the unauthenticated OAuth endpoints (/register,
+# /token): machine-to-machine calls with no session to key on.
+OAUTH_REGISTER_LIMIT = parse("20/hour")
+OAUTH_TOKEN_LIMIT = parse("120/minute")
+_ip_limiter = FixedWindowRateLimiter(MemoryStorage())
+
+
+def hit_ip_limit(name: str, rate, ip: str) -> bool:
+    """Count one call to endpoint ``name`` from ``ip``; False once over budget."""
+    return _ip_limiter.hit(rate, name, ip)
