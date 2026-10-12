@@ -462,10 +462,12 @@ def sync_gmail_for_user(self, user_id: int):
 
 def _index_chunk(db: Session, service, user_id: int, chunk: list[str]) -> int:
     """Fetch the headers of ``chunk`` and mirror them into the index (read-only
-    against Gmail). Returns how many ids couldn't be indexed — Gmail didn't return
-    them (quota, 5xx) or they didn't parse — so the next refresh retries them."""
-    raws = fetch_metadata(service, chunk)
-    skipped = len(set(chunk) - {raw["id"] for raw in raws})
+    against Gmail). Returns how many ids couldn't be indexed — Gmail kept failing
+    (quota after retries, 5xx) or they didn't parse — so the next refresh retries
+    them. Messages deleted since they were listed are not failures."""
+    gone: set[str] = set()
+    raws = fetch_metadata(service, chunk, gone=gone)
+    skipped = len(set(chunk) - gone - {raw["id"] for raw in raws})
     metas = []
     for raw in raws:
         try:
