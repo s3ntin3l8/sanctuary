@@ -1,6 +1,7 @@
 import hashlib
 import os
 import re
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import aiofiles
@@ -14,6 +15,7 @@ from app.core.validators import validate_case_id
 from app.models.database import (
     Case,
     Document,
+    IngestBatch,
     OriginatorType,
     User,
 )
@@ -586,13 +588,61 @@ async def ingest_file(
     """Save an uploaded file and create its Document; the pipeline processes it."""
     if db is None:
         raise ValueError("ingest_file requires a database session.")
+
+    async def chunks() -> AsyncIterator[bytes]:
+        while chunk := await file.read(1024 * 1024):
+            yield chunk
+
+    return await _ingest_stream(
+        file.filename or "",
+        chunks(),
+        case_id,
+        db,
+        parent_id,
+        ingest_batch_id,
+        owner_id,
+    )
+
+
+async def ingest_bytes(
+    filename: str,
+    content: bytes,
+    case_id: str | None = None,
+    db: Session | None = None,
+    parent_id: int | None = None,
+    ingest_batch_id: int | None = None,
+    owner_id: int | None = None,
+) -> Document:
+    """`ingest_file` for callers that already hold the bytes (e.g. the MCP endpoint)."""
+    if db is None:
+        raise ValueError("ingest_bytes requires a database session.")
+
+    async def chunks() -> AsyncIterator[bytes]:
+        if content:
+            yield content
+
+    return await _ingest_stream(
+        filename, chunks(), case_id, db, parent_id, ingest_batch_id, owner_id
+    )
+
+
+async def _ingest_stream(
+    filename: str,
+    chunks: AsyncIterator[bytes],
+    case_id: str | None,
+    db: Session,
+    parent_id: int | None,
+    ingest_batch_id: int | None,
+    owner_id: int | None,
+) -> Document:
+    """Shared body of `ingest_file` / `ingest_bytes`: stream ``chunks`` to disk, then register."""
     file_path: str | None = None
 
     try:
-        if not file.filename:
+        if not filename:
             raise HTTPException(status_code=400, detail="No filename provided.")
 
-        ext = os.path.splitext(file.filename)[1].lower()
+        ext = os.path.splitext(filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             allowed_ext_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
             raise HTTPException(
@@ -600,7 +650,7 @@ async def ingest_file(
                 detail=f"Unsupported file type '{ext}'. Allowed: {allowed_ext_str}",
             )
 
-        safe_filename = os.path.basename(file.filename)
+        safe_filename = os.path.basename(filename)
         extracted_case_obj = extract_case_id(safe_filename, "")
         extracted_case_id = (
             extracted_case_obj.get("value")
@@ -650,7 +700,7 @@ async def ingest_file(
         try:
             async with aiofiles.open(file_path, "wb") as out_file:
                 total_size = 0
-                while content := await file.read(1024 * 1024):
+                async for content in chunks:
                     total_size += len(content)
                     if total_size > MAX_FILE_SIZE:
                         max_mb = MAX_FILE_SIZE // (1024 * 1024)
@@ -724,7 +774,7 @@ async def ingest_file(
             safe_filename=safe_filename,
             parent_id=parent_id,
             ingest_batch_id=ingest_batch_id,
-            original_filename=file.filename,
+            original_filename=filename,
             owner_id=owner_id,
         )
         db.add(new_doc)
@@ -742,3 +792,48 @@ async def ingest_file(
             except OSError:
                 pass
         raise
+
+
+async def upload_bytes_to_case(
+    db: Session,
+    *,
+    filename: str,
+    content: bytes,
+    owner_id: int,
+    case_id: str | None = None,
+    parent_id: int | None = None,
+) -> tuple[Document, int]:
+    """Ingest one file as its own manual batch and queue it for processing.
+
+    The programmatic counterpart of ``POST /upload`` for a single non-.eml file
+    (the MCP ``upload_document`` tool). The caller has already checked that
+    ``owner_id`` may edit ``case_id`` / ``parent_id``. Returns the document and
+    its batch id; an empty batch left by a failed ingest is removed and the
+    ingest's ``HTTPException`` (400/409/413/…) propagates.
+    """
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.document_processing import process_document_task
+
+    batch_id = create_manual_upload_batch(
+        db, filenames=[filename], case_id=case_id, owner_id=owner_id
+    )
+    db.commit()
+    try:
+        doc = await ingest_bytes(
+            filename,
+            content,
+            case_id,
+            db,
+            parent_id,
+            ingest_batch_id=batch_id,
+            owner_id=owner_id,
+        )
+    except BaseException:
+        db.rollback()
+        db.query(IngestBatch).filter(IngestBatch.id == batch_id).delete(
+            synchronize_session=False
+        )
+        db.commit()
+        raise
+    dispatch_task(process_document_task, doc.id)
+    return doc, batch_id

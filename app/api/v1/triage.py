@@ -66,13 +66,18 @@ from app.services.triage_bundles import (
 )
 from app.services.triage_confirmation import (
     cleanup_orphaned_drafts,
-    confirm_bundle,
-    confirm_document,
     get_bundle_suggestion,
-    reset_and_reenrich,
 )
 from app.services.triage_dismissal import delete_bundle, dismiss_bundle
 from app.services.triage_retry import dispatch_batch_retry, reset_batch_for_retry
+from app.services.triage_routing_service import (
+    RoutingError,
+    check_proceeding,
+    require_editable_target,
+    resolve_case,
+    route_batch,
+    route_document,
+)
 from app.services.triage_view import failed_doc_summary, stats_for_chips
 
 logger = logging.getLogger(__name__)
@@ -462,104 +467,25 @@ def retry_bundle(
 # --- Routing to a case ---------------------------------------------------------
 
 
-def _require_editable_target(db: Session, user: User, case_id: str) -> Case | None:
-    if case_id == "_TRIAGE":
-        return None
-    case = db.get(Case, case_id)
-    # Same 404 for "missing" and "not yours": a 403 here would confirm that a
-    # case the caller cannot see exists.
-    if case is None or not access_service.can_view_case(db, user, case):
-        raise ApiError(404, "not_found", f"Case {case_id} not found.")
-    if not access_service.can_edit_case(db, user, case):
-        raise ApiError(403, "forbidden", "You cannot assign to that case.")
-    return case
-
-
-def _check_proceeding(db: Session, proceeding_id: int | None, case_id: str) -> None:
-    if proceeding_id is None:
-        return
-    proc = db.get(Proceeding, proceeding_id)
-    if proc is None or proc.case_id != case_id:
-        raise ApiError(
-            422, "proceeding_mismatch", "proceeding_id does not belong to case_id."
-        )
+def _routing(call, *args, **kwargs):
+    """Run a routing-service call, mapping its errors to the uniform API error."""
+    try:
+        return call(*args, **kwargs)
+    except RoutingError as exc:
+        raise ApiError(exc.status, exc.code, exc.detail) from exc
 
 
 def _resolve_case(
     db: Session, user: User, body: TriageConfirm | BatchAssign
 ) -> tuple[str, Literal["created", "assigned"]]:
-    """Return (case_id, action) creating the case when ``new_case_id`` is set."""
-    from app.services.case_service import get_or_create_case_from_reference
-
-    if body.new_case_id:
-        case, _, created = get_or_create_case_from_reference(
-            db,
-            internal_id=body.new_case_id.strip(),
-            batch_subject=(body.new_case_title or "").strip() or None,
-            is_draft=False,
-            owner_id=user.id,
-        )
-        db.flush()
-        return case.id, "created" if created else "assigned"
-    if not body.case_id:
-        raise ApiError(422, "validation_error", "case_id is required.")
-    return body.case_id, "assigned"
-
-
-def _route_batch(
-    db: Session, batch_id: int, case_id: str, proceeding_id: int | None, finalize: bool
-) -> None:
-    pre_triage = (
-        db.query(Document)
-        .filter(Document.ingest_batch_id == batch_id, Document.case_id == "_TRIAGE")
-        .all()
+    return _routing(
+        resolve_case,
+        db,
+        user,
+        case_id=body.case_id,
+        new_case_id=body.new_case_id,
+        new_case_title=body.new_case_title,
     )
-    batch = confirm_bundle(
-        db, batch_id, case_id=case_id, proceeding_id=proceeding_id, finalize=finalize
-    )
-    if batch is None:
-        raise ApiError(404, "not_found", "Bundle not found.")
-    if case_id != "_TRIAGE" and pre_triage:
-        for d in pre_triage:
-            db.refresh(d)
-        reset_and_reenrich(db, pre_triage)
-
-
-def _route_document(
-    db: Session, doc_id: int, case_id: str, proceeding_id: int | None, finalize: bool
-) -> None:
-    pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
-    doc = confirm_document(db, doc_id, case_id=case_id, finalize=finalize)
-    if doc is None:
-        raise ApiError(404, "not_found", "Document not found.")
-    # Filing into a draft case makes it real, as confirm_bundle does.
-    target = db.get(Case, case_id) if case_id != "_TRIAGE" else None
-    promoted = target is not None and target.is_draft
-    if target is not None and promoted:
-        target.is_draft = False
-    if proceeding_id is not None:
-        doc.proceeding_id = proceeding_id
-        proc = db.get(Proceeding, proceeding_id)
-        if proc and proc.is_draft:
-            proc.is_draft = False
-    # METADATA doesn't re-run when a case is assigned here, so a document whose
-    # Aktenzeichen names a proceeding of the case is attached to it now.
-    from app.services.proceeding_rematch import (
-        fill_proceeding_from_az,
-        sync_batch_proceeding,
-    )
-
-    filled = proceeding_id is None and fill_proceeding_from_az(db, doc)
-    # Members of the document's family without an AZ of their own follow it.
-    followed = family_context.propagate(db, doc)
-    if proceeding_id is not None or filled or followed:
-        sync_batch_proceeding(db, doc.ingest_batch)
-    # Otherwise confirm_document's own commit above already persisted everything.
-    if proceeding_id is not None or promoted or filled or followed:
-        db.commit()
-        db.refresh(doc)
-    if (not pre_case or pre_case == "_TRIAGE") and case_id != "_TRIAGE":
-        reset_and_reenrich(db, [doc])
 
 
 @router.post("/confirm", response_model=TriageConfirmResult)
@@ -577,17 +503,19 @@ def confirm_bundle_route(
     if not _key_owned(db, user, body.batch_id, body.doc_id):
         raise ApiError(404, "not_found", "Bundle not found.")
     case_id, action = _resolve_case(db, user, body)
-    case = _require_editable_target(db, user, case_id)
-    _check_proceeding(db, body.proceeding_id, case_id)
+    case = _routing(require_editable_target, db, user, case_id)
+    _routing(check_proceeding, db, body.proceeding_id, case_id)
     finalize = body.action == "confirm_bundle"
     if finalize and case_id == "_TRIAGE":
         raise ApiError(422, "validation_error", "Choose a case to confirm into.")
     if body.batch_id is not None:
         key = f"batch-{body.batch_id}"
-        _route_batch(db, body.batch_id, case_id, body.proceeding_id, finalize)
+        _routing(route_batch, db, body.batch_id, case_id, body.proceeding_id, finalize)
     else:
         key = f"loose-{body.doc_id}"
-        _route_document(db, body.doc_id or 0, case_id, body.proceeding_id, finalize)
+        _routing(
+            route_document, db, body.doc_id or 0, case_id, body.proceeding_id, finalize
+        )
 
     return TriageConfirmResult(
         bundle=_bundle_by_key(db, user, key),
@@ -628,9 +556,9 @@ def batch_confirm(
         if proc is None or proc.case_id != case_id:
             proceeding_id = None
         if batch_id is not None:
-            _route_batch(db, batch_id, case_id, proceeding_id, True)
+            _routing(route_batch, db, batch_id, case_id, proceeding_id, True)
         else:
-            _route_document(db, doc_id or 0, case_id, proceeding_id, True)
+            _routing(route_document, db, doc_id or 0, case_id, proceeding_id, True)
         confirmed_keys.append(key)
     return _batch_result(db, user, confirmed_keys, skipped)
 
@@ -740,8 +668,8 @@ def batch_assign(
 ):
     """Assign every selected bundle to one case (stays in triage for review)."""
     case_id, _ = _resolve_case(db, user, body)
-    _require_editable_target(db, user, case_id)
-    _check_proceeding(db, body.proceeding_id, case_id)
+    _routing(require_editable_target, db, user, case_id)
+    _routing(check_proceeding, db, body.proceeding_id, case_id)
     done: list[str] = []
     skipped = 0
     for key in body.keys:
@@ -750,9 +678,11 @@ def batch_assign(
             skipped += 1
             continue
         if batch_id is not None:
-            _route_batch(db, batch_id, case_id, body.proceeding_id, False)
+            _routing(route_batch, db, batch_id, case_id, body.proceeding_id, False)
         else:
-            _route_document(db, doc_id or 0, case_id, body.proceeding_id, False)
+            _routing(
+                route_document, db, doc_id or 0, case_id, body.proceeding_id, False
+            )
         done.append(key)
     return _batch_result(db, user, done, skipped)
 

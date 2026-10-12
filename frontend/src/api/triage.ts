@@ -321,7 +321,7 @@ export function useReact(docId: number) {
 export function useActionStatus(docId: number) {
   const patch = useDocPatch(docId)
   return useMutation<
-    S['ActionView'],
+    S['CaseActionItem'],
     ApiError,
     { itemId: number; status: S['ActionStatusUpdate']['status'] }
   >({
