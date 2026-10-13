@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/s3ntin3l8/sanctuary/compare/v0.2.0...v0.2.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **extraction:** birth dates before their label, dd-mm-yyyy; MCP inbox case_title ([#332](https://github.com/s3ntin3l8/sanctuary/issues/332)) ([9876b92](https://github.com/s3ntin3l8/sanctuary/commit/9876b924947dfe4e5002069fe1de231fadbc6ccf))
+* polish compact UI and tablet layouts ([#335](https://github.com/s3ntin3l8/sanctuary/issues/335)) ([14d183a](https://github.com/s3ntin3l8/sanctuary/commit/14d183a17fdcf643f5d0c55828e9a8bc32dc6188))
+* **types:** make `mypy .` clean on the pinned mypy 2.4.0 ([#337](https://github.com/s3ntin3l8/sanctuary/issues/337)) ([375ba50](https://github.com/s3ntin3l8/sanctuary/commit/375ba508342963e7a60528671dec7923cd414e17))
+
 ## [0.2.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.1.0...v0.2.0) (2026-10-13)
 
 
