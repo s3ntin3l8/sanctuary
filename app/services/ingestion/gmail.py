@@ -328,8 +328,10 @@ def _is_rate_limited(exc: Exception) -> bool:
     status = _http_status(exc)
     if status in (429, 500, 502, 503, 504):
         return True
+    # error_details is a plain string when Google's body has no `errors` list.
+    details = exc.error_details if isinstance(exc.error_details, list) else []
     return status == 403 and any(
-        d.get("reason") in _RATE_LIMIT_REASONS for d in (exc.error_details or [])
+        isinstance(d, dict) and d.get("reason") in _RATE_LIMIT_REASONS for d in details
     )
 
 
@@ -348,15 +350,14 @@ def fetch_metadata(
     found: list[dict] = []
     retry: list[str] = []
     answered: set[str] = set()
+    missing: set[str] = set()
 
     def _collect(request_id: str, response: dict | None, exception: Exception | None):
         answered.add(request_id)
         if exception is None and response is not None:
             found.append(response)
         elif exception is not None and _http_status(exception) == 404:
-            logger.info("Gmail message %s no longer exists", request_id)
-            if gone is not None:
-                gone.add(request_id)
+            missing.add(request_id)
         elif exception is not None and _is_rate_limited(exception):
             retry.append(request_id)
         else:
@@ -396,9 +397,7 @@ def fetch_metadata(
                 pause = min(pause * 2, _BATCH_PAUSE_MAX_SECONDS)  # back off at once
             if start + batch_size < len(pending):
                 time.sleep(pause)
-        if not retry:
-            return found
-        if attempt == _METADATA_RETRY_ROUNDS:
+        if not retry or attempt == _METADATA_RETRY_ROUNDS:
             break
         wait = _RETRY_WAITS_SECONDS[attempt]
         logger.warning(
@@ -409,9 +408,14 @@ def fetch_metadata(
         time.sleep(wait)
         pending = list(retry)
         batch_size = max(_METADATA_BATCH_MIN, batch_size // 2)
-    logger.warning(
-        "Gmail metadata fetch gave up on %d rate-limited message(s)", len(retry)
-    )
+    if retry:
+        logger.warning(
+            "Gmail metadata fetch gave up on %d rate-limited message(s)", len(retry)
+        )
+    if missing:
+        logger.info("%d Gmail message(s) no longer exist (deleted)", len(missing))
+        if gone is not None:
+            gone.update(missing)
     return found
 
 

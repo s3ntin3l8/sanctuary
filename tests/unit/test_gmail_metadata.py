@@ -300,3 +300,28 @@ def test_a_non_rate_limit_batch_failure_still_raises():
     service.new_batch_http_request.return_value = batch
     with patch.object(gmail.time, "sleep"), pytest.raises(HttpError):
         fetch_metadata(service, ["a"])
+
+
+def test_a_403_without_an_error_list_is_final_and_does_not_crash():
+    for body in (b'{"error": {"code": 403, "message": "nope"}}', b"<html>no</html>"):
+        error = HttpError(httplib2.Response({"status": "403"}), body, uri="https://x")
+        assert gmail._is_rate_limited(error) is False
+    script = {"a": [HttpError(httplib2.Response({"status": "403"}), b"<html/>")]}
+    with patch.object(gmail.time, "sleep"):
+        found = fetch_metadata(_service(script), ["a", "b"])
+    assert [m["id"] for m in found] == ["b"]
+
+
+def test_gives_up_with_a_warning_and_deleted_messages_log_one_summary(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger=gmail.logger.name)
+    script = {
+        "a": [_http_error(429, "rateLimitExceeded")] * 50,
+        **{f"d{i}": [_http_error(404, "notFound")] for i in range(5)},
+    }
+    with patch.object(gmail.time, "sleep"):
+        fetch_metadata(_service(script), ["a"] + [f"d{i}" for i in range(5)])
+    assert "gave up on 1 rate-limited" in caplog.text
+    assert caplog.text.count("no longer exist") == 1
+    assert "5 Gmail message(s) no longer exist" in caplog.text
