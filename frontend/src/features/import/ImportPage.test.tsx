@@ -48,6 +48,8 @@ const groups = {
       key: '8372-25',
       kind: 'internal_id',
       matched_case_id: '8372-25',
+      matched_case_title: 'Vogt ./. Vogt',
+      topic: 'Vogt ./. Vogt - wg. Sorge',
       count: 4,
       ingested_count: 1,
       first_at: '2024-01-02T10:00:00+00:00',
@@ -57,6 +59,8 @@ const groups = {
       key: '3 F 426/25',
       kind: 'az_court',
       matched_case_id: null,
+      matched_case_title: null,
+      topic: 'Müller ./. Müller',
       count: 2,
       ingested_count: 0,
       first_at: '2024-02-01T10:00:00+00:00',
@@ -66,6 +70,8 @@ const groups = {
       key: 'unreferenced',
       kind: null,
       matched_case_id: null,
+      matched_case_title: null,
+      topic: null,
       count: 1,
       ingested_count: 0,
       first_at: '2024-01-01T10:00:00+00:00',
@@ -143,17 +149,26 @@ test('import: lists case references oldest first with the case each files into',
 
   expect(await screen.findByText('7 messages indexed · refreshed 2026-10-07')).toBeVisible()
   const rows = (await screen.findAllByRole('row')).slice(1)
-  expect(rows).toHaveLength(3)
-  const [first, second, third] = rows as [HTMLElement, HTMLElement, HTMLElement]
-  // File numbers read "8372/25"; the case it files into is a link.
-  expect(within(first).getByText('8372/25')).toBeVisible()
-  expect(within(first).getByRole('link', { name: '8372-25' })).toHaveAttribute(
+  // Section header + case heading + reference, section header + reference, section header + reference.
+  expect(rows).toHaveLength(7)
+  const [caseHeader, caseRow, heading, noCaseHeader, noCase, unrefHeader, unref] =
+    rows as HTMLElement[] &
+      [HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement]
+  expect(caseHeader).toHaveTextContent('In a case')
+  // The case heading links to the case and carries its title.
+  expect(within(caseRow).getByRole('link', { name: /8372-25/ })).toHaveAttribute(
     'href',
     '/cases/8372-25',
   )
-  expect(within(first).getByText('1/4')).toBeVisible()
-  expect(within(second).getByText('no case yet')).toBeVisible()
-  expect(within(third).getByText('No reference')).toBeVisible()
+  expect(within(caseRow).getByText('Vogt ./. Vogt')).toBeVisible()
+  // File numbers read "8372/25".
+  expect(within(heading).getByText('8372/25')).toBeVisible()
+  expect(within(heading).getByText('1/4')).toBeVisible()
+  expect(noCaseHeader).toHaveTextContent('No case yet')
+  // Without a case the subject's topic describes the reference.
+  expect(within(noCase).getByText('Müller ./. Müller')).toBeVisible()
+  expect(unrefHeader).toHaveTextContent('Without a reference')
+  expect(within(unref).getByText('No reference')).toBeVisible()
   expect(screen.getByText('1 of 7 imported')).toBeVisible()
 })
 
@@ -418,7 +433,10 @@ test('import: the hint offers to create the case, prefilled from the reference',
     ...base,
     'GET /api/v1/gmail/groups': {
       body: {
-        groups: [{ ...groups.groups[0], key: '8441-25', matched_case_id: null }, groups.groups[1]],
+        groups: [
+          { ...groups.groups[0], key: '8441-25', matched_case_id: null, topic: 'Weber ./. Weber' },
+          groups.groups[1],
+        ],
       },
     },
     'POST /api/v1/cases': { status: 201, body: { id: '8441-25' } },
@@ -431,7 +449,9 @@ test('import: the hint offers to create the case, prefilled from the reference',
   const dialog = screen.getByRole('dialog')
   expect(within(dialog).getByRole('textbox', { name: 'Case ID' })).toHaveValue('8441-25')
   expect(within(dialog).getByRole('textbox', { name: /Aktenzeichen/ })).toHaveValue('')
+  expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveValue('Weber ./. Weber')
 
+  await user.clear(within(dialog).getByRole('textbox', { name: 'Title' }))
   await user.type(within(dialog).getByRole('textbox', { name: 'Title' }), 'Weber')
   await user.type(within(dialog).getByRole('textbox', { name: 'Court' }), 'AG Hamburg')
   await user.click(within(dialog).getByRole('button', { name: 'Create case' }))
@@ -454,4 +474,30 @@ test('import: a court-reference group prefills the Aktenzeichen, not the case id
   const dialog = screen.getByRole('dialog')
   expect(within(dialog).getByRole('textbox', { name: 'Case ID' })).toHaveValue('')
   expect(within(dialog).getByRole('textbox', { name: /Aktenzeichen/ })).toHaveValue('3 F 426/25')
+})
+
+test('import: groups filing into the same case nest under one case heading', async () => {
+  stubApi({
+    ...base,
+    'GET /api/v1/gmail/groups': {
+      body: {
+        groups: [
+          groups.groups[0],
+          {
+            ...groups.groups[1],
+            matched_case_id: '8372-25',
+            matched_case_title: 'Vogt ./. Vogt',
+          },
+        ],
+      },
+    },
+  })
+  renderAt('/settings/gmail/import', <ImportPage />)
+
+  await screen.findByRole('button', { name: 'Expand 8372/25' })
+  expect(screen.getAllByRole('link', { name: /8372-25/ })).toHaveLength(1)
+  expect(screen.getByRole('button', { name: 'Expand 3 F 426/25' })).toBeVisible()
+  expect(screen.queryByText('No case yet')).toBeNull()
+  // 4 + 2 messages, 1 + 0 imported.
+  expect(screen.getByText('1/6')).toBeVisible()
 })

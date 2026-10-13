@@ -24,6 +24,7 @@ from app.services import access_service
 from app.services.ingestion.extractors import (
     extract_az_court_from_subject,
     extract_internal_id_from_subject,
+    extract_subject_topic,
 )
 
 UNREFERENCED = "unreferenced"
@@ -119,31 +120,51 @@ def index_summary(db: Session, owner_id: int) -> tuple[int, datetime | None]:
     return count, last
 
 
-def _matched_cases(db: Session, user: User, groups: list[tuple[str, str]]) -> dict:
-    """(key, kind) -> Case.id for groups that already have a case.
+def _matched_cases(
+    db: Session, user: User, groups: list[tuple[str, str]]
+) -> dict[tuple[str, str], tuple[str, str]]:
+    """(key, kind) -> (Case.id, Case.title) for groups that already have a case.
 
     Mirrors ``_try_assign_case_from_subject``: only cases the user can edit, so
     the page never promises an auto-filing the importer would refuse.
     """
     editable = access_service.editable_case_ids(db, user)
-    matched: dict[tuple[str, str], str] = {}
+    matched: dict[tuple[str, str], tuple[str, str]] = {}
 
     internal = [key for key, kind in groups if kind == "internal_id"]
     if internal:
-        for (case_id,) in db.query(Case.id).filter(Case.id.in_(internal)):
+        for case_id, title in db.query(Case.id, Case.title).filter(
+            Case.id.in_(internal)
+        ):
             if editable is None or case_id in editable:
-                matched[(case_id, "internal_id")] = case_id
+                matched[(case_id, "internal_id")] = (case_id, title)
 
     az = [key for key, kind in groups if kind == "az_court"]
     if az:
-        query = db.query(Proceeding.az_court, Proceeding.case_id).filter(
-            Proceeding.az_court.in_(az)
+        query = (
+            db.query(Proceeding.az_court, Case.id, Case.title)
+            .join(Case, Case.id == Proceeding.case_id)
+            .filter(Proceeding.az_court.in_(az))
         )
         if editable is not None:
             query = query.filter(Proceeding.case_id.in_(editable))
-        for az_court, case_id in query:
-            matched.setdefault((az_court, "az_court"), case_id)
+        for az_court, case_id, title in query:
+            matched.setdefault((az_court, "az_court"), (case_id, title))
     return matched
+
+
+def _newest_subjects(
+    db: Session, owner_id: int
+) -> dict[tuple[str | None, str | None], str]:
+    """(group_key, group_kind) -> subject of the group's newest message."""
+    rows = (
+        db.query(_Idx.group_key, _Idx.group_kind, _Idx.subject)
+        .filter(_Idx.owner_id == owner_id, _Idx.subject.isnot(None))
+        .distinct(_Idx.group_key, _Idx.group_kind)
+        .order_by(_Idx.group_key, _Idx.group_kind, _Idx.sent_at.desc(), _Idx.id.desc())
+        .all()
+    )
+    return {(key, kind): subject for key, kind, subject in rows}
 
 
 def list_groups(db: Session, user: User) -> list[dict[str, Any]]:
@@ -162,11 +183,20 @@ def list_groups(db: Session, user: User) -> list[dict[str, Any]]:
         .all()
     )
     matched = _matched_cases(db, user, [(k, kind) for k, kind, *_ in rows if k])
+    subjects = _newest_subjects(db, user.id)
     groups = [
         {
             "key": key or UNREFERENCED,
             "kind": kind,
-            "matched_case_id": matched.get((key, kind)) if key else None,
+            "matched_case_id": matched[(key, kind)][0]
+            if (key, kind) in matched
+            else None,
+            "matched_case_title": matched[(key, kind)][1]
+            if (key, kind) in matched
+            else None,
+            "topic": extract_subject_topic(subjects[(key, kind)])
+            if key and (key, kind) in subjects
+            else None,
             "count": count,
             "ingested_count": int(ingested or 0),
             "first_at": first,

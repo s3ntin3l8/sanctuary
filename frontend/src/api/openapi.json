@@ -5441,12 +5441,36 @@
               }
             ],
             "title": "Matched Case Id"
+          },
+          "matched_case_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Case Title"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
           }
         },
         "required": [
           "key",
           "kind",
           "matched_case_id",
+          "matched_case_title",
+          "topic",
           "count",
           "ingested_count",
           "first_at",

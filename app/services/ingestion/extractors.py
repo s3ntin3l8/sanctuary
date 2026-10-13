@@ -345,6 +345,24 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
     return m.group(1).replace("/", "-")
 
 
+_SUBJECT_REPLY_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:aw|wg|re|fw|fwd)\s*:\s*)+", re.IGNORECASE
+)
+
+
+def extract_subject_topic(subject: str) -> str | None:
+    """The descriptive part of a subject once its case references are removed.
+
+    "AW: 9418/26 - Hansen ./. Liu - wg. Sorge - 003 F 1221/26" -> "Hansen ./. Liu - wg. Sorge".
+    Returns None when only references remain.
+    """
+    text = _SUBJECT_REPLY_PREFIX_RE.sub("", subject)
+    text = _SUBJECT_INTERNAL_ID_RE.sub("", text)
+    text = _SUBJECT_AZ_COURT_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip(" -–—:,;")
+    return text or None
+
+
 # Strict canonical AZ pattern: "N+ L{1-3} N+/N+ [L{1-3}]?"
 _AZ_CANONICAL_RE = re.compile(r"^\d+\s[A-Z]{1,3}\s\d+/\d+(?:\s[A-Z]{1,3})?$")
 
