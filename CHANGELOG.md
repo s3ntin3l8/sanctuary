@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.1.0...v0.2.0) (2026-10-13)
+
+
+### Features
+
+* **gmail:** read the user's own addresses from the connected account ([#329](https://github.com/s3ntin3l8/sanctuary/issues/329)) ([0cd10a2](https://github.com/s3ntin3l8/sanctuary/commit/0cd10a2a62378aa21cb648d46d251b2d8e5a9574))
+
+
+### Bug Fixes
+
+* **gmail:** retry rate-limited metadata fetches instead of dropping them ([#331](https://github.com/s3ntin3l8/sanctuary/issues/331)) ([705f65c](https://github.com/s3ntin3l8/sanctuary/commit/705f65c66774f71f72c496789fe8d8935e4d19e1))
+* **mcp:** exempt /mcp and OAuth endpoints from slowapi route lookup ([#328](https://github.com/s3ntin3l8/sanctuary/issues/328)) ([69faddd](https://github.com/s3ntin3l8/sanctuary/commit/69fadddf1bf9c7372b087011cdc65bcddecdcf2d))
+
 ## 0.1.0 (2026-10-12)
 
 
