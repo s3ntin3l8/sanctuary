@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import overload
 from zoneinfo import ZoneInfo
 
 DEFAULT_TZ = ZoneInfo("Europe/Berlin")
@@ -14,7 +15,11 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-def ensure_tz(dt: datetime) -> datetime:
+@overload
+def ensure_tz(dt: datetime) -> datetime: ...
+@overload
+def ensure_tz(dt: None) -> None: ...
+def ensure_tz(dt: datetime | None) -> datetime | None:
     """Ensure datetime is timezone-aware in default timezone."""
     if dt is None:
         return None
@@ -23,7 +28,11 @@ def ensure_tz(dt: datetime) -> datetime:
     return dt
 
 
-def ensure_utc(dt: datetime) -> datetime:
+@overload
+def ensure_utc(dt: datetime) -> datetime: ...
+@overload
+def ensure_utc(dt: None) -> None: ...
+def ensure_utc(dt: datetime | None) -> datetime | None:
     """Ensure datetime is timezone-aware in UTC."""
     if dt is None:
         return None

@@ -16,6 +16,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator, Generator
+from typing import cast
 
 import redis
 import redis.asyncio as aioredis
@@ -163,7 +164,8 @@ def list_inflight() -> list[str]:
     try:
         client = _get_sync_client()
         keys = list(client.scan_iter(match=_KEY_PREFIX + "*", count=100))
-        labels = client.mget(keys) if keys else []
+        # decode_responses=True (see _get_sync_client): the stubs still say bytes | str
+        labels = cast("list[str | None]", client.mget(keys)) if keys else []
     except (redis.RedisError, OSError) as exc:
         _maybe_warn(exc)
         return []

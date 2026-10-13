@@ -7,6 +7,7 @@ a circular dependency: app.main → app.api → routers → app.main.
 import logging
 import os
 import time
+from typing import Any
 
 import redis
 from limits import parse
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Counters live in Redis so every uvicorn worker shares one budget (and a
 # restart does not reset it). ``memory://`` keeps them in-process (tests).
 # Short socket timeouts: a dead Redis must cost milliseconds, not a hang.
-_STORAGE_OPTIONS = (
+_STORAGE_OPTIONS: dict[str, Any] = (
     {"socket_connect_timeout": 0.5, "socket_timeout": 0.5}
     if RATE_LIMIT_STORAGE_URI.startswith(("redis", "rediss"))
     else {}
