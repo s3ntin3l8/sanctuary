@@ -128,7 +128,7 @@ def _parse_date_string(date_str: str) -> datetime | None:
 # print the date first and the label after it ("06.09.1981 Geburtsdatum").
 _BIRTHDATE_RE = re.compile(
     r"\b(?:geboren|geb\.?|born)\s+(?:am\s+|on\s+)?\d{1,2}\.\d{1,2}\.\d{2,4}"
-    r"|(?<![\d.])\d{1,2}\.\d{1,2}\.\d{2,4}\s*(?:geburtsdatum|geburtstag|geb\.?-?\s?datum)",
+    r"|(?<![\d.])\d{1,2}\.\d{1,2}\.\d{2,4}[:|\s]*(?:geburtsdatum|geburtstag|geb\.?-?\s?datum)",
     re.IGNORECASE,
 )
 

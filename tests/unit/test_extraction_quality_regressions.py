@@ -97,6 +97,8 @@ def test_sender_letterhead_loses_markdown_heading_markers():
         # a birth date in the parties block is not a letter date
         (datetime(1986, 9, 12), "Hansen, geboren am 12.09.1986", False),
         (datetime(1981, 9, 6), "| 06.09.1981 Geburtsdatum | Scheidung |", False),
+        (datetime(1981, 9, 6), "06.09.1981: Geburtsdatum", False),
+        (datetime(1981, 9, 6), "|06.09.1981|Geburtsdatum|", False),
         # handwritten signature dates come out as dd-mm-yyyy
         (datetime(2016, 8, 28), "28-08-2016  \nOrt Datum:", True),
         (datetime(2016, 8, 28), "128-08-2016", False),
