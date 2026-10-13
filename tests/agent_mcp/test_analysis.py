@@ -6,6 +6,7 @@ import pytest
 
 from app.models.database import (
     ActionItem,
+    Case,
     Claim,
     ClaimEvidence,
     Document,
@@ -375,3 +376,18 @@ def test_triage_inbox_shows_only_the_callers_own_bundles(
     bundles = _result(out)
     assert [b["subject"] for b in bundles] == ["Alices Post"]
     assert bundles[0]["documents"][0]["document"]["title"] == "Alices Post 1"
+
+
+def test_triage_inbox_names_the_case_of_a_confirmed_bundle(
+    mcp_session, make_token, alice, world, db_session
+):
+    _inbox_batch(db_session, alice.id, "Post")
+    batch = db_session.query(IngestBatch).filter_by(subject="Post").one()
+    batch.case_id = "A-1"
+    db_session.commit()
+    error, out = mcp_session(make_token(alice)).call("list_triage_inbox")
+    assert not error
+    (bundle,) = [b for b in _result(out) if b["subject"] == "Post"]
+    assert bundle["confirmed_case_id"] == "A-1"
+    assert bundle["suggested_case_id"] is None
+    assert bundle["case_title"] == db_session.get(Case, "A-1").title

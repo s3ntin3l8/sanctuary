@@ -327,8 +327,8 @@ class TriageBundleItem(BaseModel):
     received_at: str | None
     status: str
     suggested_case_id: str | None
-    suggested_case_title: str | None
     confirmed_case_id: str | None
+    case_title: str | None
     document_count: int
     documents: list[TriageDocument]
 
@@ -351,8 +351,8 @@ def list_triage_inbox(
             received_at=iso_date(b.received_at),
             status=b.mock_status,
             suggested_case_id=b.suggested_case_id,
-            suggested_case_title=b.suggested_case_title,
             confirmed_case_id=b.confirmed_case_id,
+            case_title=b.suggested_case_title,
             document_count=b.doc_count,
             documents=[
                 TriageDocument(
@@ -429,7 +429,9 @@ def register(mcp: MCPServer) -> None:
     async def _list_triage_inbox(
         ctx: Context, limit: int = 30
     ) -> list[TriageBundleItem]:
-        """Documents that arrived (by email or scan) and are not yet assigned to a
-        case, grouped by email, with the suggested case if the pipeline found one.
-        Only your own inbox. Requires an all-cases token."""
+        """Documents that arrived (by email or scan) and still need review, grouped
+        by email. A bundle carries the case it was filed under (confirmed_case_id)
+        or the one the pipeline suggests (suggested_case_id); case_title is the
+        title of whichever applies. Only your own inbox. Requires an all-cases
+        token."""
         return await run(ctx, lambda db, p: list_triage_inbox(db, p, limit))

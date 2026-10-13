@@ -60,6 +60,16 @@ def test_birth_dates_are_never_the_letter_date():
 
 
 @pytest.mark.unit
+def test_birth_date_printed_before_its_label_is_not_the_letter_date():
+    # doc 8, a Prozesskostenhilfe form: the table cell reads "06.09.1981 Geburtsdatum"
+    content = (
+        "| Yingying Liu Name | arbeitslos Beruf | 06.09.1981 Geburtsdatum | "
+        "Scheidung Familienstand |\n"
+    )
+    assert extract_issued_date(content, "scan.pdf")["value"] is None
+
+
+@pytest.mark.unit
 def test_sender_letterhead_loses_markdown_heading_markers():
     result = extract_sender("## Landgericht Ingolstadt\n\nAz. 22 T 342/26")
     assert result["value"] == "Landgericht Ingolstadt"
@@ -86,6 +96,13 @@ def test_sender_letterhead_loses_markdown_heading_markers():
         (datetime(2026, 12, 9), "Stand: 9.12.2026.", True),
         # a birth date in the parties block is not a letter date
         (datetime(1986, 9, 12), "Hansen, geboren am 12.09.1986", False),
+        (datetime(1981, 9, 6), "| 06.09.1981 Geburtsdatum | Scheidung |", False),
+        (datetime(1981, 9, 6), "06.09.1981: Geburtsdatum", False),
+        (datetime(1981, 9, 6), "|06.09.1981|Geburtsdatum|", False),
+        # handwritten signature dates come out as dd-mm-yyyy
+        (datetime(2016, 8, 28), "28-08-2016  \nOrt Datum:", True),
+        (datetime(2016, 8, 28), "128-08-2016", False),
+        (datetime(2016, 8, 28), "28-08-20161", False),
     ],
 )
 def test_date_in_text(day, content, expected):
