@@ -206,7 +206,7 @@ def _build_candidate_summary(cand: _Candidate) -> str:
     first_passage = _get_first_passage(candidate)
 
     mgmt = candidate.ai_summary or {}
-    sig = mgmt.get("legal_significance", "")[:150]
+    sig = (mgmt.get("legal_significance") or "")[:150]
 
     return (
         f"ID={candidate.id} | "

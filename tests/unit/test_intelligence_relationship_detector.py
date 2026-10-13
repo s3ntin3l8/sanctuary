@@ -703,3 +703,18 @@ def test_candidate_summary_exposes_az_and_via(db_session, sample_case):
     assert "AZ=-" in rd._build_candidate_summary(
         rd._Candidate(_dated(db_session, sample_case, "u", None), frozenset({"topic"}))
     )
+
+
+@pytest.mark.unit
+def test_candidate_summary_tolerates_null_legal_significance(db_session, sample_case):
+    """A court relay stores legal_significance=None; it must not break the prompt."""
+    from app.services.intelligence import relationship_detector as rd
+
+    d = _dated(db_session, sample_case, "relay", datetime(2025, 1, 1))
+    d.ai_summary = {
+        "legal_significance": None,
+        "required_action": "Zur Kenntnisnahme",
+        "financial_impact": None,
+    }
+    line = rd._build_candidate_summary(rd._Candidate(d, frozenset({"thread"})))
+    assert "Summary= |" in line
