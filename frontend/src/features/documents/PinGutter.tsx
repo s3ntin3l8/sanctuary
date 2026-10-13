@@ -2,6 +2,7 @@ import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
 
 import { type Pin, useDeletePin, useUpdatePin } from '../../api/documents'
 import { AgentBadge } from '../../ui/AgentBadge'
+import { useMediaQuery } from '../../ui/useMediaQuery'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
 
@@ -9,6 +10,8 @@ type Props = { docId: number; pins: Pin[]; article: RefObject<HTMLElement | null
 
 /** Margin notes anchored beside the highlighted passage they belong to. */
 export function PinGutter({ docId, pins, article }: Props) {
+  const inline = !useMediaQuery('(min-width: 1280px)')
+  const [expanded, setExpanded] = useState(false)
   const [tops, setTops] = useState<Record<number, number | null>>({})
   const cards = useRef<Record<number, HTMLElement | null>>({})
 
@@ -41,23 +44,38 @@ export function PinGutter({ docId, pins, article }: Props) {
     const ro = new ResizeObserver(place)
     ro.observe(root)
     return () => ro.disconnect()
-  }, [pins, article])
+  }, [pins, article, inline])
 
   if (pins.length === 0) return null
   return (
-    <div className="absolute top-6 left-4 w-48" aria-label="Pins">
-      {pins.map((p) => (
-        <PinCard
-          key={p.id}
-          docId={docId}
-          pin={p}
-          top={tops[p.id]}
-          ref={(el) => {
-            cards.current[p.id] = el
-          }}
-        />
-      ))}
-    </div>
+    <details
+      open={!inline || expanded}
+      onToggle={(event) => {
+        if (inline) setExpanded(event.currentTarget.open)
+      }}
+      className={
+        inline ? 'mt-6 rounded-xl border border-line bg-card2 p-3' : 'absolute top-6 left-4 w-48'
+      }
+      aria-label="Pins"
+    >
+      <summary className={inline ? 'cursor-pointer text-[12px] font-semibold' : 'hidden'}>
+        Pins ({pins.length})
+      </summary>
+      <div className={inline ? 'mt-3 grid grid-cols-2 gap-3' : 'relative'}>
+        {pins.map((p) => (
+          <PinCard
+            key={p.id}
+            docId={docId}
+            pin={p}
+            top={tops[p.id]}
+            inline={inline}
+            ref={(el) => {
+              cards.current[p.id] = el
+            }}
+          />
+        ))}
+      </div>
+    </details>
   )
 }
 
@@ -65,11 +83,13 @@ function PinCard({
   docId,
   pin,
   top,
+  inline = false,
   ref,
 }: {
   docId: number
   pin: Pin
   top: number | null | undefined
+  inline?: boolean
   ref: (el: HTMLElement | null) => void
 }) {
   const update = useUpdatePin(docId)
@@ -87,8 +107,8 @@ function PinCard({
     <article
       ref={ref}
       data-pin-id={pin.id}
-      className={`absolute left-0 w-48 rounded-lg border bg-card2 p-2 text-[11px] shadow-sm transition-[top] ${unmatched ? 'border-warning/50' : 'border-line'}`}
-      style={{ top: top ?? 0 }}
+      className={`${inline ? 'relative min-w-0' : 'absolute left-0 w-48'} rounded-lg border bg-card2 p-2 text-[11px] shadow-sm transition-[top] ${unmatched ? 'border-warning/50' : 'border-line'}`}
+      style={inline ? undefined : { top: top ?? 0 }}
     >
       <header className="mb-1 flex items-center gap-1 text-muted">
         <Icon name="push_pin" size={12} className="text-warning" />

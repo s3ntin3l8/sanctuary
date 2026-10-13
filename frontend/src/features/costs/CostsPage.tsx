@@ -51,7 +51,7 @@ export function CostsPage() {
   const canAddAnywhere = data.cases.some((c) => c.can_edit)
   return (
     <div className="mx-auto max-w-[1100px] p-6 text-[12px]">
-      <header className="mb-4 flex items-center gap-3">
+      <header className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="font-display text-[22px] font-extrabold">Costs</h1>
           <p className="text-muted">
@@ -63,7 +63,7 @@ export function CostsPage() {
         </Button>
       </header>
 
-      <dl className="mb-5 grid grid-cols-4 gap-3" aria-label="Ledger totals">
+      <dl className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Ledger totals">
         {(
           [
             ['Booked', data.summary.booked],
@@ -80,7 +80,7 @@ export function CostsPage() {
       </dl>
 
       {(data.overdue.length > 0 || data.due_soon.length > 0) && (
-        <div className="mb-5 grid grid-cols-2 gap-3">
+        <div className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
           <Alerts title="Overdue" tone="danger" items={data.overdue} />
           <Alerts title="Due within 7 days" tone="warning" items={data.due_soon} />
         </div>
@@ -93,7 +93,7 @@ export function CostsPage() {
       )}
       {data.cases.map((group) => (
         <section key={group.id} className="mb-4 rounded-xl border border-line bg-card p-3">
-          <header className="mb-2 flex items-center gap-2">
+          <header className="mb-2 flex flex-wrap items-center gap-2">
             <Link
               to={`/cases/${group.id}`}
               className="font-mono text-[11px] font-semibold text-tealink hover:underline"
@@ -110,11 +110,18 @@ export function CostsPage() {
               {formatEur(group.summary.booked)}
             </span>
           </header>
-          <ul className="divide-y divide-line2">
-            {group.costs.map((c) => (
-              <Row key={c.id} cost={c} canEdit={group.can_edit} />
-            ))}
-          </ul>
+          <div
+            role="region"
+            aria-label={`Costs for ${group.title}`}
+            tabIndex={0}
+            className="overflow-x-auto"
+          >
+            <ul className="min-w-[1000px] divide-y divide-line2">
+              {group.costs.map((c) => (
+                <Row key={c.id} cost={c} canEdit={group.can_edit} />
+              ))}
+            </ul>
+          </div>
         </section>
       ))}
 

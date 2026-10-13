@@ -24,10 +24,10 @@ export function ReviewTab({ detail, selectedDoc, onSelect, initialOnlyOpen = fal
   const openCount = detail.documents.filter((d) => d.needs_review).length
   const docs = onlyOpen ? detail.documents.filter((d) => d.needs_review) : detail.documents
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <aside
         aria-label="Case spine"
-        className="flex w-[280px] shrink-0 flex-col border-r border-line bg-bg"
+        className="flex max-h-56 w-full shrink-0 flex-col border-b border-line bg-bg lg:max-h-none lg:w-[280px] lg:border-r lg:border-b-0"
       >
         <h2 className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-[.14em] text-muted uppercase">
           Case spine <span className="font-mono normal-case">{detail.documents.length}</span>

@@ -58,7 +58,7 @@ export function HomePage() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
+      <header className="flex flex-wrap items-center gap-4 border-b border-line bg-panel px-6 py-4">
         <div>
           <p className="font-mono text-[11px] text-muted">
             {data ? formatLongDate(data.now) : ' '}
@@ -91,7 +91,7 @@ export function HomePage() {
         <div className="space-y-4 px-6 py-4">
           <BriefingCard />
 
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-3 gap-4 lg:grid-cols-5">
             <Kpi label="Deadlines" value={data.today_items.length} icon="timer" />
             <Kpi label="Triage" value={data.triage_bundles.length} icon="inbox" />
             <Kpi label="Processing" value={processing} icon="sync" />
@@ -99,8 +99,8 @@ export function HomePage() {
             <Kpi label="Exposure" value={formatEurCompact(exposure)} icon="payments" />
           </div>
 
-          <div className="grid grid-cols-5 items-start gap-4">
-            <div className="col-span-3 space-y-4">
+          <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-5">
+            <div className="min-w-0 space-y-4 xl:col-span-3">
               {data.caught_up ? (
                 <div className="rounded-xl border border-line bg-card px-6 py-10 text-center">
                   <Icon name="check_circle" size={28} className="text-accent" />
@@ -143,7 +143,7 @@ export function HomePage() {
                 )}
               </Panel>
             </div>
-            <div className="col-span-2 space-y-4">
+            <div className="min-w-0 space-y-4 xl:col-span-2">
               <DeltaPanel home={data} />
               <SignalsPanel signals={data.signals} />
               <ActivityPanel events={data.activity} row={ROW} />
@@ -230,7 +230,7 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
       {bundles.length === 0 ? (
         <p className="py-2 text-[12px] text-muted">Inbox is clear.</p>
       ) : (
-        <ul className="divide-y divide-line2">
+        <ul className="@container divide-y divide-line2">
           {bundles.map((b) => {
             const p = b.pipeline
             const busy = p.running + p.pending > 0
@@ -240,7 +240,7 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
                   to={`/triage?bundle=${b.key}`}
                   aria-label={`Open ${b.title} in triage`}
                   {...ROW}
-                  className={`grid grid-cols-[52px_52px_1fr_auto] items-center gap-3 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
+                  className={`grid grid-cols-[max-content_52px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 py-2 @min-[640px]:grid-cols-[max-content_52px_minmax(0,1fr)_auto] text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
                 >
                   <Badge tone="warning" mono>
                     {b.doc_count} docs
@@ -270,13 +270,26 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
                     </span>
                   </span>
                   {p.failed > 0 ? (
-                    <Badge tone="danger">{p.failed} failed</Badge>
+                    <Badge
+                      tone="danger"
+                      className="col-start-3 justify-self-start @min-[640px]:col-start-4"
+                    >
+                      {p.failed} failed
+                    </Badge>
                   ) : busy ? (
-                    <Badge tone="warning">
+                    <Badge
+                      tone="warning"
+                      className="col-start-3 justify-self-start @min-[640px]:col-start-4"
+                    >
                       {p.running} processing · {p.pending} queued
                     </Badge>
                   ) : (
-                    <Badge tone="success">ready</Badge>
+                    <Badge
+                      tone="success"
+                      className="col-start-3 justify-self-start @min-[640px]:col-start-4"
+                    >
+                      ready
+                    </Badge>
                   )}
                 </Link>
               </li>
@@ -292,13 +305,19 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
 function CaseGrid({ cards, items }: { cards: Home['active_cases']; items: Home['today_items'] }) {
   const [card] = cards
   if (card && cards.length === 1) {
-    return <CaseCardTile card={card} navRow upcoming={items.filter((i) => i.case_id === card.id)} />
+    return (
+      <div className="@container">
+        <CaseCardTile card={card} navRow upcoming={items.filter((i) => i.case_id === card.id)} />
+      </div>
+    )
   }
   return (
-    <div className="grid grid-cols-2 gap-4">
-      {cards.map((c) => (
-        <CaseCardTile key={c.id} card={c} navRow />
-      ))}
+    <div className="@container">
+      <div className="grid grid-cols-1 gap-4 @min-[640px]:grid-cols-2">
+        {cards.map((c) => (
+          <CaseCardTile key={c.id} card={c} navRow />
+        ))}
+      </div>
     </div>
   )
 }

@@ -1231,7 +1231,7 @@ function Reactions({ review }: { review: Review }) {
           aria-label="Reaction note"
           className={inputClass}
         />
-        <Button size="sm" type="submit" variant="secondary" disabled={react.isPending}>
+        <Button size="form" type="submit" variant="secondary" disabled={react.isPending}>
           Save
         </Button>
       </form>

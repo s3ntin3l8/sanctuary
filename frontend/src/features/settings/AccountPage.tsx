@@ -53,7 +53,7 @@ export function AccountPage() {
             )
           }}
         >
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <TextField
               label="Display name"
               name="display_name"
@@ -61,7 +61,7 @@ export function AccountPage() {
               autoComplete="name"
             />
           </div>
-          <Button type="submit" variant="secondary" disabled={profile.isPending}>
+          <Button size="form" type="submit" variant="secondary" disabled={profile.isPending}>
             Save
           </Button>
         </form>

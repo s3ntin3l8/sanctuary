@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -7,10 +7,12 @@ import { caseKey, type CaseDetail, useCaseDetail, useMarkViewed } from '../../..
 import { useCloseDecision } from '../../../api/cases'
 import { useDraftDecision } from '../../../api/triage'
 
-import { hasModifier, isTypingTarget } from '../../../shell/keys'
+import { hasModifier, isTypingTarget, overlayOpen } from '../../../shell/keys'
 import { usePageShortcuts, useShortcuts } from '../../../shell/shortcuts'
 import { Badge, type Tone } from '../../../ui/Badge'
 import { Button } from '../../../ui/Button'
+import { Drawer } from '../../../ui/Drawer'
+import { useMediaQuery } from '../../../ui/useMediaQuery'
 import { Icon } from '../../../ui/Icon'
 import { QueryState } from '../../../ui/QueryState'
 import { useToast } from '../../../ui/toast'
@@ -124,6 +126,13 @@ function Dashboard({
     markViewedMutate()
   }, [markViewedMutate])
   const [chatOpen, setChatOpen] = useState(false)
+  const [briefOpen, setBriefOpen] = useState(false)
+  const inlineRail = useMediaQuery('(min-width: 1280px)')
+  const inlineChat = useMediaQuery('(min-width: 1536px)')
+  const briefPanel = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!inlineRail && briefPanel.current?.querySelector('[role="dialog"]')) setBriefOpen(true)
+  }, [inlineRail])
   const [editing, setEditing] = useState(false)
   const shortcuts = useShortcuts()
   usePageShortcuts('Case', CASE_SHORTCUTS)
@@ -132,7 +141,7 @@ function Dashboard({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e) || hasModifier(e)) return
+      if (e.defaultPrevented || overlayOpen() || isTypingTarget(e) || hasModifier(e)) return
       if (editing || sharing || shortcuts.open) return
       if (e.key === '/') {
         e.preventDefault()
@@ -157,15 +166,20 @@ function Dashboard({
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="case-dashboard">
       <header className="shrink-0 border-b border-line bg-panel px-7 pt-4">
-        <div className="mb-2 flex items-center gap-2 font-mono text-[11px] text-muted">
+        <div className="mb-2 flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted">
           <Link to="/cases" className="hover:text-ink">
             Cases
           </Link>
           <Icon name="chevron_right" size={14} />
           <span className="text-ink">{detail.id}</span>
           <span>·</span>
-          <span className="truncate">{detail.title}</span>
-          <span className="ml-auto flex items-center gap-1">
+          <span className="min-w-0 flex-1 truncate">{detail.title}</span>
+          <span className="ml-auto flex flex-wrap items-center gap-1">
+            {!inlineRail && (
+              <Button size="sm" variant="secondary" onClick={() => setBriefOpen(true)}>
+                <Icon name="info" size={13} /> Case details
+              </Button>
+            )}
             {detail.can_manage_sharing && (
               <Button size="sm" variant="secondary" onClick={() => setSharing(true)}>
                 <Icon name="group" size={13} /> Share
@@ -188,8 +202,10 @@ function Dashboard({
             </Button>
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <h1 className="font-display text-[22px] font-extrabold">{detail.title}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="min-w-0 break-words font-display text-[22px] font-extrabold">
+            {detail.title}
+          </h1>
           <Badge tone={STATUS_TONE[detail.status] ?? 'neutral'}>
             {detail.status.replace('_', ' ')}
           </Badge>
@@ -213,7 +229,7 @@ function Dashboard({
             </label>
           )}
         </div>
-        <nav aria-label="Case views" className="mt-3 flex gap-6">
+        <nav aria-label="Case views" className="mt-3 flex flex-wrap gap-x-6">
           {VIEWS.map(([key, label, k]) => (
             <button
               key={key}
@@ -317,14 +333,32 @@ function Dashboard({
           {view === 'timeline' && <TimelineTab detail={detail} />}
           {view === 'fin' && <CostsTab detail={detail} />}
         </main>
-        <Rail
-          detail={detail}
-          onOpenDoc={(id) => {
-            setSelectedDoc(id)
-            setView('review')
-          }}
-        />
-        {chatOpen && (
+        <Drawer
+          keepMounted
+          open={briefOpen}
+          inline={inlineRail}
+          inlineWidth={270}
+          onClose={() => setBriefOpen(false)}
+          title="Case details"
+        >
+          <div ref={briefPanel} className="h-full">
+            <Rail
+              detail={detail}
+              onOpenDoc={(id) => {
+                setSelectedDoc(id)
+                setView('review')
+                setBriefOpen(false)
+              }}
+            />
+          </div>
+        </Drawer>
+        <Drawer
+          open={chatOpen}
+          inline={inlineChat && chatOpen}
+          onClose={() => setChatOpen(false)}
+          title={`Ask about ${detail.id}`}
+          header={false}
+        >
           <ChatDrawer
             scope={{ scope_type: 'case', scope_id: detail.id }}
             title={`Ask about ${detail.id}`}
@@ -332,7 +366,7 @@ function Dashboard({
             onClose={() => setChatOpen(false)}
             proceeding={active ? { id: active.id, name: active.court_name } : null}
           />
-        )}
+        </Drawer>
       </div>
 
       <EditCaseModal open={editing} onClose={() => setEditing(false)} detail={detail} />

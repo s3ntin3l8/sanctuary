@@ -171,7 +171,7 @@ export function TriagePage() {
   const newMail = useNewMailToReview()
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
+      <header className="flex flex-wrap items-center gap-4 border-b border-line bg-panel px-6 py-4">
         <div>
           <h1 className="font-display text-[22px] font-extrabold tracking-tight">Triage</h1>
           <p className="font-mono text-[11px] text-muted">
@@ -184,7 +184,7 @@ export function TriagePage() {
             )}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Link to="/settings/gmail/import" className={buttonClass('secondary')}>
             <Icon name="mail" size={16} /> Import from Gmail
             {newMail && (
@@ -209,7 +209,7 @@ export function TriagePage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 px-6 py-3">
+      <div className="flex flex-wrap items-center gap-2 px-6 py-3">
         {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
           <Chip key={s} active={status === s} count={counts[s]} onClick={() => setStatus(s)}>
             {STATUS_LABEL[s]}
@@ -218,7 +218,7 @@ export function TriagePage() {
       </div>
 
       {picked.length > 0 && (
-        <div className="mx-6 mb-2 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 px-3 py-2 text-[12px]">
+        <div className="mx-6 mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 px-3 py-2 text-[12px]">
           <span className="font-semibold">{picked.length} selected</span>
           {confirmablePicked.length > 0 && (
             <Button
@@ -261,99 +261,108 @@ export function TriagePage() {
 
       <div className="px-6 pb-6">
         <div
-          className={`${GRID} rounded-t-lg border border-line bg-panel2 px-3 py-2 text-[9.5px] font-extrabold tracking-[.1em] text-muted uppercase`}
+          role="region"
+          aria-label="Triage table"
+          tabIndex={0}
+          className="overflow-x-auto rounded-lg"
         >
-          <input
-            type="checkbox"
-            aria-label="Select all visible"
-            checked={allSelected}
-            onChange={(e) =>
-              setSelected(e.target.checked ? new Set(selectable.map((b) => b.key)) : new Set())
-            }
-            className="h-3.5 w-3.5 accent-accent"
-          />
-          <SortHeader
-            label="Received"
-            active={filters.sort === 'received'}
-            dir={filters.dir}
-            onClick={() => toggleSort('received')}
-          />
-          <FilterHeader
-            label="Docs"
-            options={query.data?.filter_options.pipeline ?? []}
-            selected={filters.pipeline_filter}
-            onToggle={(v) => toggleFilter('pipeline_filter', v)}
-            sortActive={filters.sort === 'docs'}
-            onSort={() => toggleSort('docs')}
-          />
-          <span>Preview</span>
-          <FilterHeader
-            label="Case / status"
-            options={query.data?.filter_options.cases ?? []}
-            selected={filters.case_id}
-            onToggle={(v) => toggleFilter('case_id', v)}
-            sortActive={filters.sort === 'status'}
-            onSort={() => toggleSort('status')}
-          />
-          <FilterHeader
-            label="Proceeding"
-            options={query.data?.filter_options.proceedings ?? []}
-            selected={filters.proceeding_id}
-            onToggle={(v) => toggleFilter('proceeding_id', v)}
-          />
-          <span className="text-right">Actions</span>
-        </div>
-        {status !== 'all' && (query.data?.slicing_queue.length ?? 0) > 0 && (
-          <p className="border border-t-0 border-line px-3 py-1.5 text-[11px] text-muted">
-            <Icon name="content_cut" size={12} />{' '}
-            {pluralize(query.data?.slicing_queue.length ?? 0, 'scan')} awaiting slicing —{' '}
-            <button
-              type="button"
-              onClick={() => setStatus('all')}
-              className="text-tealink hover:underline"
+          <div className="min-w-[1200px]">
+            <div
+              className={`${GRID} rounded-t-lg border border-line bg-panel2 px-3 py-2 text-[9.5px] font-extrabold tracking-[.1em] text-muted uppercase`}
             >
-              show in All
-            </button>
-          </p>
-        )}
-        {!query.data && (
-          <div className="border border-t-0 border-line px-3">
-            <QueryState error={query.error} pending={query.isPending} />
+              <input
+                type="checkbox"
+                aria-label="Select all visible"
+                checked={allSelected}
+                onChange={(e) =>
+                  setSelected(e.target.checked ? new Set(selectable.map((b) => b.key)) : new Set())
+                }
+                className="h-3.5 w-3.5 accent-accent"
+              />
+              <SortHeader
+                label="Received"
+                active={filters.sort === 'received'}
+                dir={filters.dir}
+                onClick={() => toggleSort('received')}
+              />
+              <FilterHeader
+                label="Docs"
+                options={query.data?.filter_options.pipeline ?? []}
+                selected={filters.pipeline_filter}
+                onToggle={(v) => toggleFilter('pipeline_filter', v)}
+                sortActive={filters.sort === 'docs'}
+                onSort={() => toggleSort('docs')}
+              />
+              <span>Preview</span>
+              <FilterHeader
+                label="Case / status"
+                options={query.data?.filter_options.cases ?? []}
+                selected={filters.case_id}
+                onToggle={(v) => toggleFilter('case_id', v)}
+                sortActive={filters.sort === 'status'}
+                onSort={() => toggleSort('status')}
+              />
+              <FilterHeader
+                label="Proceeding"
+                options={query.data?.filter_options.proceedings ?? []}
+                selected={filters.proceeding_id}
+                onToggle={(v) => toggleFilter('proceeding_id', v)}
+              />
+              <span className="text-right">Actions</span>
+            </div>
+            {status !== 'all' && (query.data?.slicing_queue.length ?? 0) > 0 && (
+              <p className="border border-t-0 border-line px-3 py-1.5 text-[11px] text-muted">
+                <Icon name="content_cut" size={12} />{' '}
+                {pluralize(query.data?.slicing_queue.length ?? 0, 'scan')} awaiting slicing —{' '}
+                <button
+                  type="button"
+                  onClick={() => setStatus('all')}
+                  className="text-tealink hover:underline"
+                >
+                  show in All
+                </button>
+              </p>
+            )}
+            {!query.data && (
+              <div className="border border-t-0 border-line px-3">
+                <QueryState error={query.error} pending={query.isPending} />
+              </div>
+            )}
+            {query.data && visible.length === 0 && slicingRows.length === 0 && (
+              <p className="border border-t-0 border-line px-3 py-8 text-center text-[12px] text-muted">
+                {bundles.length === 0
+                  ? 'Inbox empty — nothing awaits triage.'
+                  : 'No bundles match this filter.'}
+              </p>
+            )}
+            <ul className="divide-y divide-line2 border border-t-0 border-line">
+              {slicingRows.map((s) => (
+                <SlicingRow key={`slice-${s.batch_id}`} item={s} />
+              ))}
+              {visible.map((b) => (
+                <BundleRow
+                  key={b.key}
+                  bundle={b}
+                  selected={selected.has(b.key)}
+                  onSelect={(on) =>
+                    setSelected((s) => {
+                      const n = new Set(s)
+                      if (on) n.add(b.key)
+                      else n.delete(b.key)
+                      return n
+                    })
+                  }
+                  expanded={expanded === b.key}
+                  onToggle={() => toggleExpanded(b.key)}
+                  onConfirm={(action) => setConfirmTarget({ mode: 'single', bundle: b, action })}
+                  onRetry={() => setRetryTarget(b)}
+                  cases={query.data?.cases ?? []}
+                  proceedings={query.data?.proceedings ?? []}
+                />
+              ))}
+            </ul>
           </div>
-        )}
-        {query.data && visible.length === 0 && slicingRows.length === 0 && (
-          <p className="border border-t-0 border-line px-3 py-8 text-center text-[12px] text-muted">
-            {bundles.length === 0
-              ? 'Inbox empty — nothing awaits triage.'
-              : 'No bundles match this filter.'}
-          </p>
-        )}
-        <ul className="divide-y divide-line2 border border-t-0 border-line">
-          {slicingRows.map((s) => (
-            <SlicingRow key={`slice-${s.batch_id}`} item={s} />
-          ))}
-          {visible.map((b) => (
-            <BundleRow
-              key={b.key}
-              bundle={b}
-              selected={selected.has(b.key)}
-              onSelect={(on) =>
-                setSelected((s) => {
-                  const n = new Set(s)
-                  if (on) n.add(b.key)
-                  else n.delete(b.key)
-                  return n
-                })
-              }
-              expanded={expanded === b.key}
-              onToggle={() => toggleExpanded(b.key)}
-              onConfirm={(action) => setConfirmTarget({ mode: 'single', bundle: b, action })}
-              onRetry={() => setRetryTarget(b)}
-              cases={query.data?.cases ?? []}
-              proceedings={query.data?.proceedings ?? []}
-            />
-          ))}
-        </ul>
+        </div>
       </div>
 
       <ConfirmBundleModal

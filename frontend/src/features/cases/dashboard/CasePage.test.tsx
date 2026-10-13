@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { caseDetail, documentReview } from '../../../test/fixtures'
 import { renderAt, stubApi } from '../../../test/render'
@@ -151,4 +151,23 @@ test('?open=1 starts the Review tab filtered to documents that need review', asy
   expect(
     within(spine).getAllByRole('button', { name: /Klageerwiderung|Antragsschrift/ }),
   ).toHaveLength(1)
+})
+
+test('at tablet widths the case brief remains available in a drawer', async () => {
+  const media = window.matchMedia
+  vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({ ...media(q), matches: false }))
+  stub()
+  page('/cases/ADV-024-A?view=review')
+  const user = userEvent.setup()
+  const trigger = await screen.findByRole('button', { name: 'Case details' })
+  expect(screen.queryByRole('complementary', { name: 'Case brief' })).not.toBeInTheDocument()
+  await user.click(trigger)
+  expect(
+    within(screen.getByRole('dialog', { name: 'Case details' })).getByText(
+      'Client seeks sole custody.',
+    ),
+  ).toBeVisible()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(trigger).toHaveFocus()
 })

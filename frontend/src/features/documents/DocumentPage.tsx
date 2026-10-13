@@ -3,9 +3,12 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
 import { originalUrl, type Reader, useCreatePin, useDocumentReader } from '../../api/documents'
 import { formatShortDate } from '../../format'
-import { hasModifier, isTypingTarget } from '../../shell/keys'
+import { hasModifier, isTypingTarget, overlayOpen } from '../../shell/keys'
 import { usePageShortcuts, useShortcuts } from '../../shell/shortcuts'
+import { useReact } from '../../api/triage'
 import { Badge, type Tone } from '../../ui/Badge'
+import { Drawer } from '../../ui/Drawer'
+import { useMediaQuery } from '../../ui/useMediaQuery'
 import { Icon } from '../../ui/Icon'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
@@ -61,9 +64,14 @@ function Hud({ reader }: { reader: Reader }) {
   const location = useLocation()
   const toast = useToast()
   const createPin = useCreatePin(reader.id)
+  const react = useReact(reader.id)
+  const [reactionFocus, setReactionFocus] = useState(0)
   const article = useRef<HTMLDivElement>(null)
   const [focusMode, setFocusMode] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [intelligenceOpen, setIntelligenceOpen] = useState(false)
+  const inlineRail = useMediaQuery('(min-width: 1280px)')
+  const inlineChat = useMediaQuery('(min-width: 1536px)')
   const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
   const shortcuts = useShortcuts()
   usePageShortcuts('Document', SHORTCUTS)
@@ -171,9 +179,23 @@ function Hud({ reader }: { reader: Reader }) {
     if (target) navigate(`/document/${target}`, { state: location.state })
   }
 
+  function toggleFocusMode() {
+    setIntelligenceOpen(false)
+    setFocusMode((v) => !v)
+  }
   const rail = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    if (!inlineRail && rail.current?.querySelector('[role="dialog"]')) setIntelligenceOpen(true)
+  }, [inlineRail])
+  useEffect(() => {
+    if (!reactionFocus) return
+    const bar = rail.current?.querySelector<HTMLElement>('[data-reaction-bar]')
+    bar?.querySelector<HTMLElement>('button[aria-pressed]')?.focus()
+    bar?.scrollIntoView({ block: 'center' })
+  }, [reactionFocus])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || overlayOpen()) return
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         find.open()
@@ -211,7 +233,7 @@ function Hud({ reader }: { reader: Reader }) {
           go(nav.bundle_next_id)
           break
         case 'f':
-          setFocusMode((v) => !v)
+          toggleFocusMode()
           break
         case 'o':
           if (reader.has_original) window.open(originalUrl(reader.id), '_blank', 'noopener')
@@ -220,21 +242,19 @@ function Hud({ reader }: { reader: Reader }) {
           pinPassage(activePassageId)
           break
         case 'r':
-          {
-            const bar = rail.current?.querySelector<HTMLElement>('[data-reaction-bar]')
-            bar?.querySelector<HTMLElement>('button')?.focus()
-            bar?.scrollIntoView({ block: 'center' })
-          }
+          setFocusMode(false)
+          if (!inlineRail) setIntelligenceOpen(true)
+          setReactionFocus((n) => n + 1)
           break
         case '1':
         case '2':
         case '3':
         case '4':
           {
-            const buttons = rail.current?.querySelectorAll<HTMLButtonElement>(
-              '[data-reaction-bar] button[aria-pressed]',
-            )
-            buttons?.[Number(e.key) - 1]?.click()
+            const reaction = (['lies', 'true', 'needs_proof', 'precedent'] as const)[
+              Number(e.key) - 1
+            ]
+            if (reaction) react.mutate({ reaction }, { onError: (e) => toast(e.message, 'error') })
           }
           break
         case '/':
@@ -263,7 +283,7 @@ function Hud({ reader }: { reader: Reader }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="document-hud">
-      <header className="flex items-center gap-3 border-b border-line bg-panel px-4 py-2 text-[12px]">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-panel px-4 py-2 text-[12px]">
         <Link
           to={backHref}
           className="flex items-center gap-1 text-muted hover:text-ink"
@@ -318,7 +338,15 @@ function Hud({ reader }: { reader: Reader }) {
           />
         </nav>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
+          {!inlineRail && (
+            <ToolButton
+              label="Document intelligence"
+              icon="info"
+              pressed={intelligenceOpen}
+              onClick={() => setIntelligenceOpen(true)}
+            />
+          )}
           <FindBox find={find} />
           <ToolButton
             label="Zoom out"
@@ -346,7 +374,7 @@ function Hud({ reader }: { reader: Reader }) {
             label={focusMode ? 'Show the rail (f)' : 'Focus mode (f)'}
             icon={focusMode ? 'view_sidebar' : 'center_focus_strong'}
             pressed={focusMode}
-            onClick={() => setFocusMode((v) => !v)}
+            onClick={toggleFocusMode}
           />
           <ToolButton
             label="Ask the AI (/)"
@@ -360,9 +388,8 @@ function Hud({ reader }: { reader: Reader }) {
 
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 overflow-y-auto bg-bg">
-          <PinGutter docId={reader.id} pins={reader.pins} article={article} />
           <div
-            className={`mx-auto w-full max-w-[760px] px-8 py-6 ${reader.pins.length ? 'ml-56' : ''}`}
+            className={`mx-auto min-w-0 w-full max-w-[760px] px-8 py-6 ${reader.pins.length ? 'xl:ml-56 xl:w-[calc(100%-14rem)]' : ''}`}
           >
             {reader.body_html ? (
               <div
@@ -377,39 +404,61 @@ function Hud({ reader }: { reader: Reader }) {
                 No text content available for this document yet.
               </p>
             )}
+            <PinGutter docId={reader.id} pins={reader.pins} article={article} />
           </div>
         </div>
 
-        {!focusMode && (
+        <Drawer
+          keepMounted
+          open={intelligenceOpen}
+          inline={inlineRail && !focusMode}
+          inlineWidth={340}
+          onClose={() => setIntelligenceOpen(false)}
+          title="Document intelligence"
+        >
           <aside
             ref={rail}
             aria-label="Document intelligence"
-            className="w-[340px] shrink-0 overflow-y-auto border-l border-line bg-card2 text-[12px]"
+            className="h-full overflow-y-auto border-l border-line bg-card2 text-[12px]"
           >
             <ReviewSections
               review={reader}
               singleColumn
               passages={{
                 activePassageId,
-                onFocus: focusPassage,
+                onFocus: (id) => {
+                  focusPassage(id)
+                  setIntelligenceOpen(false)
+                },
                 onPin: pinPassage,
-                onAskAi: askAbout,
+                onAskAi: (text) => {
+                  setIntelligenceOpen(false)
+                  askAbout(text)
+                },
               }}
             />
             {!chatOpen && (
               <button
                 type="button"
-                onClick={() => setChatOpen(true)}
+                onClick={() => {
+                  setIntelligenceOpen(false)
+                  setChatOpen(true)
+                }}
                 className="m-3 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-xl border border-dashed border-line px-3 py-2 text-[11.5px] text-muted hover:border-accent hover:text-ink"
               >
-                <Icon name="forum" size={14} /> Ask about this document
+                <Icon name="forum" size={14} /> Ask about this document{' '}
                 <kbd className="font-mono text-[9px]">/</kbd>
               </button>
             )}
           </aside>
-        )}
-
-        {chatOpen && (
+        </Drawer>
+        <Drawer
+          open={chatOpen}
+          inline={inlineChat && chatOpen}
+          onClose={() => setChatOpen(false)}
+          title="Ask about this document"
+          header={false}
+        >
           <ChatDrawer
             scope={{ scope_type: 'document', scope_id: String(reader.id) }}
             title="Ask about this document"
@@ -417,7 +466,7 @@ function Hud({ reader }: { reader: Reader }) {
             onClose={() => setChatOpen(false)}
             prefill={prefill}
           />
-        )}
+        </Drawer>
       </div>
     </div>
   )

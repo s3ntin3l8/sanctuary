@@ -39,7 +39,7 @@ export function Badge({
     : 'rounded-md border px-1.5 py-0.5 text-[10px] leading-none font-bold tracking-wide'
   return (
     <span
-      className={`inline-flex items-center gap-1 uppercase ${shape} ${mono ? 'font-mono' : ''} ${pill ? pilled[tone] : outlined[tone]} ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap uppercase ${shape} ${mono ? 'font-mono' : ''} ${pill ? pilled[tone] : outlined[tone]} ${className}`}
     >
       {children}
     </span>

@@ -37,3 +37,24 @@ test('submitting the box updates the query', async () => {
   const url = new URL(fetch.mock.calls.map(([r]) => r.url)[0] ?? '')
   expect(url.searchParams.get('q')).toBe('Weber')
 })
+
+test('an empty search can be reset without leaving the previous query in the input', async () => {
+  stubApi({ 'GET /api/v1/search': { body: { documents: [], cases: [], contacts: [], total: 0 } } })
+  renderAt('/search?q=Nobody', <SearchPage />)
+  expect(await screen.findByText(/No results for/)).toBeVisible()
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Reset search' }))
+  expect(screen.getByLabelText('Search')).toHaveValue('')
+  expect(screen.getByText('Type at least two characters.')).toBeVisible()
+})
+
+test('a failed search is reported separately from no matches and can be retried', async () => {
+  const fetch = stubApi({ 'GET /api/v1/search': { body: results } })
+  fetch.mockImplementationOnce(async () =>
+    Response.json({ detail: 'Search unavailable', code: 'unavailable' }, { status: 503 }),
+  )
+  renderAt('/search?q=Weber', <SearchPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Search unavailable')
+  expect(screen.queryByText(/No results for/)).not.toBeInTheDocument()
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Retry search' }))
+  expect(await screen.findByText('3 results for “Weber”')).toBeVisible()
+})

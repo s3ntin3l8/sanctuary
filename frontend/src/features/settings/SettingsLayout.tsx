@@ -65,7 +65,7 @@ export function SettingsLayout() {
       <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
         <div>
           <h1 className="font-display text-[22px] font-extrabold tracking-tight">Settings</h1>
-          <p className="flex items-center gap-1 font-mono text-[11px] text-muted">
+          <p className="flex flex-wrap items-center gap-1 font-mono text-[11px] text-muted">
             <Icon name="lock" size={12} /> local · nothing leaves this device
             {about && (
               <span className="ml-2" title={`built ${about.build_date}`}>
@@ -75,8 +75,11 @@ export function SettingsLayout() {
           </p>
         </div>
       </header>
-      <div className="flex flex-1 gap-6 px-6 py-5">
-        <nav aria-label="Settings" className="w-48 shrink-0 space-y-4">
+      <div className="flex flex-1 flex-col gap-6 px-6 py-5 lg:flex-row">
+        <nav
+          aria-label="Settings"
+          className="grid shrink-0 grid-cols-3 gap-4 lg:block lg:w-48 lg:space-y-4"
+        >
           {groups.map((g) => (
             <div key={g.label}>
               <div className="mb-1 px-2 text-[9px] font-extrabold tracking-[.14em] text-muted uppercase">

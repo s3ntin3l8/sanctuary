@@ -37,4 +37,4 @@ export function Field({
 }
 
 export const inputClass =
-  'w-full rounded-[9px] border border-line bg-panel2 px-3 py-2 text-[13px] text-ink placeholder:text-muted2 focus:border-accent focus:outline-none'
+  'min-h-[38px] w-full rounded-[9px] border border-line bg-panel2 px-3 py-2 text-[13px] leading-[20px] text-ink placeholder:text-muted2 focus:border-accent focus:outline-none'

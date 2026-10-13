@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 
 import { useSearch } from '../../api/shell'
 import { Badge } from '../../ui/Badge'
+import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { QueryState } from '../../ui/QueryState'
 
@@ -14,7 +15,9 @@ export function SearchPage() {
   useEffect(() => {
     document.title = `${q ? `“${q}” · ` : ''}Search | The Sanctuary`
   }, [q])
-  const r = query.data
+  const r = query.isPlaceholderData ? undefined : query.data
+  const hasQuery = q.trim().length >= 2
+  const empty = r && r.documents.length + r.cases.length + r.contacts.length === 0
   return (
     <div className="mx-auto max-w-[900px] p-6 text-[12px]">
       <form
@@ -27,17 +30,41 @@ export function SearchPage() {
       >
         <Icon name="search" size={16} className="text-muted" />
         <input
+          key={q}
           name="q"
           defaultValue={q}
           aria-label="Search"
           placeholder="Search cases, documents, contacts…"
-          className="flex-1 bg-transparent text-[14px] outline-none"
+          className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
           autoFocus
         />
+        <Button type="submit" variant="secondary">
+          Search
+        </Button>
       </form>
       {q.trim().length < 2 && <p className="text-muted">Type at least two characters.</p>}
-      {q.trim().length >= 2 && !r && <QueryState error={query.error} pending={query.isPending} />}
-      {r && (
+      {hasQuery && query.error && (
+        <div className="space-y-2">
+          <QueryState error={query.error} pending={false} />
+          <Button variant="secondary" onClick={() => void query.refetch()}>
+            Retry search
+          </Button>
+        </div>
+      )}
+      {hasQuery && !query.error && query.isFetching && (
+        <p role="status" className="py-3 text-muted">
+          Searching…
+        </p>
+      )}
+      {hasQuery && !query.error && !query.isFetching && empty && (
+        <div className="rounded-xl border border-line bg-card p-6 text-center">
+          <p className="mb-3 text-muted">No results for “{q}”. Try another name or keyword.</p>
+          <Button variant="secondary" onClick={() => setParams({})}>
+            Reset search
+          </Button>
+        </div>
+      )}
+      {hasQuery && r && !query.error && (
         <>
           <p className="mb-3 font-mono text-[11px] text-muted">
             {r.total + r.contacts.length} results for “{q}”

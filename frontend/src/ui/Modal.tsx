@@ -1,6 +1,7 @@
-import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { type ReactNode, useId, useRef } from 'react'
 
 import { Icon } from './Icon'
+import { useOverlay } from './useOverlay'
 
 type Props = {
   open: boolean
@@ -27,21 +28,7 @@ export function Modal({
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    // Hand focus back to where it came from on close, so keyboard flows
-    // (Home's j/k rows, the HUD) resume where they were.
-    const opener = document.activeElement as HTMLElement | null
-    panel.current?.querySelector<HTMLElement>('input, button, select, textarea')?.focus()
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      if (opener?.isConnected) opener.focus()
-    }
-  }, [open, onClose])
+  useOverlay(open, panel, onClose)
 
   if (!open) return null
   return (
@@ -56,10 +43,11 @@ export function Modal({
         role="dialog"
         aria-modal
         aria-labelledby={titleId}
-        className="w-full rounded-2xl border border-line bg-card shadow-[0_24px_60px_rgba(0,0,0,.6)]"
+        tabIndex={-1}
+        className="flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-2xl border border-line bg-card shadow-[0_24px_60px_rgba(0,0,0,.6)]"
         style={{ maxWidth: width }}
       >
-        <header className="flex items-center gap-3 border-b border-line2 px-5 py-4">
+        <header className="flex shrink-0 items-center gap-3 border-b border-line2 px-5 py-4">
           {icon && <Icon name={icon} size={20} className="text-accent" />}
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="font-display text-[15px] font-bold">
@@ -76,9 +64,9 @@ export function Modal({
             <Icon name="close" size={18} />
           </button>
         </header>
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <footer className="flex justify-end gap-2 border-t border-line2 px-5 py-3">
+          <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line2 px-5 py-3">
             {footer}
           </footer>
         )}
