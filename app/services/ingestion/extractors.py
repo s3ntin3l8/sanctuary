@@ -124,9 +124,11 @@ def _parse_date_string(date_str: str) -> datetime | None:
 
 
 # A party's date of birth in the letter's parties block ("Hansen Björn, geboren am
-# 12.09.1986") is never the date of the letter. Blanked before any date scan.
+# 12.09.1986") is never the date of the letter. Blanked before any date scan. Forms
+# print the date first and the label after it ("06.09.1981 Geburtsdatum").
 _BIRTHDATE_RE = re.compile(
-    r"\b(?:geboren|geb\.?|born)\s+(?:am\s+|on\s+)?\d{1,2}\.\d{1,2}\.\d{2,4}",
+    r"\b(?:geboren|geb\.?|born)\s+(?:am\s+|on\s+)?\d{1,2}\.\d{1,2}\.\d{2,4}"
+    r"|(?<![\d.])\d{1,2}\.\d{1,2}\.\d{2,4}\s*(?:geburtsdatum|geburtstag|geb\.?-?\s?datum)",
     re.IGNORECASE,
 )
 
@@ -166,6 +168,7 @@ def date_in_text(day: datetime, content: str) -> bool:
         rf"(?<![\d.]){d}\.{m}\.{y}(?!\d)",
         rf"(?<![\d.]){d:02d}\.{m:02d}\.{y % 100:02d}(?!\d)",
         rf"(?<!\d){y}-{m:02d}-{d:02d}(?!\d)",
+        rf"(?<![\d-]){d:02d}-{m:02d}-{y}(?![\d-])",
     )
     if any(re.search(pattern, text) for pattern in numeric):
         return True
