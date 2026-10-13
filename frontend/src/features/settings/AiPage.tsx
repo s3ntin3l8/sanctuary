@@ -594,7 +594,7 @@ function ConcurrencyField({
           defaultValue={initial}
         />
       </div>
-      <Button type="submit" variant="secondary" disabled={set.isPending}>
+      <Button size="form" type="submit" variant="secondary" disabled={set.isPending}>
         Apply
       </Button>
     </form>

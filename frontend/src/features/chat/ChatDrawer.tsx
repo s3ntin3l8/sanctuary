@@ -154,7 +154,7 @@ export function ChatDrawer({ scope, title, suggestions, onClose, proceeding, pre
   return (
     <aside
       aria-label={title}
-      className="flex h-full w-[400px] shrink-0 flex-col border-l border-line bg-panel"
+      className="flex h-full w-full shrink-0 2xl:w-[400px] flex-col border-l border-line bg-panel"
     >
       <header className="flex items-center gap-2 border-b border-line2 px-3 py-2">
         <Icon name="forum" size={16} className="text-accent" />

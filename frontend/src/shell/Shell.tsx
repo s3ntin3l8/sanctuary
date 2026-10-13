@@ -8,6 +8,7 @@ import { CommandPalette } from './CommandPalette'
 import { NotificationsPanel } from './NotificationsPanel'
 import { ProcessingQueue } from './ProcessingQueue'
 import { ProfileMenu } from './ProfileMenu'
+import { overlayOpen } from './keys'
 import { CountBadge, RailButton } from './RailButton'
 
 /** The 56px icon rail plus the global overlays, wrapping every signed-in page. */
@@ -37,6 +38,7 @@ export function Shell() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || (overlayOpen() && !palette)) return
       const meta = event.metaKey || event.ctrlKey
       if (meta && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -53,18 +55,18 @@ export function Shell() {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('open-command-palette', openPalette)
     }
-  }, [])
+  }, [palette])
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       <nav
         aria-label="Primary"
-        className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3"
+        className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3 overflow-y-auto"
       >
         <a
           href="/"
           aria-label="The Sanctuary"
-          className="mb-2 flex h-10 w-10 items-center justify-center"
+          className="mb-2 flex h-10 w-10 shrink-0 items-center justify-center"
         >
           <span className="h-7 w-6 bg-accent [clip-path:polygon(0_0,100%_0,100%_70%,50%_100%,0_70%)]" />
         </a>
@@ -76,6 +78,8 @@ export function Shell() {
           badge={<CountBadge count={shell?.triage_count ?? 0} tone="danger" />}
         />
         <RailButton icon="folder_open" label="Cases" to="/cases" />
+        <RailButton icon="payments" label="Costs" to="/costs" />
+        <RailButton icon="contacts" label="Contacts" to="/contacts" />
         <div className="flex-1" />
         <RailButton
           icon={theme === 'dark' ? 'light_mode' : 'dark_mode'}

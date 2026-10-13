@@ -22,4 +22,14 @@ class NoopObserver {
 }
 // Assigned directly (not vi.stubGlobal) so `unstubGlobals` keeps them across tests.
 Object.assign(globalThis, { IntersectionObserver: NoopObserver, ResizeObserver: NoopObserver })
+window.matchMedia ??= (query: string) => ({
+  matches: true,
+  media: query,
+  onchange: null,
+  addListener() {},
+  removeListener() {},
+  addEventListener() {},
+  removeEventListener() {},
+  dispatchEvent: () => false,
+})
 Element.prototype.scrollIntoView ??= function scrollIntoView() {}

@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { conversation, documentReader } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
@@ -223,3 +223,155 @@ test('shows no reference note for a document that carries its own', async () => 
   await screen.findByRole('heading', { name: 'Klageerwiderung.pdf' })
   expect(screen.queryByTestId('reference-note')).not.toBeInTheDocument()
 })
+
+test('at tablet widths intelligence opens on demand and pins remain editable', async () => {
+  const media = window.matchMedia
+  vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({ ...media(q), matches: false }))
+  stub()
+  page()
+  const user = userEvent.setup()
+  const trigger = await screen.findByRole('button', { name: 'Document intelligence' })
+  expect(
+    screen.queryByRole('complementary', { name: 'Document intelligence' }),
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByText('Pins (1)'))
+  expect(screen.getByLabelText('Pin note')).toHaveValue('check this')
+  await user.click(trigger)
+  const dialog = screen.getByRole('dialog', { name: 'Document intelligence' })
+  expect(within(dialog).getByRole('complementary')).toBeVisible()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(trigger).toHaveFocus()
+  expect(screen.getByTestId('document-hud')).toBeVisible()
+})
+
+test('tablet reaction shortcuts work while the intelligence drawer is closed', async () => {
+  const media = window.matchMedia
+  vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({ ...media(q), matches: false }))
+  const fetch = stub({
+    'POST /api/v1/documents/2211/reactions': {
+      body: [{ reaction: 'lies', notes: null, created_at: null }],
+    },
+  })
+  page()
+  await screen.findByTestId('document-hud')
+  const user = userEvent.setup()
+  await user.keyboard('1')
+  await waitFor(() =>
+    expect(fetch.mock.calls.some(([r]) => r.url.endsWith('/reactions'))).toBe(true),
+  )
+  const request = fetch.mock.calls.map(([r]) => r).find((r) => r.url.endsWith('/reactions'))
+  expect(await request?.clone().json()).toEqual({ reaction: 'lies' })
+  await user.keyboard('r')
+  const dialog = screen.getByRole('dialog', { name: 'Document intelligence' })
+  expect(within(dialog).getByRole('button', { name: '🚩 Lies' })).toHaveFocus()
+})
+
+test('resizing preserves a pin draft and focus mode closes a previously opened intelligence drawer', async () => {
+  const media = window.matchMedia
+  let wide = false
+  const listeners = new Set<EventListenerOrEventListenerObject>()
+  vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({
+    ...media(q),
+    get matches() {
+      return wide
+    },
+    addEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
+      listeners.add(listener)
+    },
+    removeEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
+      listeners.delete(listener)
+    },
+  }))
+  stub({
+    'PATCH /api/v1/pins/7': { body: { ...documentReader.pins[0], note: 'check this draft' } },
+  })
+  page()
+  const user = userEvent.setup()
+  await screen.findByTestId('document-hud')
+  await user.click(screen.getByText('Pins (1)'))
+  const note = screen.getByLabelText('Pin note')
+  await user.type(note, ' draft')
+  act(() => {
+    wide = true
+    listeners.forEach((listener) => {
+      if (typeof listener === 'function') listener(new Event('change'))
+      else listener.handleEvent(new Event('change'))
+    })
+  })
+  expect(screen.getByLabelText('Pin note')).toBe(note)
+  expect(note).toHaveValue('check this draft')
+  act(() => {
+    wide = false
+    listeners.forEach((listener) => {
+      if (typeof listener === 'function') listener(new Event('change'))
+      else listener.handleEvent(new Event('change'))
+    })
+  })
+  await user.click(screen.getByRole('button', { name: 'Document intelligence' }))
+  act(() => {
+    wide = true
+    listeners.forEach((listener) => {
+      if (typeof listener === 'function') listener(new Event('change'))
+      else listener.handleEvent(new Event('change'))
+    })
+  })
+  await user.click(screen.getByRole('button', { name: 'Focus mode (f)' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('complementary', { name: 'Document intelligence' }),
+  ).not.toBeInTheDocument()
+})
+
+test.each([false, true])(
+  'a nested metadata draft survives resizing an intelligence pane (initial wide: %s)',
+  async (initialWide) => {
+    const media = window.matchMedia
+    let wide = initialWide
+    const listeners = new Set<EventListenerOrEventListenerObject>()
+    vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({
+      ...media(q),
+      get matches() {
+        return wide
+      },
+      addEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.add(listener)
+      },
+      removeEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.delete(listener)
+      },
+    }))
+    const resize = (next: boolean) =>
+      act(() => {
+        wide = next
+        listeners.forEach((listener) => {
+          if (typeof listener === 'function') listener(new Event('change'))
+          else listener.handleEvent(new Event('change'))
+        })
+      })
+    stub()
+    page()
+    const user = userEvent.setup()
+    await screen.findByTestId('document-hud')
+    if (!wide) {
+      await user.click(screen.getByRole('button', { name: 'Document intelligence' }))
+      resize(true)
+    }
+    const rail = screen.getByRole('complementary', { name: 'Document intelligence' })
+    await user.click(within(rail).getByRole('button', { name: /^Edit$/ }))
+    const metadata = screen.getByRole('dialog', { name: 'Edit metadata' })
+    const az = within(metadata).getByLabelText('AZ')
+    await user.type(az, '3 F 123/26')
+    resize(false)
+    expect(screen.getByRole('dialog', { name: 'Edit metadata' })).toBe(metadata)
+    expect(az).toHaveValue('3 F 123/26')
+    expect(az).toHaveFocus()
+    for (let i = 0; i < 15; i++) {
+      await user.tab()
+      expect(metadata.contains(document.activeElement)).toBe(true)
+    }
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Edit metadata' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Document intelligence' })).toBeVisible()
+  },
+)

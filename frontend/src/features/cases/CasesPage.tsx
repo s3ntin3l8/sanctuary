@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { type CaseCard, useCasesDirectory, useCloseDecision } from '../../api/cases'
 import { daysUntil, formatEur, formatIsoDate, formatShortDate } from '../../format'
+import { overlayOpen } from '../../shell/keys'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'
@@ -39,7 +40,7 @@ export function CasesPage() {
   useEffect(() => {
     document.title = 'Cases | The Sanctuary'
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+      if (!overlayOpen() && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
         event.preventDefault()
         search.current?.focus()
       }
@@ -70,14 +71,14 @@ export function CasesPage() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
+      <header className="flex flex-wrap items-center gap-4 border-b border-line bg-panel px-6 py-4">
         <div>
           <h1 className="font-display text-[22px] font-extrabold tracking-tight">Cases</h1>
           <p className="font-mono text-[11px] text-muted">
             {counts.all} total · {counts.active} active
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 rounded-[9px] border border-line bg-panel2 px-3 py-1.5">
             <Icon name="filter_list" size={16} className="text-muted" />
             <input
@@ -106,7 +107,7 @@ export function CasesPage() {
         </div>
       </header>
 
-      <div className="flex gap-2 px-6 py-3">
+      <div className="flex flex-wrap gap-2 px-6 py-3">
         {(['active', 'dormant', 'closed', 'all'] as const).map((f) => (
           <Chip key={f} active={filter === f} count={counts[f]} onClick={() => setFilter(f)}>
             {f[0]?.toUpperCase() + f.slice(1)}
@@ -116,34 +117,47 @@ export function CasesPage() {
 
       <div className="px-6 pb-6">
         <div
-          className={`${GRID} rounded-t-lg border border-line bg-panel2 px-3 py-2 text-[9.5px] font-extrabold tracking-[.1em] text-muted uppercase`}
+          role="region"
+          aria-label="Cases table"
+          tabIndex={0}
+          className="overflow-x-auto rounded-lg"
         >
-          <span />
-          <span>Case</span>
-          <span>Title</span>
-          <span>Forum</span>
-          <span>Status</span>
-          <span>Next deadline</span>
-          <span className="text-right">Exposure</span>
-          <span className="text-right">Docs</span>
-          <span />
+          <div className="min-w-[1050px]">
+            <div
+              className={`${GRID} rounded-t-lg border border-line bg-panel2 px-3 py-2 text-[9.5px] font-extrabold tracking-[.1em] text-muted uppercase`}
+            >
+              <span />
+              <span>Case</span>
+              <span>Title</span>
+              <span>Forum</span>
+              <span>Status</span>
+              <span>Next deadline</span>
+              <span className="text-right">Exposure</span>
+              <span className="text-right">Docs</span>
+              <span />
+            </div>
+            {directory.isPending && (
+              <p className="px-3 py-6 text-[12px] text-muted">Loading cases…</p>
+            )}
+            {directory.error && (
+              <p role="alert" className="px-3 py-6 text-[12px] text-danger">
+                {directory.error.message}
+              </p>
+            )}
+            {directory.data && rows.length === 0 && (
+              <p className="border border-t-0 border-line px-3 py-8 text-center text-[12px] text-muted">
+                {cards.length === 0
+                  ? 'No cases yet. Create one to get started.'
+                  : 'No cases match.'}
+              </p>
+            )}
+            <ul className="divide-y divide-line2 border border-t-0 border-line">
+              {rows.map((card) => (
+                <CaseRow key={card.id} card={card} />
+              ))}
+            </ul>
+          </div>
         </div>
-        {directory.isPending && <p className="px-3 py-6 text-[12px] text-muted">Loading cases…</p>}
-        {directory.error && (
-          <p role="alert" className="px-3 py-6 text-[12px] text-danger">
-            {directory.error.message}
-          </p>
-        )}
-        {directory.data && rows.length === 0 && (
-          <p className="border border-t-0 border-line px-3 py-8 text-center text-[12px] text-muted">
-            {cards.length === 0 ? 'No cases yet. Create one to get started.' : 'No cases match.'}
-          </p>
-        )}
-        <ul className="divide-y divide-line2 border border-t-0 border-line">
-          {rows.map((card) => (
-            <CaseRow key={card.id} card={card} />
-          ))}
-        </ul>
       </div>
       <CreateCaseModal open={creating} onClose={() => setCreating(false)} />
     </div>

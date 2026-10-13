@@ -54,10 +54,10 @@ export function CaseCardTile({
     <Link
       to={caseHref(card)}
       {...(navRow ? { [ROW_ATTR]: '' } : {})}
-      className={`rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40 focus-visible:border-accent focus-visible:outline-none ${wide ? 'grid grid-cols-2 gap-6' : 'flex flex-col gap-2'}`}
+      className={`rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40 focus-visible:border-accent focus-visible:outline-none ${wide ? 'grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2 @min-[640px]:gap-6' : 'flex flex-col gap-2'}`}
     >
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-[11px] font-semibold text-tealink">{card.id}</span>
           <SignificanceDot tier={card.max_significance} />
           {card.new_docs > 0 && <Badge tone="accent">+{card.new_docs} new</Badge>}
@@ -87,7 +87,7 @@ export function CaseCardTile({
         ) : (
           <div className="text-[11px] text-muted2">No open action</div>
         )}
-        <div className="flex items-center gap-3 border-t border-line2 pt-2 font-mono text-[10px] text-muted">
+        <div className="flex flex-wrap items-center gap-3 border-t border-line2 pt-2 font-mono text-[10px] text-muted">
           <span>{formatEur(card.exposure_eur)}</span>
           <span>{card.doc_count} docs</span>
           <span className={`ml-auto ${card.is_dormant ? 'text-danger' : ''}`}>
@@ -96,7 +96,7 @@ export function CaseCardTile({
         </div>
       </div>
       {wide && (
-        <div className="flex min-w-0 flex-col gap-1.5 border-l border-line2 pl-6">
+        <div className="flex min-w-0 flex-col gap-1.5 border-t border-line2 pt-3 @min-[640px]:border-t-0 @min-[640px]:border-l @min-[640px]:pt-0 @min-[640px]:pl-6">
           <div className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
             Coming up
           </div>

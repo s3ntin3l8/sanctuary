@@ -16,6 +16,7 @@ const sizes = {
   sm: 'rounded-md px-2.5 py-1 text-[10.5px]',
   md: 'rounded-lg px-3 py-1.5 text-[11.5px]',
   lg: 'rounded-[9px] px-4 py-2.5 text-[13px]',
+  form: 'min-h-[38px] rounded-[9px] px-3 py-2 text-[13px] leading-[20px]',
   icon: 'h-7 w-7 rounded-[7px] p-0 text-[11.5px]',
 }
 

@@ -1,4 +1,6 @@
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useOverlay } from './useOverlay'
 
 type Props = {
   open: boolean
@@ -27,35 +29,64 @@ export function Popover({
   children,
 }: Props) {
   const root = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState({ left: 0, top: 0 })
+  useOverlay(open, panel, onClose, false)
+  const positionPanel = useEffectEvent(() => {
+    if (!root.current || !panel.current) return
+    const anchor = root.current.getBoundingClientRect()
+    const height = panel.current.getBoundingClientRect().height
+    setPosition({
+      left: anchor.right + 8,
+      top: Math.max(8, Math.min(anchor.bottom - height, window.innerHeight - height - 8)),
+    })
+  })
+  useLayoutEffect(() => {
+    if (open) positionPanel()
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     const onDown = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) onClose()
+      if (
+        !root.current?.contains(event.target as Node) &&
+        !panel.current?.contains(event.target as Node)
+      )
+        onClose()
     }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+    const onScroll = (event: Event) => {
+      if (!panel.current?.contains(event.target as Node)) positionPanel()
     }
+    const observer = new ResizeObserver(() => positionPanel())
+    if (panel.current) observer.observe(panel.current)
     window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onClose)
+    window.addEventListener('scroll', onScroll, true)
     return () => {
+      observer.disconnect()
       window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onClose)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [open, onClose])
 
   return (
-    <div ref={root} className="relative">
+    <div ref={root} className="relative shrink-0">
       {anchor}
-      {open && (
-        <div
-          role={role}
-          aria-label={label}
-          className={`absolute bottom-0 left-12 z-110 rounded-xl border border-line bg-card shadow-[0_20px_50px_rgba(0,0,0,.5)] ${className}`}
-        >
-          {children}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            tabIndex={-1}
+            style={position}
+            role={role}
+            aria-label={label}
+            className={`fixed z-110 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-line bg-card shadow-[0_20px_50px_rgba(0,0,0,.5)] ${className}`}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

@@ -14,7 +14,7 @@ type Props = {
 }
 
 const base =
-  'relative flex h-10 w-10 items-center justify-center rounded-[11px] text-muted transition-colors hover:bg-accent/7 hover:text-ink'
+  'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] text-muted transition-colors hover:bg-accent/7 hover:text-ink'
 
 /**
  * One 40×40 rail control. `to` renders a link (`legacy` forces a full page

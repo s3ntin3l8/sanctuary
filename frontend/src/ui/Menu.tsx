@@ -1,5 +1,6 @@
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useOverlay } from './useOverlay'
 
 type Props = {
   open: boolean
@@ -35,6 +36,8 @@ export function Menu({
   const panel = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>()
 
+  useOverlay(open && !!pos, panel, onClose, false)
+
   useLayoutEffect(() => {
     const el = anchorRef.current
     if (!open || !el) return
@@ -50,10 +53,6 @@ export function Menu({
 
   useEffect(() => {
     if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
     window.addEventListener('resize', onClose)
     // A scrolling panel must not close itself; anything else moving the page does.
     const onScroll = (event: Event) => {
@@ -61,7 +60,6 @@ export function Menu({
     }
     window.addEventListener('scroll', onScroll, true)
     return () => {
-      window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', onClose)
       window.removeEventListener('scroll', onScroll, true)
     }
@@ -80,6 +78,7 @@ export function Menu({
       />
       <div
         ref={panel}
+        tabIndex={-1}
         role={role}
         aria-label={label}
         style={pos}
