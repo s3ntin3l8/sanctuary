@@ -1,6 +1,18 @@
 import { type RefObject, useLayoutEffect, useEffectEvent } from 'react'
 
-const overlays: { root: HTMLElement; opener: HTMLElement | null }[] = []
+type OverlayEntry = { root: HTMLElement; opener: HTMLElement | null; detach: () => void }
+// Ordering matters: responsive parents must be inserted below their open descendants.
+const overlays: OverlayEntry[] = []
+function removeOverlay(entry: OverlayEntry) {
+  entry.detach()
+  const index = overlays.indexOf(entry)
+  if (index >= 0) overlays.splice(index, 1)
+}
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    for (const entry of [...overlays]) removeOverlay(entry)
+  })
+}
 const focusable =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
@@ -16,7 +28,10 @@ export function useOverlay(
     const root = panel.current
     if (!open || !root) return
     const opener = document.activeElement as HTMLElement | null
-    const entry = { root, opener }
+    for (const other of [...overlays]) {
+      if (!other.root.isConnected || other.root === root) removeOverlay(other)
+    }
+    const entry: OverlayEntry = { root, opener, detach: () => {} }
     // A responsive parent can become modal while a descendant dialog is already open.
     const childIndex = overlays.findIndex(
       (other) =>
@@ -41,7 +56,7 @@ export function useOverlay(
     if (topmost()) first().focus()
     let focusedInside = root.contains(document.activeElement)
     const onKey = (event: KeyboardEvent) => {
-      if (!topmost()) return
+      if (!root.isConnected || !topmost()) return
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopImmediatePropagation()
@@ -57,16 +72,19 @@ export function useOverlay(
       }
     }
     const onFocus = (event: FocusEvent) => {
+      if (!root.isConnected) return
       if (topmost()) focusedInside = root.contains(event.target as Node)
       if (modal && topmost() && !root.contains(event.target as Node)) first().focus()
     }
     window.addEventListener('keydown', onKey, true)
     document.addEventListener('focusin', onFocus)
-    return () => {
-      const wasTop = topmost()
-      overlays.splice(overlays.indexOf(entry), 1)
+    entry.detach = () => {
       window.removeEventListener('keydown', onKey, true)
       document.removeEventListener('focusin', onFocus)
+    }
+    return () => {
+      const wasTop = topmost()
+      removeOverlay(entry)
       if (wasTop && opener?.isConnected && (modal || focusedInside)) {
         opener.focus()
       }

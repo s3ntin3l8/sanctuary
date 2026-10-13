@@ -10,7 +10,7 @@ type Props = { docId: number; pins: Pin[]; article: RefObject<HTMLElement | null
 
 /** Margin notes anchored beside the highlighted passage they belong to. */
 export function PinGutter({ docId, pins, article }: Props) {
-  const inline = !useMediaQuery('(min-width: 1280px)')
+  const compact = !useMediaQuery('(min-width: 1280px)')
   const [expanded, setExpanded] = useState(false)
   const [tops, setTops] = useState<Record<number, number | null>>({})
   const cards = useRef<Record<number, HTMLElement | null>>({})
@@ -44,31 +44,31 @@ export function PinGutter({ docId, pins, article }: Props) {
     const ro = new ResizeObserver(place)
     ro.observe(root)
     return () => ro.disconnect()
-  }, [pins, article, inline])
+  }, [pins, article, compact])
 
   if (pins.length === 0) return null
   return (
     <details
-      open={!inline || expanded}
+      open={!compact || expanded}
       onToggle={(event) => {
-        if (inline) setExpanded(event.currentTarget.open)
+        if (compact) setExpanded(event.currentTarget.open)
       }}
       className={
-        inline ? 'mt-6 rounded-xl border border-line bg-card2 p-3' : 'absolute top-6 left-4 w-48'
+        compact ? 'mt-6 rounded-xl border border-line bg-card2 p-3' : 'absolute top-6 left-4 w-48'
       }
       aria-label="Pins"
     >
-      <summary className={inline ? 'cursor-pointer text-[12px] font-semibold' : 'hidden'}>
+      <summary className={compact ? 'cursor-pointer text-[12px] font-semibold' : 'hidden'}>
         Pins ({pins.length})
       </summary>
-      <div className={inline ? 'mt-3 grid grid-cols-2 gap-3' : 'relative'}>
+      <div className={compact ? 'mt-3 grid grid-cols-2 gap-3' : 'relative'}>
         {pins.map((p) => (
           <PinCard
             key={p.id}
             docId={docId}
             pin={p}
             top={tops[p.id]}
-            inline={inline}
+            compact={compact}
             ref={(el) => {
               cards.current[p.id] = el
             }}
@@ -83,13 +83,13 @@ function PinCard({
   docId,
   pin,
   top,
-  inline = false,
+  compact = false,
   ref,
 }: {
   docId: number
   pin: Pin
   top: number | null | undefined
-  inline?: boolean
+  compact?: boolean
   ref: (el: HTMLElement | null) => void
 }) {
   const update = useUpdatePin(docId)
@@ -107,8 +107,8 @@ function PinCard({
     <article
       ref={ref}
       data-pin-id={pin.id}
-      className={`${inline ? 'relative min-w-0' : 'absolute left-0 w-48'} rounded-lg border bg-card2 p-2 text-[11px] shadow-sm transition-[top] ${unmatched ? 'border-warning/50' : 'border-line'}`}
-      style={inline ? undefined : { top: top ?? 0 }}
+      className={`${compact ? 'relative min-w-0' : 'absolute left-0 w-48'} rounded-lg border bg-card2 p-2 text-[11px] shadow-sm transition-[top] ${unmatched ? 'border-warning/50' : 'border-line'}`}
+      style={compact ? undefined : { top: top ?? 0 }}
     >
       <header className="mb-1 flex items-center gap-1 text-muted">
         <Icon name="push_pin" size={12} className="text-warning" />

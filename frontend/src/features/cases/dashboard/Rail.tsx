@@ -43,7 +43,7 @@ export function Rail({
   return (
     <aside
       aria-label="Case brief"
-      className="flex w-full shrink-0 xl:w-[270px] flex-col gap-3 overflow-y-auto border-l border-line bg-panel2 p-3.5 text-[12px]"
+      className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-line bg-panel2 p-3.5 text-[12px] xl:w-[270px]"
     >
       <section className="rounded-xl border border-line bg-gradient-to-br from-aibg to-card p-3.5">
         <header className="mb-2 flex items-center gap-1.5">

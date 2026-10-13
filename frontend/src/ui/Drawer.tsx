@@ -23,6 +23,8 @@ export function Drawer({
   children: ReactNode
 }) {
   const panel = useRef<HTMLDivElement>(null)
+  // Derive visibility and modal ownership from the same render inputs below.
+  // Delaying either with a separate effect can leave a hidden panel owning focus.
   useOverlay(open && !inline, panel, onClose)
   if (!open && !inline && !keepMounted) return null
   // Keep the same subtree across breakpoints, including chat drafts and conversation state.

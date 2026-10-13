@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, useEffect, useRef } from 'react'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { Drawer } from './Drawer'
 import { Modal } from './Modal'
@@ -106,4 +106,25 @@ test('a child that autofocuses after mounting does not replace the drawer opener
   expect(screen.getByLabelText('Composer')).toHaveFocus()
   await user.keyboard('{Escape}')
   expect(opener).toHaveFocus()
+})
+
+test('late cleanup of a detached overlay leaves the active dialog in control', async () => {
+  const first = render(
+    <Modal open onClose={() => {}} title="Detached">
+      <input aria-label="Old field" />
+    </Modal>,
+  )
+  // Simulate an incomplete external unmount before React runs its effect cleanup.
+  screen.getByRole('dialog', { name: 'Detached' }).remove()
+  const close = vi.fn()
+  render(
+    <Modal open onClose={close} title="Active">
+      <input aria-label="Current field" />
+    </Modal>,
+  )
+  first.unmount()
+  const user = userEvent.setup()
+  expect(screen.getByLabelText('Current field')).toHaveFocus()
+  await user.keyboard('{Escape}')
+  expect(close).toHaveBeenCalledOnce()
 })
