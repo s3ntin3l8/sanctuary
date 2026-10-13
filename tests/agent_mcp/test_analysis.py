@@ -378,16 +378,27 @@ def test_triage_inbox_shows_only_the_callers_own_bundles(
     assert bundles[0]["documents"][0]["document"]["title"] == "Alices Post 1"
 
 
-def test_triage_inbox_names_the_case_of_a_confirmed_bundle(
-    mcp_session, make_token, alice, world, db_session
+@pytest.mark.parametrize("state", ["suggested", "draft", "confirmed"])
+def test_triage_inbox_names_the_case_in_every_state(
+    state, mcp_session, make_token, alice, world, db_session
 ):
+    """case_title is filled whichever way the bundle points at its case, and a
+    bundle never carries a confirmed and a suggested case at once."""
     _inbox_batch(db_session, alice.id, "Post")
     batch = db_session.query(IngestBatch).filter_by(subject="Post").one()
-    batch.case_id = "A-1"
+    case = db_session.get(Case, "A-1")
+    if state == "suggested":  # the pipeline filed a document, nobody confirmed it
+        db_session.query(Document).filter_by(ingest_batch_id=batch.id).update(
+            {"case_id": "A-1"}
+        )
+    else:
+        batch.case_id = "A-1"
+        case.is_draft = state == "draft"
     db_session.commit()
     error, out = mcp_session(make_token(alice)).call("list_triage_inbox")
     assert not error
     (bundle,) = [b for b in _result(out) if b["subject"] == "Post"]
-    assert bundle["confirmed_case_id"] == "A-1"
-    assert bundle["suggested_case_id"] is None
-    assert bundle["case_title"] == db_session.get(Case, "A-1").title
+    assert bundle["case_title"] == case.title
+    expected_suggested = "A-1" if state in ("suggested", "draft") else None
+    assert bundle["suggested_case_id"] == expected_suggested
+    assert bundle["confirmed_case_id"] == (None if expected_suggested else "A-1")

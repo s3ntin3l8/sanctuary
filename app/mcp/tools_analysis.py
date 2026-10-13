@@ -352,6 +352,8 @@ def list_triage_inbox(
             status=b.mock_status,
             suggested_case_id=b.suggested_case_id,
             confirmed_case_id=b.confirmed_case_id,
+            # Despite the name, enrich_bundles fills this for a confirmed case too
+            # (triage_bundles.py, the confirmed non-draft branch).
             case_title=b.suggested_case_title,
             document_count=b.doc_count,
             documents=[
