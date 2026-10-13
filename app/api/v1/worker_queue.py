@@ -139,11 +139,12 @@ def queue_view(db: Session, user: User) -> QueueView:
             completed_at=ensure_utc(row.completed_at),
             duration_ms=(
                 int((row.completed_at - row.started_at).total_seconds() * 1000)
-                if row.started_at and row.completed_at
+                if row.started_at
                 else None
             ),
         )
         for row, doc in recent_completed_stages(db, owner_id=user.id)
+        if row.completed_at is not None
     ]
     gmail_import = gmail_import_status.recent_import_status(user.id)
     # Messages an import has yet to fetch are queued work too, so the rail badge
