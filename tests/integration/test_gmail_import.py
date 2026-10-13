@@ -177,11 +177,36 @@ def test_groups_show_the_case_they_would_file_into(db_session):
     _index(db_session, uid, "c", "9001/24 no case yet", 3)
 
     matched = {
-        g["key"]: g["matched_case_id"]
+        g["key"]: (g["matched_case_id"], g["matched_case_title"])
         for g in client.get("/api/v1/gmail/groups").json()["groups"]
     }
 
-    assert matched == {"8372-25": "8372-25", "3 F 426/25": "ADV-1", "9001-24": None}
+    assert matched == {
+        "8372-25": ("8372-25", "Vogt"),
+        "3 F 426/25": ("ADV-1", "Other"),
+        "9001-24": (None, None),
+    }
+
+
+def test_groups_carry_the_newest_subjects_topic(db_session):
+    uid = _admin(db_session)
+    _index(db_session, uid, "a", "8372/25 - Vogt ./. Vogt - alt", 1)
+    _index(
+        db_session, uid, "b", "8372/25 - Vogt ./. Vogt - wg. Sorge - 003 F 426/25", 2
+    )
+    _index(db_session, uid, "c", "9001/24", 3)
+    _index(db_session, uid, "n", "no reference", 4)
+
+    topics = {
+        g["key"]: g["topic"]
+        for g in client.get("/api/v1/gmail/groups").json()["groups"]
+    }
+
+    assert topics == {
+        "8372-25": "Vogt ./. Vogt - wg. Sorge",
+        "9001-24": None,
+        "unreferenced": None,
+    }
 
 
 def test_ingested_is_derived_from_batches_and_flips_back_on_delete(db_session):

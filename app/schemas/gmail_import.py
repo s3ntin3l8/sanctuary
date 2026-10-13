@@ -31,6 +31,9 @@ class GmailGroup(BaseModel):
     kind: Literal["internal_id", "az_court"] | None
     # Existing case this group files into on import (None = no case yet).
     matched_case_id: str | None
+    matched_case_title: str | None
+    # What the newest subject says besides the references ("Hansen ./. Liu - wg. Sorge").
+    topic: str | None
     count: int
     ingested_count: int
     first_at: datetime

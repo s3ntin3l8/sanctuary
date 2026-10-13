@@ -10,7 +10,7 @@ type Props = {
   open: boolean
   onClose: () => void
   /** Prefill (e.g. from an import-history reference). */
-  defaults?: { caseId?: string; azCourt?: string }
+  defaults?: { caseId?: string; azCourt?: string; title?: string }
   /** Called instead of navigating to the new case, so the caller keeps its page. */
   onCreated?: (id: string) => void
 }
@@ -56,7 +56,13 @@ export function CreateCaseModal({ open, onClose, defaults, onCreated }: Props) {
           defaultValue={defaults?.caseId}
           hint="Short internal identifier; it leads everywhere (URLs, chat, reports)."
         />
-        <TextField label="Title" name="title" required placeholder="Weber ./. Weber" />
+        <TextField
+          label="Title"
+          name="title"
+          required
+          placeholder="Weber ./. Weber"
+          defaultValue={defaults?.title}
+        />
         <TextField
           label="Court"
           name="court_name"

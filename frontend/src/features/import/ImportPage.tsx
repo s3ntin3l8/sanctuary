@@ -42,6 +42,52 @@ function referenceLabel(group: Group) {
   return group.kind === 'internal_id' ? group.key.replace('-', '/') : group.key
 }
 
+type CaseBucket = { id: string; title: string; groups: Group[] }
+
+/** Referenced groups split by whether a case exists; groups sharing a case nest together. */
+function sectionGroups(groups: Group[]) {
+  const buckets = new Map<string, CaseBucket>()
+  const noCase: Group[] = []
+  let unreferenced: Group | undefined
+  for (const g of groups) {
+    if (g.key === 'unreferenced') unreferenced = g
+    else if (g.matched_case_id) {
+      const bucket = buckets.get(g.matched_case_id) ?? {
+        id: g.matched_case_id,
+        title: g.matched_case_title ?? '',
+        groups: [],
+      }
+      bucket.groups.push(g)
+      buckets.set(g.matched_case_id, bucket)
+    } else noCase.push(g)
+  }
+  return { cases: [...buckets.values()], noCase, unreferenced }
+}
+
+function bucketTotals(bucket: CaseBucket) {
+  const firsts = bucket.groups.map((g) => g.first_at).sort()
+  const lasts = bucket.groups.map((g) => g.last_at).sort()
+  return {
+    count: bucket.groups.reduce((sum, g) => sum + g.count, 0),
+    ingested: bucket.groups.reduce((sum, g) => sum + g.ingested_count, 0),
+    first: firsts[0],
+    last: lasts[lasts.length - 1],
+  }
+}
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <tr className="border-b border-line2 bg-panel2/30">
+      <th
+        colSpan={5}
+        className="px-4 py-1.5 text-left text-[10px] font-extrabold tracking-[.12em] text-muted uppercase"
+      >
+        {label}
+      </th>
+    </tr>
+  )
+}
+
 function GroupMessages({
   group,
   selected,
@@ -153,6 +199,7 @@ export function ImportPage() {
   const imported = groups.reduce((sum, g) => sum + g.ingested_count, 0)
   const importing = run?.active ?? false
   const ready = gmail.connected && (gmail.allowlist.length > 0 || gmail.label_filter.trim() !== '')
+  const sections = sectionGroups(groups)
   const scope = groups.find((g) => g.key === expanded)
   const oldestN = Math.min(100, Math.max(1, parseInt(oldestInput, 10) || 1))
 
@@ -196,6 +243,70 @@ export function ImportPage() {
       },
       onError: (err) => toast(err.message, 'error'),
     })
+  }
+
+  function renderGroup(g: Group, nested: boolean) {
+    const open = expanded === g.key
+    return (
+      <Fragment key={g.key}>
+        <tr className="border-b border-line2 hover:bg-panel2/40">
+          <td className={nested ? 'py-2 pr-4 pl-9' : 'px-4 py-2'}>
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={`${open ? 'Collapse' : 'Expand'} ${referenceLabel(g)}`}
+              onClick={() => toggleGroup(g.key)}
+              className="flex items-center gap-1.5 font-mono font-semibold"
+            >
+              <Icon name={open ? 'expand_more' : 'chevron_right'} size={16} />
+              {referenceLabel(g)}
+              {g.kind && (
+                <Badge className="ml-1">{g.kind === 'internal_id' ? 'file no.' : 'court'}</Badge>
+              )}
+            </button>
+          </td>
+          <td className="max-w-[320px] px-2 py-2">
+            {g.matched_case_id || g.key === 'unreferenced' ? null : g.topic ? (
+              <span className="block truncate text-muted" title={g.topic}>
+                {g.topic}
+              </span>
+            ) : (
+              <span className="text-muted">no case yet</span>
+            )}
+          </td>
+          <td className="px-2 py-2 text-right font-mono">{g.count}</td>
+          <td className="px-2 py-2 text-right font-mono">
+            {g.ingested_count}/{g.count}
+          </td>
+          <td className="px-4 py-2 text-right font-mono text-muted">
+            {formatIsoDate(g.first_at)} – {formatIsoDate(g.last_at)}
+          </td>
+        </tr>
+        {open && (
+          <tr>
+            <td colSpan={5} className="p-0">
+              {!g.matched_case_id && g.key !== 'unreferenced' && (
+                <div className="flex items-center gap-3 px-4 py-2 text-muted">
+                  <p>
+                    No case for {referenceLabel(g)} yet — create it first and its mail is filed into
+                    it automatically on import.
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={() => setCreatingFor(g)}>
+                    Create case
+                  </Button>
+                </div>
+              )}
+              <GroupMessages
+                group={g}
+                selected={selected}
+                onToggle={toggleMessage}
+                onSetMany={setMany}
+              />
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    )
   }
 
   return (
@@ -327,79 +438,40 @@ export function ImportPage() {
               </tr>
             </thead>
             <tbody>
-              {groups.map((g) => {
-                const open = expanded === g.key
+              {sections.cases.length > 0 && <SectionHeader label="In a case" />}
+              {sections.cases.map((bucket) => {
+                const totals = bucketTotals(bucket)
                 return (
-                  <Fragment key={g.key}>
-                    <tr className="border-b border-line2 hover:bg-panel2/40">
-                      <td className="px-4 py-2">
-                        <button
-                          type="button"
-                          aria-expanded={open}
-                          aria-label={`${open ? 'Collapse' : 'Expand'} ${referenceLabel(g)}`}
-                          onClick={() => toggleGroup(g.key)}
-                          className="flex items-center gap-1.5 font-mono font-semibold"
-                        >
-                          <Icon name={open ? 'expand_more' : 'chevron_right'} size={16} />
-                          {referenceLabel(g)}
-                          {g.kind && (
-                            <Badge className="ml-1">
-                              {g.kind === 'internal_id' ? 'file no.' : 'court'}
-                            </Badge>
-                          )}
-                        </button>
+                  <Fragment key={bucket.id}>
+                    <tr className="border-b border-line2 bg-panel2/20">
+                      <td colSpan={2} className="px-4 py-2">
+                        <Link to={`/cases/${bucket.id}`} className="flex items-center gap-2">
+                          <Badge tone="accent" mono>
+                            {bucket.id}
+                          </Badge>
+                          <span className="font-semibold">{bucket.title}</span>
+                        </Link>
                       </td>
-                      <td className="px-2 py-2">
-                        {g.matched_case_id ? (
-                          <Link to={`/cases/${g.matched_case_id}`}>
-                            <Badge tone="accent" mono>
-                              {g.matched_case_id}
-                            </Badge>
-                          </Link>
-                        ) : g.key === 'unreferenced' ? (
-                          <span className="text-muted">—</span>
-                        ) : (
-                          <span className="text-muted">no case yet</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono">{g.count}</td>
+                      <td className="px-2 py-2 text-right font-mono">{totals.count}</td>
                       <td className="px-2 py-2 text-right font-mono">
-                        {g.ingested_count}/{g.count}
+                        {totals.ingested}/{totals.count}
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-muted">
-                        {formatIsoDate(g.first_at)} – {formatIsoDate(g.last_at)}
+                        {formatIsoDate(totals.first)} – {formatIsoDate(totals.last)}
                       </td>
                     </tr>
-                    {open && (
-                      <tr>
-                        <td colSpan={5} className="p-0">
-                          {!g.matched_case_id && g.key !== 'unreferenced' && (
-                            <div className="flex items-center gap-3 px-4 py-2 text-muted">
-                              <p>
-                                No case for {referenceLabel(g)} yet — create it first and its mail
-                                is filed into it automatically on import.
-                              </p>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => setCreatingFor(g)}
-                              >
-                                Create case
-                              </Button>
-                            </div>
-                          )}
-                          <GroupMessages
-                            group={g}
-                            selected={selected}
-                            onToggle={toggleMessage}
-                            onSetMany={setMany}
-                          />
-                        </td>
-                      </tr>
-                    )}
+                    {bucket.groups.map((g) => renderGroup(g, true))}
                   </Fragment>
                 )
               })}
+              {sections.noCase.length > 0 && <SectionHeader label="No case yet" />}
+              {sections.noCase.map((g) => renderGroup(g, false))}
+              {sections.unreferenced && (
+                <>
+                  <SectionHeader label="Without a reference" />
+                  {renderGroup(sections.unreferenced, false)}
+                </>
+              )}
             </tbody>
           </table>
         </>
@@ -418,8 +490,8 @@ export function ImportPage() {
           onClose={() => setCreatingFor(null)}
           defaults={
             creatingFor.kind === 'internal_id'
-              ? { caseId: creatingFor.key }
-              : { azCourt: creatingFor.key }
+              ? { caseId: creatingFor.key, title: creatingFor.topic ?? undefined }
+              : { azCourt: creatingFor.key, title: creatingFor.topic ?? undefined }
           }
           onCreated={(id) => {
             setCreatingFor(null)

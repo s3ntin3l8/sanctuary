@@ -4684,6 +4684,10 @@ export interface components {
             last_at: string;
             /** Matched Case Id */
             matched_case_id: string | null;
+            /** Matched Case Title */
+            matched_case_title: string | null;
+            /** Topic */
+            topic: string | null;
         };
         /** GmailGroupList */
         GmailGroupList: {
