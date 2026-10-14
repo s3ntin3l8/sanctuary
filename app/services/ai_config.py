@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import secrets
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 from app.config import (
     AI_API_KEY,
@@ -20,6 +18,7 @@ from app.config import (
 from app.core import secrets as secrets_store
 from app.models.enums import AuditEventType
 from app.services import audit_service
+from app.services.ai_provider import normalize_base_url
 
 
 @dataclass(frozen=True)
@@ -76,26 +75,6 @@ def _env_defaults() -> dict:
 
 def _make_id() -> str:
     return "inst_" + secrets.token_hex(4)
-
-
-_LOCAL_SUFFIXES = (".local", ".lan", ".internal", ".home", ".home.arpa")
-
-
-def is_external_endpoint(base_url: str) -> bool:
-    """True if base_url points at the public internet (warn about data egress).
-
-    Trusted (no warning): loopback, RFC1918/ULA private ranges, link-local, and
-    ``*.local``-style names — i.e. this machine and the user's own LAN. Anything
-    that resolves to a public IP or a public DNS name is treated as external.
-    """
-    host = (urlparse(base_url).hostname or "").lower()
-    if not host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
-        return False
-    try:
-        return ipaddress.ip_address(host).is_global
-    except ValueError:
-        # A non-local hostname (public DNS like api.openai.com) → external.
-        return True
 
 
 # Placeholder stored for endpoints that need no key. Not a secret, so it is
@@ -173,7 +152,7 @@ def get_chat_config(db=None) -> ChatConfig:
     return ChatConfig(
         id=inst.get("id", ""),
         label=inst.get("label", "Default"),
-        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        base_url=normalize_base_url(inst.get("base_url") or env["base_url"]),
         provider=(inst.get("provider") or env["provider"]).strip(),
         api_key=(inst.get("api_key") or env["api_key"]).strip(),
         summary_model=(inst.get("summary_model") or env["summary_model"]).strip(),
@@ -188,7 +167,7 @@ def get_embed_config(db=None) -> EmbedConfig:
     return EmbedConfig(
         id=inst.get("id", ""),
         label=inst.get("label", "Default"),
-        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        base_url=normalize_base_url(inst.get("base_url") or env["base_url"]),
         provider=(inst.get("provider") or env["provider"]).strip(),
         api_key=(inst.get("api_key") or env["api_key"]).strip(),
         embed_model=(inst.get("embed_model") or env["embed_model"]).strip(),
@@ -208,7 +187,7 @@ def get_ocr_config(db=None) -> OcrConfig:
     return OcrConfig(
         id=inst.get("id", ""),
         label=inst.get("label", "Default"),
-        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        base_url=normalize_base_url(inst.get("base_url") or env["base_url"]),
         provider=(inst.get("provider") or env["provider"]).strip(),
         api_key=(inst.get("api_key") or env["api_key"]).strip(),
         ocr_model=(inst.get("ocr_model") or "").strip(),

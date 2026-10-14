@@ -1385,7 +1385,7 @@ class HomeBriefing(Base):
     priorities: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     model_label: Mapped[str | None] = mapped_column(String, nullable=True)
     # True when the generating endpoint was on the public internet
-    # (ai_config.is_external_endpoint); the card must not claim "local" then.
+    # (ai_provider.is_external_endpoint); the card must not claim "local" then.
     external: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=_sa_text("false")
     )

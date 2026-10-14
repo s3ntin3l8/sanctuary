@@ -11,6 +11,7 @@ from app.services.ai_provider import (
     ProviderType,
     _make_openai_strict,
     detect_provider,
+    normalize_base_url,
     sanitize_provider_error,
 )
 
@@ -616,3 +617,107 @@ def test_make_openai_strict_real_pydantic_schema():
             assert sorted(definition["required"]) == sorted(
                 definition["properties"].keys()
             ), f"$defs.{name} required mismatch"
+
+
+# ---------------------------------------------------------------------------
+# Hosted endpoints: base-URL normalisation and payload hygiene
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://api.anthropic.com/v1", "https://api.anthropic.com"),
+        ("https://api.openai.com/v1/", "https://api.openai.com"),
+        ("  http://localhost:11434/ ", "http://localhost:11434"),
+        ("http://localhost:1234", "http://localhost:1234"),
+        ("", ""),
+        ("   ", ""),
+        ("https://example.com/v1beta", "https://example.com/v1beta"),
+    ],
+)
+def test_normalize_base_url(raw, expected):
+    assert normalize_base_url(raw) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_generate_params_hosted_endpoint_omits_local_only_fields():
+    p = AIProvider()
+    p.provider = "lmstudio"
+    p.base_url = "https://api.openai.com"
+
+    params = await p.get_generate_params(
+        "gpt-4o",
+        "Hello",
+        options={"top_p": 0.9, "top_k": 20, "min_p": 0.0, "_enable_thinking": False},
+    )
+
+    body = params["json"]
+    assert "max_tokens" not in body
+    assert "top_k" not in body
+    assert "min_p" not in body
+    assert "chat_template_kwargs" not in body
+    assert body["top_p"] == 0.9
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_generate_params_local_endpoint_keeps_sampler_fields():
+    p = AIProvider()
+    p.provider = "lmstudio"
+    p.base_url = "http://localhost:1234"
+
+    params = await p.get_generate_params(
+        "qwen",
+        "Hello",
+        options={
+            "top_k": 20,
+            "min_p": 0.0,
+            "max_tokens": 500,
+            "_enable_thinking": False,
+        },
+    )
+
+    body = params["json"]
+    assert body["top_k"] == 20
+    assert body["min_p"] == 0.0
+    assert body["max_tokens"] == 500
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_detect_provider_ollama_wins_over_its_openai_compat_surface():
+    """Ollama also answers /v1/models in OpenAI shape; it must still be Ollama."""
+    tags = MagicMock(status_code=200)
+    tags.json.return_value = {"models": [{"name": "llama3"}]}
+    models = MagicMock(status_code=200)
+    models.json.return_value = {
+        "object": "list",
+        "data": [{"id": "llama3", "owned_by": "library"}],
+    }
+
+    async def fake_get(url, **_):
+        return tags if url.endswith("/api/tags") else models
+
+    with patch("httpx.AsyncClient.get", side_effect=fake_get):
+        result = await detect_provider("http://docker-01:11434")
+
+    assert result == ProviderType.OLLAMA
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_generate_params_hosted_endpoint_without_options_has_no_max_tokens():
+    p = AIProvider()
+    p.provider = "lmstudio"
+    p.base_url = "https://api.openai.com"
+
+    params = await p.get_generate_params("gpt-4o", "Hello")
+
+    assert set(params["json"]) == {"model", "messages", "stream", "temperature"} | {
+        "stream_options"
+    }
+    assert "max_tokens" not in params["json"]

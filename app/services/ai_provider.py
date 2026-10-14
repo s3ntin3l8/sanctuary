@@ -1,8 +1,10 @@
 import copy
+import ipaddress
 import json
 import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import httpx
 
@@ -12,6 +14,43 @@ if TYPE_CHECKING:
     from app.services.ai_config import ChatConfig, EmbedConfig, OcrConfig
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_base_url(url: str) -> str:
+    """Canonical endpoint root: no whitespace, no trailing slash, no `/v1`.
+
+    Every call site appends its own `/v1/...` (or `/api/...` for Ollama), but
+    hosted providers document their base URL *with* `/v1`
+    (`https://api.openai.com/v1`). Stripping it here keeps both spellings working.
+    Only a *trailing* `/v1` goes: gateway paths like `/api/v1/…` stay intact.
+    An empty or blank input yields `""`.
+    """
+    url = url.strip().rstrip("/")
+    if url.endswith("/v1"):
+        url = url[: -len("/v1")].rstrip("/")
+    return url
+
+
+_LOCAL_SUFFIXES = (".local", ".lan", ".internal", ".home", ".home.arpa")
+
+
+def is_external_endpoint(base_url: str) -> bool:
+    """True if base_url points at the public internet (warn about data egress).
+
+    Trusted (no warning): loopback, RFC1918/ULA private ranges, link-local, and
+    ``*.local``-style names and single-label hostnames (``docker-01``, ``ollama``:
+    Docker/LAN short names) — i.e. this machine and the user's own LAN. Anything
+    that resolves to a public IP or a public DNS name is treated as external.
+    """
+    host = (urlparse(base_url).hostname or "").lower()
+    if not host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
+        return False
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        # A dotted non-local hostname (public DNS like api.openai.com) is
+        # external; a dotless one can only resolve on the local network.
+        return "." in host
 
 
 def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
@@ -113,6 +152,9 @@ class ProviderType(StrEnum):
 async def detect_provider(base_url: str, api_key: str | None = None) -> ProviderType:
     """Detect the AI provider by probing endpoints and checking content.
 
+    Ollama is probed first via `/api/tags` (see below); everything else falls
+    through to the OpenAI-shaped `/v1/models`.
+
     LM Studio and llama.cpp's `llama-server` both expose `/v1/models` in the
     OpenAI list shape; llama.cpp distinguishes itself with `owned_by="llamacpp"`
     on each entry (server-models.cpp:1184). The split matters because
@@ -129,6 +171,18 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
         else {}
     )
     async with httpx.AsyncClient(timeout=5.0) as client:
+        # Ollama first: it also serves an OpenAI-compatible /v1/models, so
+        # probing that first would label every Ollama server "lmstudio".
+        # /api/tags with a `models` list is Ollama-only (others 404 here).
+        try:
+            resp = await client.get(f"{base_url}/api/tags", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and "models" in data:
+                    return ProviderType.OLLAMA
+        except Exception as e:
+            logger.debug(f"Ollama probe failed at {base_url}: {e}")
+
         try:
             resp = await client.get(f"{base_url}/v1/models", headers=headers)
             if resp.status_code == 200:
@@ -149,15 +203,6 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
         except Exception as e:
             logger.debug(f"OpenAI probe failed at {base_url}: {e}")
 
-        try:
-            resp = await client.get(f"{base_url}/api/tags")
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict) and "models" in data:
-                    return ProviderType.OLLAMA
-        except Exception as e:
-            logger.debug(f"Ollama probe failed at {base_url}: {e}")
-
     raise RuntimeError(
         f"AI provider unreachable: no endpoint responded at {base_url} "
         "(tried /v1/models for LM Studio / llama.cpp and /api/tags for Ollama "
@@ -168,7 +213,7 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
 class AIProvider:
     def __init__(self, role: str = "chat"):
         self._role = role
-        self.base_url = AI_BASE_URL
+        self.base_url = normalize_base_url(AI_BASE_URL)
         self.provider = AI_PROVIDER
         self.api_key = AI_API_KEY
         self._detected_type: ProviderType | None = None
@@ -283,8 +328,19 @@ class AIProvider:
                 "messages": messages,
                 "stream": stream,
                 "temperature": options.get("temperature", 0.1) if options else 0.1,
-                "max_tokens": options.get("max_tokens", -1) if options else -1,
             }
+            max_tokens = options.get("max_tokens") if options else None
+            if (
+                isinstance(max_tokens, int)
+                and not isinstance(max_tokens, bool)
+                and max_tokens > 0
+            ):
+                # LM Studio's "-1 = unlimited" is rejected by hosted APIs, so
+                # an unset cap is simply omitted.
+                payload["max_tokens"] = max_tokens
+            # Hosted OpenAI-compatible APIs 400 on sampler/template fields they
+            # don't know; local servers (vLLM, LM Studio, llama.cpp) use them.
+            local = not is_external_endpoint(self.base_url)
             if stream:
                 # Many OpenAI-compatible gateways (LiteLLM, vLLM) require this
                 # to send the final usage chunk at the end of the stream.
@@ -299,13 +355,16 @@ class AIProvider:
                     "presence_penalty",
                     "frequency_penalty",
                 ):
+                    if key in ("top_k", "min_p") and not local:
+                        continue
                     if key in options:
                         payload[key] = options[key]
                 if options.get("stop"):
                     payload["stop"] = options["stop"]
-            if not enable_thinking:
-                # Qwen3.5 vLLM convention — top-level chat_template_kwargs.
-                # Servers that don't support it ignore unknown fields.
+            if not enable_thinking and local:
+                # Qwen3.5 vLLM convention — top-level chat_template_kwargs is the
+                # *disable* flag, so it is only sent when thinking is off, and
+                # only to local servers (hosted APIs reject unknown fields).
                 payload["chat_template_kwargs"] = {"enable_thinking": False}
             if response_schema is not None:
                 if ptype == ProviderType.LLAMACPP:
@@ -367,7 +426,7 @@ class AIProvider:
         without mutating this provider's state.
         """
         if config:
-            base_url = config.get("base_url", self.base_url).strip().rstrip("/")
+            base_url = normalize_base_url(config.get("base_url", self.base_url))
             provider = config.get("provider", self.provider)
             api_key = config.get("api_key", self.api_key)
             try:
@@ -500,7 +559,7 @@ async def get_embedding_params_for(config: dict, model: str, prompt: str) -> dic
 
     Raises RuntimeError if the provider endpoint is unreachable.
     """
-    base_url = config.get("base_url", "").strip().rstrip("/")
+    base_url = normalize_base_url(config.get("base_url", ""))
     api_key = config.get("api_key", "not-needed")
     provider = config.get("provider", "auto")
 
