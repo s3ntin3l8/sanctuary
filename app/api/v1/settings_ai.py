@@ -51,7 +51,12 @@ from app.services.ai_config import (
     save_instance,
     set_active,
 )
-from app.services.ai_provider import chat_provider, embed_provider, ocr_provider
+from app.services.ai_provider import (
+    chat_provider,
+    embed_provider,
+    normalize_base_url,
+    ocr_provider,
+)
 from app.services.ai_settings_service import (
     AI_DEBUG_ROOT,
     ROLE_FIELD,
@@ -188,7 +193,7 @@ def create_instance(body: AiInstanceInput, db: Session = Depends(get_db)):
     instance = {
         "id": _make_id(),
         "label": body.label.strip(),
-        "base_url": body.base_url.strip().rstrip("/"),
+        "base_url": normalize_base_url(body.base_url),
         # API shape is auto-detected at call time; never set manually.
         "provider": "auto",
         "api_key": (body.api_key or "").strip() or NO_KEY,
@@ -214,7 +219,7 @@ def update_instance(
     instance = {
         **existing,
         "label": body.label.strip(),
-        "base_url": body.base_url.strip().rstrip("/"),
+        "base_url": normalize_base_url(body.base_url),
         "provider": "auto",
         "api_key": api_key,
     }

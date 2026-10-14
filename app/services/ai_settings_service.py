@@ -15,7 +15,12 @@ import httpx
 
 from app.config import DATA_DIR
 from app.services.ai_config import _resolve_active
-from app.services.ai_provider import chat_provider, embed_provider, ocr_provider
+from app.services.ai_provider import (
+    chat_provider,
+    embed_provider,
+    normalize_base_url,
+    ocr_provider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +111,7 @@ def categorize_models(models: list[str]) -> dict[str, list[str]]:
 
 async def fetch_models(inst: dict) -> dict[str, list[str]]:
     """Fetch and categorize available models from a specific instance."""
-    base_url = inst.get("base_url", "").strip().rstrip("/")
+    base_url = normalize_base_url(inst.get("base_url", ""))
     provider = inst.get("provider", "auto")
     api_key = inst.get("api_key", "not-needed")
 
@@ -114,7 +119,7 @@ async def fetch_models(inst: dict) -> dict[str, list[str]]:
 
     try:
         ptype = (
-            await detect_provider(base_url)
+            await detect_provider(base_url, api_key)
             if provider == "auto"
             else ProviderType(provider)
         )

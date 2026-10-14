@@ -20,6 +20,7 @@ from app.config import (
 from app.core import secrets as secrets_store
 from app.models.enums import AuditEventType
 from app.services import audit_service
+from app.services.ai_provider import normalize_base_url
 
 
 @dataclass(frozen=True)
@@ -173,7 +174,7 @@ def get_chat_config(db=None) -> ChatConfig:
     return ChatConfig(
         id=inst.get("id", ""),
         label=inst.get("label", "Default"),
-        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        base_url=normalize_base_url(inst.get("base_url") or env["base_url"]),
         provider=(inst.get("provider") or env["provider"]).strip(),
         api_key=(inst.get("api_key") or env["api_key"]).strip(),
         summary_model=(inst.get("summary_model") or env["summary_model"]).strip(),
@@ -188,7 +189,7 @@ def get_embed_config(db=None) -> EmbedConfig:
     return EmbedConfig(
         id=inst.get("id", ""),
         label=inst.get("label", "Default"),
-        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        base_url=normalize_base_url(inst.get("base_url") or env["base_url"]),
         provider=(inst.get("provider") or env["provider"]).strip(),
         api_key=(inst.get("api_key") or env["api_key"]).strip(),
         embed_model=(inst.get("embed_model") or env["embed_model"]).strip(),
@@ -208,7 +209,7 @@ def get_ocr_config(db=None) -> OcrConfig:
     return OcrConfig(
         id=inst.get("id", ""),
         label=inst.get("label", "Default"),
-        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        base_url=normalize_base_url(inst.get("base_url") or env["base_url"]),
         provider=(inst.get("provider") or env["provider"]).strip(),
         api_key=(inst.get("api_key") or env["api_key"]).strip(),
         ocr_model=(inst.get("ocr_model") or "").strip(),
