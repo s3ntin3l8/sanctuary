@@ -110,10 +110,15 @@ def pipeline_view(doc: Document) -> PipelineView:
                 page=chunk["meta"]["page"],
                 words=chunk["meta"].get("crosscheck", {}).get("unsupported", []),
             )
+            # Docling chunks (the Chandra fallback) carry no page.
             for chunk in sorted(
-                meta.get("chunks") or [], key=lambda c: c["meta"]["page"]
+                (
+                    c
+                    for c in meta.get("chunks") or []
+                    if c["meta"].get("page") in unverified
+                ),
+                key=lambda c: c["meta"]["page"],
             )
-            if chunk["meta"]["page"] in unverified
         ],
     )
 
