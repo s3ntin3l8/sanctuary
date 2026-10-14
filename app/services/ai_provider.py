@@ -38,7 +38,8 @@ def is_external_endpoint(base_url: str) -> bool:
     """True if base_url points at the public internet (warn about data egress).
 
     Trusted (no warning): loopback, RFC1918/ULA private ranges, link-local, and
-    ``*.local``-style names — i.e. this machine and the user's own LAN. Anything
+    ``*.local``-style names and single-label hostnames (``docker-01``, ``ollama``:
+    Docker/LAN short names) — i.e. this machine and the user's own LAN. Anything
     that resolves to a public IP or a public DNS name is treated as external.
     """
     host = (urlparse(base_url).hostname or "").lower()
@@ -47,8 +48,9 @@ def is_external_endpoint(base_url: str) -> bool:
     try:
         return ipaddress.ip_address(host).is_global
     except ValueError:
-        # A non-local hostname (public DNS like api.openai.com) → external.
-        return True
+        # A dotted non-local hostname (public DNS like api.openai.com) is
+        # external; a dotless one can only resolve on the local network.
+        return "." in host
 
 
 def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
@@ -328,7 +330,11 @@ class AIProvider:
                 "temperature": options.get("temperature", 0.1) if options else 0.1,
             }
             max_tokens = options.get("max_tokens") if options else None
-            if isinstance(max_tokens, int) and max_tokens > 0:
+            if (
+                isinstance(max_tokens, int)
+                and not isinstance(max_tokens, bool)
+                and max_tokens > 0
+            ):
                 # LM Studio's "-1 = unlimited" is rejected by hosted APIs, so
                 # an unset cap is simply omitted.
                 payload["max_tokens"] = max_tokens

@@ -14,6 +14,8 @@ _LOCAL = [
     "http://[fd00::1]:1234",  # IPv6 unique-local
     "http://ollama.local:11434",
     "http://pc.lan:1234",
+    "http://docker-01:11434",  # single-label LAN / Docker names
+    "http://ollama:11434",
     "",  # no host
 ]
 
@@ -22,6 +24,7 @@ _PUBLIC = [
     "http://8.8.8.8:1234",
     "https://my-vps.example.com:4000",
     "http://1.2.3.4",
+    "http://[2001:4860:4860::8888]:1234",  # public IPv6 has no dots either
 ]
 
 
