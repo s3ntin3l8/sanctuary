@@ -158,12 +158,21 @@ def test_review_lists_pages_the_ocr_crosscheck_could_not_corroborate(db_session)
 def test_review_tolerates_docling_chunks_without_a_page(db_session):
     admin = _admin(db_session)
     docling_chunk = {"text": "x", "meta": {"doc_items": [], "headings": []}}
-    doc = _doc(db_session, admin.id, meta={"chunks": [docling_chunk]})
+    doc = _doc(
+        db_session,
+        admin.id,
+        meta={
+            "ocr_unverified_pages": [3],
+            "chunks": [docling_chunk, _chunk(3, ["wohnplatz"])],
+        },
+    )
 
     resp = client.get(f"/api/v1/documents/{doc.id}/review")
 
     assert resp.status_code == 200
-    assert resp.json()["pipeline"]["ocr_unverified"] == []
+    assert resp.json()["pipeline"]["ocr_unverified"] == [
+        {"page": 3, "words": ["wohnplatz"]}
+    ]
 
 
 def test_acknowledging_the_ocr_crosscheck_clears_the_flag(db_session):
