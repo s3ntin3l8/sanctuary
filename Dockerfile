@@ -24,12 +24,15 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Headless OpenCV: docling-ibm-models and rapidocr both declare the GUI
-# `opencv-python` wheel, which links Qt/GL and forces libgl1 (mesa/LLVM, ~200 MB)
-# into the runtime image. Same `cv2` module, so swap it for the headless build
-# (keep the version in lockstep with requirements.txt).
+# Headless OpenCV: docling-ibm-models declares the GUI `opencv-python` wheel,
+# which links Qt/GL and forces libgl1 (mesa/LLVM, ~200 MB) into the runtime
+# image. Same `cv2` module, so swap it for the headless build (keep the version
+# in lockstep with requirements.txt). rapidocr >= 3.10 already depends on the
+# headless wheel, so both are installed and share the `cv2/` files: uninstalling
+# the GUI wheel deletes them, and a plain `pip install` of headless would then be
+# a no-op. Force the reinstall to put the files back.
 RUN pip uninstall -y opencv-python \
-    && pip install --no-cache-dir opencv-python-headless==5.0.0.93
+    && pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless==5.0.0.93
 
 # Prune dead weight HERE, before the venv is COPYed into the runtime stage
 # (deleting after the COPY would only add a layer and save nothing):
