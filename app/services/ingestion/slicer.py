@@ -19,7 +19,7 @@ from app.core.paths import resolve_storage_path
 from app.models.database import IngestBatch
 from app.models.enums import IngestBatchStatus
 from app.services.ai_config import get_chat_config
-from app.services.ai_provider import chat_provider
+from app.services.ai_provider import ProviderType, chat_provider
 from app.services.ai_run_index import record_run
 from app.services.ingestion import ocr_crosscheck
 from app.services.intelligence._court_identity import court_name_offset
@@ -309,8 +309,14 @@ async def _chat_json(
     resp.raise_for_status()
     data = resp.json()
 
-    if ptype == "ollama":
+    if ptype == ProviderType.OLLAMA:
         raw = data.get("response", "")
+    elif ptype == ProviderType.ANTHROPIC:
+        raw = "".join(
+            b.get("text", "")
+            for b in data.get("content", [])
+            if b.get("type") == "text"
+        )
     else:
         raw = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 

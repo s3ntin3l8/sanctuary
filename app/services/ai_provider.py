@@ -60,10 +60,43 @@ def openai_compat_headers(api_key: str | None) -> dict[str, str]:
     Bearer request with 400 without it, which made detection call the endpoint
     unreachable) and ignored by every other server.
     """
-    headers = {"anthropic-version": "2023-06-01"}
+    headers = {"anthropic-version": _ANTHROPIC_VERSION}
     if api_key and api_key != "not-needed":  # pragma: allowlist secret
         headers["Authorization"] = f"Bearer {api_key}"
     return headers
+
+
+# Claude 5 models need an explicit output cap; stages that set none get this.
+ANTHROPIC_DEFAULT_MAX_TOKENS = 8192
+_ANTHROPIC_VERSION = "2023-06-01"
+_NO_ANTHROPIC_EMBEDDINGS = (
+    "Anthropic has no embeddings API — keep the Embeddings role on a local endpoint."
+)
+
+
+def anthropic_headers(api_key: str | None) -> dict[str, str]:
+    """Headers for Anthropic's native Messages API (`x-api-key`, not Bearer)."""
+    headers = {"anthropic-version": _ANTHROPIC_VERSION}
+    if api_key and api_key != "not-needed":  # pragma: allowlist secret
+        headers["x-api-key"] = api_key
+    return headers
+
+
+def models_request(ptype: "ProviderType", base_url: str, api_key: str | None):
+    """`(url, headers)` of the model-list call for a provider type."""
+    if ptype == ProviderType.OLLAMA:
+        return f"{base_url}/api/tags", {}
+    if ptype == ProviderType.ANTHROPIC:
+        # Anthropic paginates (default 20); ask for everything in one page.
+        return f"{base_url}/v1/models?limit=1000", anthropic_headers(api_key)
+    return f"{base_url}/v1/models", openai_compat_headers(api_key)
+
+
+def models_in(ptype: "ProviderType", data: dict) -> list[str]:
+    """Model ids out of a model-list response body."""
+    if ptype == ProviderType.OLLAMA:
+        return [m["name"] for m in data.get("models", [])]
+    return [m["id"] for m in data.get("data", [])]
 
 
 def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
@@ -155,11 +188,54 @@ def _make_openai_strict(schema: dict) -> dict:
     return rewritten
 
 
+def _is_free_form_object(node: object) -> bool:
+    return (
+        isinstance(node, dict)
+        and node.get("type") == "object"
+        and "properties" not in node
+    )
+
+
+def _make_anthropic_strict(schema: dict) -> dict:
+    """`_make_openai_strict` plus: drop free-form object fields.
+
+    Anthropic's structured outputs reject `additionalProperties: true`, which is
+    what a bare `dict` field emits (e.g. `_CostDelta.allocation`). Such a field
+    cannot be expressed, so it is left out of the schema; the Pydantic model
+    defaults it to None.
+    """
+    pruned = copy.deepcopy(schema)
+
+    def _walk(node: object) -> None:
+        if isinstance(node, dict):
+            props = node.get("properties")
+            if isinstance(props, dict):
+                for key in [
+                    k
+                    for k, v in props.items()
+                    if _is_free_form_object(v)
+                    or (
+                        isinstance(v, dict)
+                        and any(_is_free_form_object(o) for o in v.get("anyOf", []))
+                    )
+                ]:
+                    del props[key]
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(pruned)
+    return _make_openai_strict(pruned)
+
+
 class ProviderType(StrEnum):
     OLLAMA = "ollama"
     LMSTUDIO = "lmstudio"
     OPENAI = "openai"
     LLAMACPP = "llamacpp"
+    ANTHROPIC = "anthropic"
 
 
 async def detect_provider(base_url: str, api_key: str | None = None) -> ProviderType:
@@ -200,14 +276,29 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
                     data.get("object") == "list" or "data" in data
                 ):
                     entries = data.get("data") or []
+                    # Anthropic entries are `{"type": "model", ...}`; OpenAI-shaped
+                    # ones carry `"object": "model"`.
+                    if any(
+                        isinstance(e, dict) and e.get("type") == "model"
+                        for e in entries
+                    ):
+                        return ProviderType.ANTHROPIC
                     if any(
                         isinstance(e, dict) and e.get("owned_by") == "llamacpp"
                         for e in entries
                     ):
                         return ProviderType.LLAMACPP
                     return ProviderType.LMSTUDIO
-            # 401/403: server exists, just needs auth — still OpenAI-compatible.
+            # 401/403: server exists, just needs auth. Anthropic answers in its
+            # own `{"type": "error", ...}` envelope; anything else is treated as
+            # OpenAI-compatible.
             if resp.status_code in (401, 403):
+                try:
+                    body = resp.json()
+                except Exception:
+                    body = None
+                if isinstance(body, dict) and body.get("type") == "error":
+                    return ProviderType.ANTHROPIC
                 return ProviderType.LMSTUDIO
         except Exception as e:
             logger.debug(f"OpenAI probe failed at {base_url}: {e}")
@@ -304,6 +395,42 @@ class AIProvider:
         enable_thinking = options.get("_enable_thinking", True) if options else True
         response_schema = options.get("_response_schema") if options else None
         schema_name = options.get("_schema_name", "response") if options else "response"
+
+        if ptype == ProviderType.ANTHROPIC:
+            # Native Messages API. Claude 5 rejects temperature/top_p, and the
+            # rest of the sampler/template knobs are local-model concepts, so
+            # none are sent. `max_tokens` is required.
+            max_tokens = options.get("max_tokens") if options else None
+            if (
+                not isinstance(max_tokens, int)
+                or isinstance(max_tokens, bool)
+                or max_tokens <= 0
+            ):
+                max_tokens = ANTHROPIC_DEFAULT_MAX_TOKENS
+            a_body: dict = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "stream": stream,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if system_prompt:
+                a_body["system"] = system_prompt
+            # Whitespace-only stop sequences are a 400.
+            stops = [x for x in (options or {}).get("stop") or [] if x.strip()]
+            if stops:
+                a_body["stop_sequences"] = stops
+            if response_schema is not None:
+                a_body["output_config"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "schema": _make_anthropic_strict(response_schema),
+                    }
+                }
+            return {
+                "url": f"{self.base_url}/v1/messages",
+                "json": a_body,
+                "headers": anthropic_headers(self.api_key),
+            }
 
         if ptype == ProviderType.OLLAMA:
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
@@ -411,6 +538,8 @@ class AIProvider:
         """Get provider-specific request parameters for embeddings."""
         ptype = await self.get_type()
 
+        if ptype == ProviderType.ANTHROPIC:
+            raise RuntimeError(_NO_ANTHROPIC_EMBEDDINGS)
         if ptype == ProviderType.OLLAMA:
             return {
                 "url": f"{self.base_url}/api/embeddings",
@@ -454,25 +583,15 @@ class AIProvider:
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                if ptype == ProviderType.OLLAMA:
-                    resp = await client.get(f"{base_url}/api/tags")
-                    if resp.status_code == 200:
-                        count = len(resp.json().get("models", []))
-                        return {
-                            "ok": True,
-                            "provider": str(ptype),
-                            "detail": f"{count} models available",
-                        }
-                else:
-                    headers = openai_compat_headers(api_key)
-                    resp = await client.get(f"{base_url}/v1/models", headers=headers)
-                    if resp.status_code == 200:
-                        count = len(resp.json().get("data", []))
-                        return {
-                            "ok": True,
-                            "provider": str(ptype),
-                            "detail": f"{count} models available",
-                        }
+                url, headers = models_request(ptype, base_url, api_key)
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    count = len(models_in(ptype, resp.json()))
+                    return {
+                        "ok": True,
+                        "provider": str(ptype),
+                        "detail": f"{count} models available",
+                    }
             return {
                 "ok": False,
                 "provider": str(ptype),
@@ -486,10 +605,65 @@ class AIProvider:
                 "detail": sanitize_provider_error(e, base_url),
             }
 
+    @staticmethod
+    def _parse_anthropic_line(line: str) -> dict | None:
+        """One SSE line of the Messages stream, in the shared chunk shape.
+
+        Usage arrives in two events (input tokens at `message_start`, the final
+        output count at `message_delta`); each is emitted as a partial dict and
+        the consumer merges them.
+        """
+        line = line.strip()
+        if not line.startswith("data:"):  # `event:` lines repeat the data's type
+            return None
+        try:
+            ev = json.loads(line[len("data:") :].strip())
+        except json.JSONDecodeError:
+            return None
+        kind = ev.get("type")
+        if kind == "content_block_delta":
+            delta = ev.get("delta") or {}
+            return {
+                "response": delta.get("text") or "",
+                "thinking": delta.get("thinking") or "",
+                "done": False,
+            }
+        if kind == "message_start":
+            usage = (ev.get("message") or {}).get("usage") or {}
+            return {
+                "response": "",
+                "thinking": "",
+                "done": False,
+                "usage": {
+                    "prompt_tokens": usage.get("input_tokens", 0),
+                    "completion_tokens": usage.get("output_tokens", 0),
+                },
+            }
+        if kind == "message_delta":
+            usage = ev.get("usage") or {}
+            return {
+                "response": "",
+                "thinking": "",
+                "done": False,
+                "usage": {"completion_tokens": usage.get("output_tokens", 0)},
+            }
+        if kind == "message_stop":
+            return {"done": True}
+        if kind == "error":
+            err = ev.get("error") or {}
+            raise RuntimeError(
+                f"Anthropic stream error: {err.get('type', 'error')}: "
+                f"{err.get('message', '')}"[:300]
+            )
+        return None  # ping, content_block_start/stop
+
     def parse_stream_line(self, line: str, ptype: ProviderType) -> dict | None:
         """Parse a single line from a streaming response."""
         if not line:
             return None
+
+        if ptype == ProviderType.ANTHROPIC:
+            return self._parse_anthropic_line(line)
 
         if ptype == ProviderType.OLLAMA:
             try:
@@ -570,6 +744,8 @@ async def get_embedding_params_for(config: dict, model: str, prompt: str) -> dic
         else ProviderType(provider)
     )
 
+    if ptype == ProviderType.ANTHROPIC:
+        raise RuntimeError(_NO_ANTHROPIC_EMBEDDINGS)
     if ptype == ProviderType.OLLAMA:
         return {
             "url": f"{base_url}/api/embeddings",

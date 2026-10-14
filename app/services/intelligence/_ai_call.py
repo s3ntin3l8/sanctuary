@@ -399,7 +399,8 @@ def _stream_response(
                                 continue
 
                             if chunk.get("usage"):
-                                final_usage = chunk["usage"]
+                                # Anthropic reports usage in two partial events.
+                                final_usage = {**(final_usage or {}), **chunk["usage"]}
 
                             if chunk.get("done"):
                                 break
