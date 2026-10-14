@@ -122,3 +122,39 @@ async def test_judgment_is_schema_constrained_so_a_reasoning_model_cannot_stall(
     assert options["num_ctx"] == 4096
     assert options["max_tokens"] == slicer._AI_MAX_TOKENS
     assert options["_include_user_context"] is False
+
+
+@pytest.mark.asyncio
+async def test_slicer_reads_text_blocks_of_an_anthropic_message(monkeypatch):
+    class FakeProvider:
+        async def get_generate_params(self, **kwargs):
+            return {"url": "http://x", "json": {}, "headers": {}}
+
+        async def get_type(self):
+            return "anthropic"
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "content": [
+                    {"type": "thinking", "thinking": "ignored"},
+                    {
+                        "type": "text",
+                        "text": '{"is_new_document": true, "confidence": "high", ',
+                    },
+                    {"type": "text", "text": '"kind": "letter", "notes": "new"}'},
+                ]
+            }
+
+    class FakeClient:
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr(slicer, "chat_provider", FakeProvider())
+
+    result = await slicer._ai_cut_judgment(_Boundary(2, "t", "h"), "m", FakeClient())
+
+    assert result["is_new_document"] is True

@@ -9,8 +9,13 @@ import pytest
 from app.services.ai_provider import (
     AIProvider,
     ProviderType,
+    _make_anthropic_strict,
     _make_openai_strict,
+    anthropic_headers,
     detect_provider,
+    get_embedding_params_for,
+    models_in,
+    models_request,
     normalize_base_url,
     openai_compat_headers,
     sanitize_provider_error,
@@ -756,3 +761,262 @@ async def test_detect_provider_anthropic_requires_version_header():
         )
 
     assert result == ProviderType.LMSTUDIO
+
+
+# ---------------------------------------------------------------------------
+# Native Anthropic Messages API
+# ---------------------------------------------------------------------------
+
+
+def _anthropic_provider(**kw) -> AIProvider:
+    p = AIProvider()
+    p.provider = "anthropic"
+    p.base_url = "https://api.anthropic.com"
+    p.api_key = "sk-ant-x"  # pragma: allowlist secret
+    p._user_context = kw.get("user_context", "")
+    return p
+
+
+@pytest.mark.unit
+def test_anthropic_headers_use_x_api_key_not_bearer():
+    h = anthropic_headers("sk-ant-x")  # pragma: allowlist secret
+    assert h == {
+        "anthropic-version": "2023-06-01",
+        "x-api-key": "sk-ant-x",  # pragma: allowlist secret
+    }
+    assert "x-api-key" not in anthropic_headers("not-needed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_detect_provider_anthropic_by_model_entry_type():
+    ok = MagicMock(status_code=200)
+    ok.json.return_value = {
+        "data": [{"type": "model", "id": "claude-haiku-5-5"}],
+        "has_more": False,
+    }
+    nf = MagicMock(status_code=404)
+
+    async def fake_get(url, **_):
+        return nf if url.endswith("/api/tags") else ok
+
+    with patch("httpx.AsyncClient.get", side_effect=fake_get):
+        result = await detect_provider("https://api.anthropic.com", api_key="k")
+
+    assert result == ProviderType.ANTHROPIC
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_detect_provider_anthropic_by_error_envelope_on_bad_key():
+    bad = MagicMock(status_code=401)
+    bad.json.return_value = {
+        "type": "error",
+        "error": {"type": "authentication_error", "message": "invalid x-api-key"},
+    }
+    nf = MagicMock(status_code=404)
+
+    async def fake_get(url, **_):
+        return nf if url.endswith("/api/tags") else bad
+
+    with patch("httpx.AsyncClient.get", side_effect=fake_get):
+        result = await detect_provider(
+            "https://api.anthropic.com",
+            api_key="wrong",  # pragma: allowlist secret
+        )
+
+    assert result == ProviderType.ANTHROPIC
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_anthropic_generate_params_shape():
+    p = _anthropic_provider(user_context="Case context")
+
+    params = await p.get_generate_params(
+        "claude-sonnet-5-5",
+        "Hello",
+        system_prompt="Be brief",
+        options={
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "num_ctx": 32768,
+            "stop": ["\nWait, actually", "  ", "\n"],
+            "_enable_thinking": False,
+        },
+    )
+
+    body = params["json"]
+    assert params["url"] == "https://api.anthropic.com/v1/messages"
+    assert params["headers"]["x-api-key"] == "sk-ant-x"  # pragma: allowlist secret
+    assert "Authorization" not in params["headers"]
+    assert body["model"] == "claude-sonnet-5-5"
+    assert body["system"] == "Case context\n\nBe brief"
+    assert body["messages"] == [{"role": "user", "content": "Hello"}]
+    assert body["max_tokens"] == 8192  # required by the API; stage set none
+    assert body["stop_sequences"] == ["\nWait, actually"]  # blanks are a 400
+    assert body["stream"] is True
+    for local_only in (
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "presence_penalty",
+        "options",
+        "think",
+        "chat_template_kwargs",
+    ):
+        assert local_only not in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_anthropic_generate_params_max_tokens_and_schema():
+    p = _anthropic_provider()
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "string", "default": "x"}},
+    }
+
+    params = await p.get_generate_params(
+        "m",
+        "Hi",
+        options={"max_tokens": 1234, "_response_schema": schema},
+    )
+
+    body = params["json"]
+    assert body["max_tokens"] == 1234
+    assert "system" not in body
+    fmt = body["output_config"]["format"]
+    assert fmt["type"] == "json_schema"
+    assert fmt["schema"]["additionalProperties"] is False
+    assert fmt["schema"]["required"] == ["a"]
+
+
+@pytest.mark.unit
+def test_make_anthropic_strict_drops_free_form_object_fields():
+    from app.services.intelligence.schemas import DocumentEnrichment
+
+    out = _make_anthropic_strict(DocumentEnrichment.model_json_schema())
+
+    def walk(node):
+        if isinstance(node, dict):
+            assert node.get("additionalProperties") is not True
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(out)
+    assert "allocation" not in out["$defs"]["_CostDelta"]["properties"]
+    assert "allocation" not in out["$defs"]["_CostDelta"]["required"]
+
+
+_ANTHROPIC_STREAM = [
+    "event: message_start",
+    'data: {"type":"message_start","message":{"usage":{"input_tokens":12,"output_tokens":4}}}',
+    "event: content_block_start",
+    'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+    "event: ping",
+    'data: {"type": "ping"}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}',
+    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}',
+    'data: {"type":"message_stop"}',
+]
+
+
+@pytest.mark.unit
+def test_anthropic_stream_parsing_end_to_end():
+    p = _anthropic_provider()
+    text = thinking = ""
+    usage: dict = {}
+    done = False
+    for line in _ANTHROPIC_STREAM:
+        chunk = p.parse_stream_line(line, ProviderType.ANTHROPIC)
+        if not chunk:
+            continue
+        usage = {**usage, **chunk.get("usage", {})}
+        text += chunk.get("response", "")
+        thinking += chunk.get("thinking", "")
+        done = done or chunk.get("done", False)
+
+    assert (text, thinking, done) == ("OK", "hmm", True)
+    assert usage == {"prompt_tokens": 12, "completion_tokens": 9}
+
+
+@pytest.mark.unit
+def test_anthropic_stream_error_event_raises():
+    p = _anthropic_provider()
+    line = (
+        'data: {"type":"error","error":{"type":"overloaded_error",'
+        '"message":"Overloaded"}}'
+    )
+    with pytest.raises(RuntimeError, match="overloaded_error"):
+        p.parse_stream_line(line, ProviderType.ANTHROPIC)
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_anthropic_has_no_embeddings():
+    p = _anthropic_provider()
+    with pytest.raises(RuntimeError, match="no embeddings API"):
+        await p.get_embedding_params("m", "text")
+    with pytest.raises(RuntimeError, match="no embeddings API"):
+        await get_embedding_params_for(
+            {"base_url": "https://api.anthropic.com", "provider": "anthropic"},
+            "m",
+            "text",
+        )
+
+
+@pytest.mark.unit
+def test_models_request_and_models_in_per_provider():
+    url, headers = models_request(
+        ProviderType.ANTHROPIC, "https://api.anthropic.com", "k"
+    )
+    assert url == "https://api.anthropic.com/v1/models?limit=1000"
+    assert headers["x-api-key"] == "k"
+    assert models_request(ProviderType.OLLAMA, "http://h:1", "k") == (
+        "http://h:1/api/tags",
+        {},
+    )
+    assert models_in(ProviderType.ANTHROPIC, {"data": [{"id": "claude-x"}]}) == [
+        "claude-x"
+    ]
+    assert models_in(ProviderType.OLLAMA, {"models": [{"name": "llama3"}]}) == [
+        "llama3"
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_probe_health_anthropic_counts_models_with_native_headers():
+    seen = {}
+    ok = MagicMock(status_code=200)
+    ok.json.return_value = {"data": [{"id": "a"}, {"id": "b"}]}
+
+    async def fake_get(url, headers=None, **_):
+        seen.update(url=url, headers=headers)
+        return ok
+
+    with patch("httpx.AsyncClient.get", side_effect=fake_get):
+        result = await AIProvider().probe_health(
+            config={
+                "base_url": "https://api.anthropic.com/v1",
+                "provider": "anthropic",
+                "api_key": "sk-ant-x",  # pragma: allowlist secret
+            }
+        )
+
+    assert result == {
+        "ok": True,
+        "provider": "anthropic",
+        "detail": "2 models available",
+    }
+    assert seen["url"] == "https://api.anthropic.com/v1/models?limit=1000"
+    assert seen["headers"]["x-api-key"] == "sk-ant-x"  # pragma: allowlist secret

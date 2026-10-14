@@ -18,9 +18,10 @@ from app.services.ai_config import _resolve_active
 from app.services.ai_provider import (
     chat_provider,
     embed_provider,
+    models_in,
+    models_request,
     normalize_base_url,
     ocr_provider,
-    openai_compat_headers,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,15 +131,10 @@ async def fetch_models(inst: dict) -> dict[str, list[str]]:
     all_models: list[str] = []
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            if ptype == ProviderType.OLLAMA:
-                resp = await client.get(f"{base_url}/api/tags")
-                if resp.status_code == 200:
-                    all_models = [m["name"] for m in resp.json().get("models", [])]
-            else:
-                headers = openai_compat_headers(api_key)
-                resp = await client.get(f"{base_url}/v1/models", headers=headers)
-                if resp.status_code == 200:
-                    all_models = [m["id"] for m in resp.json().get("data", [])]
+            url, headers = models_request(ptype, base_url, api_key)
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                all_models = models_in(ptype, resp.json())
     except Exception as e:
         logger.warning(f"Model discovery failed for {base_url}: {e}")
 
