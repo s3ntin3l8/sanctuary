@@ -46,7 +46,6 @@ from app.services.ai_config import (
     delete_instance,
     get_embed_config,
     get_instance,
-    is_external_endpoint,
     list_instances,
     save_instance,
     set_active,
@@ -54,6 +53,7 @@ from app.services.ai_config import (
 from app.services.ai_provider import (
     chat_provider,
     embed_provider,
+    is_external_endpoint,
     normalize_base_url,
     ocr_provider,
 )

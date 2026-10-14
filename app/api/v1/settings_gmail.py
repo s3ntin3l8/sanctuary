@@ -37,8 +37,8 @@ from app.services.ai_config import (
     get_chat_config,
     get_embed_config,
     get_ocr_config,
-    is_external_endpoint,
 )
+from app.services.ai_provider import is_external_endpoint
 from app.services.ingestion.gmail import (
     GmailReconnectRequired,
     build_query,

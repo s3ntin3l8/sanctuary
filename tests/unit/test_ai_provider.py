@@ -632,6 +632,8 @@ def test_make_openai_strict_real_pydantic_schema():
         ("https://api.openai.com/v1/", "https://api.openai.com"),
         ("  http://localhost:11434/ ", "http://localhost:11434"),
         ("http://localhost:1234", "http://localhost:1234"),
+        ("", ""),
+        ("   ", ""),
         ("https://example.com/v1beta", "https://example.com/v1beta"),
     ],
 )

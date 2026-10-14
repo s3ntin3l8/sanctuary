@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import secrets
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 from app.config import (
     AI_API_KEY,
@@ -77,26 +75,6 @@ def _env_defaults() -> dict:
 
 def _make_id() -> str:
     return "inst_" + secrets.token_hex(4)
-
-
-_LOCAL_SUFFIXES = (".local", ".lan", ".internal", ".home", ".home.arpa")
-
-
-def is_external_endpoint(base_url: str) -> bool:
-    """True if base_url points at the public internet (warn about data egress).
-
-    Trusted (no warning): loopback, RFC1918/ULA private ranges, link-local, and
-    ``*.local``-style names — i.e. this machine and the user's own LAN. Anything
-    that resolves to a public IP or a public DNS name is treated as external.
-    """
-    host = (urlparse(base_url).hostname or "").lower()
-    if not host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
-        return False
-    try:
-        return ipaddress.ip_address(host).is_global
-    except ValueError:
-        # A non-local hostname (public DNS like api.openai.com) → external.
-        return True
 
 
 # Placeholder stored for endpoints that need no key. Not a secret, so it is

@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 from app import config
 from app.config import CELERY_TASK_TIME_LIMIT
 from app.models.database import HomeBriefing, User
-from app.services.ai_config import get_chat_config, is_external_endpoint
+from app.services.ai_config import get_chat_config
+from app.services.ai_provider import is_external_endpoint
 from app.services.home_service import HomeService
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS

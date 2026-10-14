@@ -1,8 +1,10 @@
 import copy
+import ipaddress
 import json
 import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import httpx
 
@@ -27,6 +29,26 @@ def normalize_base_url(url: str) -> str:
     if url.endswith("/v1"):
         url = url[: -len("/v1")].rstrip("/")
     return url
+
+
+_LOCAL_SUFFIXES = (".local", ".lan", ".internal", ".home", ".home.arpa")
+
+
+def is_external_endpoint(base_url: str) -> bool:
+    """True if base_url points at the public internet (warn about data egress).
+
+    Trusted (no warning): loopback, RFC1918/ULA private ranges, link-local, and
+    ``*.local``-style names — i.e. this machine and the user's own LAN. Anything
+    that resolves to a public IP or a public DNS name is treated as external.
+    """
+    host = (urlparse(base_url).hostname or "").lower()
+    if not host or host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
+        return False
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        # A non-local hostname (public DNS like api.openai.com) → external.
+        return True
 
 
 def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
@@ -312,8 +334,6 @@ class AIProvider:
                 payload["max_tokens"] = max_tokens
             # Hosted OpenAI-compatible APIs 400 on sampler/template fields they
             # don't know; local servers (vLLM, LM Studio, llama.cpp) use them.
-            from app.services.ai_config import is_external_endpoint
-
             local = not is_external_endpoint(self.base_url)
             if stream:
                 # Many OpenAI-compatible gateways (LiteLLM, vLLM) require this
@@ -336,8 +356,9 @@ class AIProvider:
                 if options.get("stop"):
                     payload["stop"] = options["stop"]
             if not enable_thinking and local:
-                # Qwen3.5 vLLM convention — top-level chat_template_kwargs.
-                # Servers that don't support it ignore unknown fields.
+                # Qwen3.5 vLLM convention — top-level chat_template_kwargs is the
+                # *disable* flag, so it is only sent when thinking is off, and
+                # only to local servers (hosted APIs reject unknown fields).
                 payload["chat_template_kwargs"] = {"enable_thinking": False}
             if response_schema is not None:
                 if ptype == ProviderType.LLAMACPP:

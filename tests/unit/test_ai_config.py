@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services.ai_config import is_external_endpoint
+from app.services.ai_provider import is_external_endpoint
 
 _LOCAL = [
     "http://127.0.0.1:11434",
