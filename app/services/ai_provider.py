@@ -53,6 +53,19 @@ def is_external_endpoint(base_url: str) -> bool:
         return "." in host
 
 
+def openai_compat_headers(api_key: str | None) -> dict[str, str]:
+    """Headers for the OpenAI-shaped `/v1/...` surface of any hosted or local server.
+
+    `anthropic-version` is required by Anthropic's API (`/v1/models` answers a
+    Bearer request with 400 without it, which made detection call the endpoint
+    unreachable) and ignored by every other server.
+    """
+    headers = {"anthropic-version": "2023-06-01"}
+    if api_key and api_key != "not-needed":  # pragma: allowlist secret
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
     """Translate provider-side exceptions into actionable user-facing messages.
 
@@ -165,11 +178,7 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
     still classify as LMSTUDIO — the server exists and speaks the OpenAI
     surface; auth will be supplied at request time.
     """
-    headers = (
-        {"Authorization": f"Bearer {api_key}"}
-        if api_key and api_key != "not-needed"
-        else {}
-    )
+    headers = openai_compat_headers(api_key)
     async with httpx.AsyncClient(timeout=5.0) as client:
         # Ollama first: it also serves an OpenAI-compatible /v1/models, so
         # probing that first would label every Ollama server "lmstudio".
@@ -395,9 +404,7 @@ class AIProvider:
             return {
                 "url": f"{self.base_url}/v1/chat/completions",
                 "json": payload,
-                "headers": {"Authorization": f"Bearer {self.api_key}"}
-                if self.api_key != "not-needed"
-                else {},
+                "headers": openai_compat_headers(self.api_key),
             }
 
     async def get_embedding_params(self, model: str, prompt: str) -> dict:
@@ -414,9 +421,7 @@ class AIProvider:
             return {
                 "url": f"{self.base_url}/v1/embeddings",
                 "json": {"model": model, "input": prompt},
-                "headers": {"Authorization": f"Bearer {self.api_key}"}
-                if self.api_key != "not-needed"
-                else {},
+                "headers": openai_compat_headers(self.api_key),
             }
 
     async def probe_health(self, config: dict | None = None) -> dict:
@@ -459,11 +464,7 @@ class AIProvider:
                             "detail": f"{count} models available",
                         }
                 else:
-                    headers = (
-                        {"Authorization": f"Bearer {api_key}"}
-                        if api_key != "not-needed"
-                        else {}
-                    )
+                    headers = openai_compat_headers(api_key)
                     resp = await client.get(f"{base_url}/v1/models", headers=headers)
                     if resp.status_code == 200:
                         count = len(resp.json().get("data", []))
@@ -579,7 +580,5 @@ async def get_embedding_params_for(config: dict, model: str, prompt: str) -> dic
         return {
             "url": f"{base_url}/v1/embeddings",
             "json": {"model": model, "input": prompt},
-            "headers": {"Authorization": f"Bearer {api_key}"}
-            if api_key != "not-needed"
-            else {},
+            "headers": openai_compat_headers(api_key),
         }

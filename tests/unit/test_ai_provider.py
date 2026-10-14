@@ -12,6 +12,7 @@ from app.services.ai_provider import (
     _make_openai_strict,
     detect_provider,
     normalize_base_url,
+    openai_compat_headers,
     sanitize_provider_error,
 )
 
@@ -721,3 +722,37 @@ async def test_generate_params_hosted_endpoint_without_options_has_no_max_tokens
         "stream_options"
     }
     assert "max_tokens" not in params["json"]
+
+
+@pytest.mark.unit
+def test_openai_compat_headers():
+    assert openai_compat_headers("sk-1") == {
+        "anthropic-version": "2023-06-01",
+        "Authorization": "Bearer sk-1",
+    }
+    for key in ("not-needed", "", None):
+        assert openai_compat_headers(key) == {"anthropic-version": "2023-06-01"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_detect_provider_anthropic_requires_version_header():
+    """Anthropic's /v1/models answers 400 without `anthropic-version`; with it,
+    a Bearer key works and the body is `{"data": [...]}` (no `object: list`)."""
+    ok = MagicMock(status_code=200)
+    ok.json.return_value = {"data": [{"id": "claude-sonnet-5-5"}], "has_more": False}
+    bad = MagicMock(status_code=400)
+    not_found = MagicMock(status_code=404)
+
+    async def fake_get(url, headers=None, **_):
+        if url.endswith("/api/tags"):
+            return not_found
+        return ok if (headers or {}).get("anthropic-version") else bad
+
+    with patch("httpx.AsyncClient.get", side_effect=fake_get):
+        result = await detect_provider(
+            "https://api.anthropic.com",
+            api_key="sk-ant-x",  # pragma: allowlist secret
+        )
+
+    assert result == ProviderType.LMSTUDIO
