@@ -20,6 +20,7 @@ from app.services.ai_provider import (
     embed_provider,
     normalize_base_url,
     ocr_provider,
+    openai_compat_headers,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,11 +135,7 @@ async def fetch_models(inst: dict) -> dict[str, list[str]]:
                 if resp.status_code == 200:
                     all_models = [m["name"] for m in resp.json().get("models", [])]
             else:
-                headers = (
-                    {"Authorization": f"Bearer {api_key}"}
-                    if api_key != "not-needed"  # pragma: allowlist secret
-                    else {}
-                )
+                headers = openai_compat_headers(api_key)
                 resp = await client.get(f"{base_url}/v1/models", headers=headers)
                 if resp.status_code == 200:
                     all_models = [m["id"] for m in resp.json().get("data", [])]
