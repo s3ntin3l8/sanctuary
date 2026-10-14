@@ -20,6 +20,8 @@ def normalize_base_url(url: str) -> str:
     Every call site appends its own `/v1/...` (or `/api/...` for Ollama), but
     hosted providers document their base URL *with* `/v1`
     (`https://api.openai.com/v1`). Stripping it here keeps both spellings working.
+    Only a *trailing* `/v1` goes: gateway paths like `/api/v1/…` stay intact.
+    An empty or blank input yields `""`.
     """
     url = url.strip().rstrip("/")
     if url.endswith("/v1"):

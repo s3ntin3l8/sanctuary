@@ -704,3 +704,18 @@ async def test_detect_provider_ollama_wins_over_its_openai_compat_surface():
         result = await detect_provider("http://docker-01:11434")
 
     assert result == ProviderType.OLLAMA
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_generate_params_hosted_endpoint_without_options_has_no_max_tokens():
+    p = AIProvider()
+    p.provider = "lmstudio"
+    p.base_url = "https://api.openai.com"
+
+    params = await p.get_generate_params("gpt-4o", "Hello")
+
+    assert set(params["json"]) == {"model", "messages", "stream", "temperature"} | {
+        "stream_options"
+    }
+    assert "max_tokens" not in params["json"]
