@@ -48,7 +48,7 @@ def _batch(
         source_type=source_type,
         subject=subject,
         sender_email="kanzlei@example.com",
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         case_id=case_id if case_id != "_TRIAGE" else None,
     )
     db.add(batch)
@@ -339,7 +339,7 @@ def test_assign_keeps_bundle_in_triage_then_confirm_removes_it(db_session, sampl
     assert resp.status_code == 200, resp.text
     assert resp.json()["bundle"] is None
     db_session.expire_all()
-    assert db_session.get(IngestBatch, batch.id).status == IngestBatchStatus.COMPLETED
+    assert db_session.get(IngestBatch, batch.id).status == IngestBatchStatus.CONFIRMED
     assert all(db_session.get(Document, d.id).case_id == sample_case.id for d in docs)
 
 

@@ -38,7 +38,7 @@ def test_shell_returns_user_and_triage_count(db_session):
     batch = IngestBatch(
         owner_id=admin.id,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         case_id="_TRIAGE",
     )
     db_session.add(batch)
@@ -114,7 +114,7 @@ def test_home_lists_deadlines_bundles_and_cases(db_session, sample_case):
     batch = IngestBatch(
         owner_id=admin.id,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         case_id="_TRIAGE",
         subject="Klageerwiderung",
         sender_email="kanzlei@example.com",

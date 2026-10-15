@@ -231,7 +231,7 @@ def test_build_queue_items_groups_batch_analysis_docs(db_session, sample_case):
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
         case_id=sample_case.id,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         subject="Test Email Subject",
     )
     db_session.add(batch)
@@ -280,7 +280,7 @@ def test_build_queue_items_non_batch_stage_stays_flat(db_session, sample_case):
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
         case_id=sample_case.id,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()
@@ -326,7 +326,7 @@ def test_doc_items_carry_batch_and_doc_ids(app_client, db_session, sample_case):
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
         case_id=sample_case.id,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         subject="Badge Test Email",
     )
     db_session.add(batch)

@@ -67,7 +67,7 @@ def confirm_slices(
     and a letter cut that opened it carries to the next kept part. A bundle
     of several parts gets its first part as cover letter and the rest as
     enclosures. Each bundle becomes a ``BatchSubGroup``, so the structure is the
-    user's and batch analysis leaves roles alone. Flips the batch to PROCESSING
+    user's and batch analysis leaves roles alone. Flips the batch to OPEN
     and returns the new document ids. The caller dispatches processing and must
     hold the batch row lock. Raises ``ValueError`` when the batch cannot be
     sliced and :class:`SlicingFailed` when writing fails (slice files are
@@ -138,7 +138,7 @@ def confirm_slices(
 
         _wire_bundles(db, batch.id, bundles)
 
-        batch.status = IngestBatchStatus.PROCESSING
+        batch.status = IngestBatchStatus.OPEN
         db.commit()
 
     except Exception as exc:

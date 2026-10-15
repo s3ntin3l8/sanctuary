@@ -122,10 +122,10 @@ def test_groups_split_by_window_and_type(db_session, two_users):
 def test_pending_triage_is_the_callers_inbox_without_slicing(db_session, two_users):
     a, b = two_users
     for owner, status in (
-        (a, IngestBatchStatus.PENDING),
+        (a, IngestBatchStatus.OPEN),
         (a, IngestBatchStatus.AWAITING_SLICING),
-        (a, IngestBatchStatus.COMPLETED),
-        (b, IngestBatchStatus.PENDING),
+        (a, IngestBatchStatus.CONFIRMED),
+        (b, IngestBatchStatus.OPEN),
     ):
         batch = IngestBatch(
             owner_id=owner.id,
@@ -150,7 +150,7 @@ def test_pending_triage_is_the_callers_inbox_without_slicing(db_session, two_use
         IngestBatch(
             owner_id=a.id,
             source_type=IngestBatchSourceType.EMAIL,
-            status=IngestBatchStatus.PENDING,
+            status=IngestBatchStatus.OPEN,
             case_id="_TRIAGE",
             subject="empty",
         )
@@ -159,7 +159,7 @@ def test_pending_triage_is_the_callers_inbox_without_slicing(db_session, two_use
 
     g = _groups(build_notifications(db_session, a))
     assert g["pending_triage"].count == 1
-    assert g["pending_triage"].items[0].title == "a@example.com pending"
+    assert g["pending_triage"].items[0].title == "a@example.com open"
     assert g["pending_triage"].items[0].link.startswith("/triage?bundle=batch-")
 
 

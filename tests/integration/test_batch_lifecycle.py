@@ -78,7 +78,7 @@ def test_empty_email_is_recorded_once_as_a_completed_no_document_batch(
 
     assert len(first) == 1 and len(second) == 1
     assert second[0].id == first[0].id  # not deleted and recreated
-    assert second[0].status == IngestBatchStatus.COMPLETED
+    assert second[0].status == IngestBatchStatus.CONFIRMED
     assert second[0].meta["reason"] == "no_new_documents"
     assert db_session.query(Document).count() == 0
 
@@ -111,8 +111,12 @@ def test_all_duplicate_attachments_leave_a_tombstone_not_a_pending_batch(
     assert again is None
     tomb = [b for b in _batches(db_session) if b.message_id == "<two@example.com>"]
     assert len(tomb) == 1
-    assert tomb[0].status == IngestBatchStatus.COMPLETED
-    assert not any(b.status == IngestBatchStatus.PENDING for b in _batches(db_session))
+    assert tomb[0].status == IngestBatchStatus.CONFIRMED
+    # No document-less batch is left open: the only OPEN batch is the real one.
+    open_batches = [
+        b for b in _batches(db_session) if b.status == IngestBatchStatus.OPEN
+    ]
+    assert [b.message_id for b in open_batches] == ["<one@example.com>"]
 
 
 @pytest.mark.integration
@@ -146,9 +150,7 @@ def test_gmail_index_treats_a_no_document_message_as_ingested(db_session, user):
 # --- #145: counters and the sweep --------------------------------------------------------
 
 
-def _batch(
-    db, owner_id, status=IngestBatchStatus.PENDING, age_hours=0, docs=0, meta=None
-):
+def _batch(db, owner_id, status=IngestBatchStatus.OPEN, age_hours=0, docs=0, meta=None):
     batch = IngestBatch(
         owner_id=owner_id,
         source_type=IngestBatchSourceType.EMAIL,
@@ -201,21 +203,21 @@ def test_empty_batch_sweep_deletes_stale_empties_but_spares_the_rest(db_session,
     # COMPLETED says nothing about being a tombstone: only meta.reason does, so a
     # change to what COMPLETED means can never expose a tombstone to the sweep.
     completed_empty = _batch(
-        db_session, user.id, status=IngestBatchStatus.COMPLETED, age_hours=3
+        db_session, user.id, status=IngestBatchStatus.CONFIRMED, age_hours=3
     )
     fresh_empty = _batch(db_session, user.id, age_hours=0)  # upload still adding docs
     with_docs = _batch(db_session, user.id, age_hours=3, docs=1)
     tombstone = _batch(
         db_session,
         user.id,
-        status=IngestBatchStatus.COMPLETED,
+        status=IngestBatchStatus.CONFIRMED,
         age_hours=3,
         meta={"reason": "no_new_documents"},
     )
     tombstone_other_status = _batch(
         db_session,
         user.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         age_hours=3,
         meta={"reason": "no_new_documents"},
     )
@@ -297,7 +299,7 @@ def test_reconcile_leaves_known_recent_and_already_ingested_files_alone(
             owner_id=user.id,
             source_type=IngestBatchSourceType.SCAN,
             raw_source_path=to_storage_path(known / "original.pdf"),
-            status=IngestBatchStatus.PROCESSING,
+            status=IngestBatchStatus.OPEN,
             ingest_date=now_utc(),
         )
     )

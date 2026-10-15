@@ -242,7 +242,7 @@ def confirm_bundle(
 ) -> IngestBatch | None:
     """Cascade case/proceeding assignment to every doc in the bundle.
 
-    finalize=True marks the batch COMPLETED unconditionally (used by the
+    finalize=True marks the batch CONFIRMED unconditionally (used by the
     explicit "Confirm bundle" action). finalize=False (the default, used by
     "Assign case") never touches batch status — the bundle stays in triage
     for further per-doc review.
@@ -340,7 +340,7 @@ def confirm_bundle(
                 fill_proceeding_from_az(db, doc)
             sync_batch_proceeding(db, batch)
         if finalize:
-            batch.status = IngestBatchStatus.COMPLETED
+            batch.status = IngestBatchStatus.CONFIRMED
 
         db.commit()
 

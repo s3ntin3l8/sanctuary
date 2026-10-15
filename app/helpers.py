@@ -9,7 +9,7 @@ def awaiting_triage_batches(db: Session, owner_id: int | None = None) -> Query:
     """Batches that actually show up as bundles in the triage feed.
 
     The feed is built from documents, so a batch counts only if it is still open
-    (not COMPLETED, not parked for slicing) *and* has at least one live
+    (not CONFIRMED, not parked for slicing) *and* has at least one live
     document. A document-less batch (an email that produced nothing, a failed
     upload, a batch whose documents were all dismissed) is invisible in the feed
     and so must not inflate the rail badge, the home panel or notifications.
@@ -20,7 +20,7 @@ def awaiting_triage_batches(db: Session, owner_id: int | None = None) -> Query:
     )
     q = db.query(IngestBatch).filter(
         IngestBatch.status.notin_(
-            (IngestBatchStatus.COMPLETED, IngestBatchStatus.AWAITING_SLICING)
+            (IngestBatchStatus.CONFIRMED, IngestBatchStatus.AWAITING_SLICING)
         ),
         has_live_document,
     )

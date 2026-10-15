@@ -340,7 +340,7 @@ def _inbox_batch(db, owner_id, subject):
         source_type=IngestBatchSourceType.EMAIL,
         subject=subject,
         sender_email="kanzlei@example.com",
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db.add(batch)
     db.flush()

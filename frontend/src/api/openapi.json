@@ -7072,13 +7072,12 @@
         "type": "string"
       },
       "IngestBatchStatus": {
+        "description": "Triage lifecycle of a batch. How far the pipeline got is per document\n(``Document.pipeline_state``), never stored here.",
         "enum": [
-          "pending",
-          "processing",
-          "completed",
-          "failed",
-          "dismissed",
-          "awaiting_slicing"
+          "awaiting_slicing",
+          "open",
+          "confirmed",
+          "dismissed"
         ],
         "title": "IngestBatchStatus",
         "type": "string"

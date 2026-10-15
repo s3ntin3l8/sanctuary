@@ -361,7 +361,7 @@ Interactions:
 
 - Creates N `Document` rows, each with `meta.slice_range = [start_page, end_page]`
 - First slice → `wire_cover_letter()` sets `court_relay=True`; remaining slices wired as children
-- `batch.status` → `PROCESSING`; each slice queued via `process_document_task.delay(doc.id)`
+- `batch.status` → `OPEN`; each slice queued via `process_document_task.delay(doc.id)`
 - Returns `SlicingConfirmed` (`document_ids`); `SlicingPage.tsx` then navigates to `/triage`
 
 `POST /api/v1/slicing/{batch_id}/retry` — re-enqueues `prepare_slicing_task` for a batch stuck in `AWAITING_SLICING`. Resets `slicing.status` to `"preparing"` before re-enqueue.

@@ -16,7 +16,7 @@ def batch_with_failed_doc(db_session, sample_case):
         sender_email="test@example.com",
         subject="Batch with failure",
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(UTC),
     )
     db_session.add(batch)
@@ -107,7 +107,7 @@ def test_batch_analysis_creates_no_action_items_for_triage_case(db_session):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id="_TRIAGE",
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(UTC),
     )
     db_session.add(batch)

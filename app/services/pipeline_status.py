@@ -1058,7 +1058,6 @@ def recover_orphaned_running_stages(
     """
     from app.config import CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
     from app.models.database import Document, IngestBatch
-    from app.models.enums import IngestBatchStatus
 
     cutoff = now_utc() - timedelta(seconds=min_age_seconds)
 
@@ -1274,8 +1273,6 @@ def recover_orphaned_running_stages(
         # re-analysis of an already-completed batch.
         if batch_id in batch_analysis_reset_ids:
             batch.analysis_queued_at = None
-        if batch.status == IngestBatchStatus.PROCESSING:
-            batch.status = IngestBatchStatus.PENDING
 
     if docs_reset:
         db.commit()
@@ -1341,7 +1338,7 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
     """
 
     from app.models.database import Document, IngestBatch
-    from app.models.enums import IngestBatchStatus, PipelineState
+    from app.models.enums import PipelineState
 
     cutoff = datetime.now(UTC) - timedelta(seconds=max_age_seconds)
 
@@ -1386,8 +1383,6 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
                 continue
             # No docs are running and batch_analysis not yet done. Release claim.
             batch.analysis_queued_at = None
-            if batch.status == IngestBatchStatus.PROCESSING:
-                batch.status = IngestBatchStatus.PENDING
             recovered_ids.append(batch.id)
 
     if recovered_ids:

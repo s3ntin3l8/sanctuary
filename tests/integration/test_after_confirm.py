@@ -32,7 +32,7 @@ def _owner(db) -> int:
 def _batch(db, case_id: str) -> IngestBatch:
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.COMPLETED,
+        status=IngestBatchStatus.CONFIRMED,
         case_id=case_id,
         owner_id=_owner(db),
     )

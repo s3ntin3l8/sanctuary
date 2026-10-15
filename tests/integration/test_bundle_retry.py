@@ -17,9 +17,7 @@ from app.models.enums import (
 from app.services.pipeline_status import stages_dict
 
 
-def _make_batch(
-    db_session, sample_case, status=IngestBatchStatus.PENDING
-) -> IngestBatch:
+def _make_batch(db_session, sample_case, status=IngestBatchStatus.OPEN) -> IngestBatch:
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
@@ -94,7 +92,7 @@ def test_retry_bundle_409_when_stage_running(app_client, db_session, sample_case
 
 @pytest.mark.integration
 def test_retry_bundle_happy_path(app_client, db_session, sample_case):
-    batch = _make_batch(db_session, sample_case, status=IngestBatchStatus.PROCESSING)
+    batch = _make_batch(db_session, sample_case, status=IngestBatchStatus.OPEN)
     doc = _make_doc(db_session, batch, _pending_stages())
     db_session.commit()
 
@@ -108,7 +106,7 @@ def test_retry_bundle_happy_path(app_client, db_session, sample_case):
 
     # Batch reset
     assert batch.analysis_queued_at is None
-    assert batch.status == IngestBatchStatus.PENDING
+    assert batch.status == IngestBatchStatus.OPEN
 
     # Every stage flipped to PENDING (a bundle retry re-extracts too)
     stages = stages_dict(doc)

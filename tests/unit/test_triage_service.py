@@ -707,7 +707,7 @@ def test_open_batch_with_needs_review_still_appears_in_feed(db_session):
     # Batch is PENDING by default in the helper (no status overrides). Sanity:
     from app.models.enums import IngestBatchStatus
 
-    assert batch.status == IngestBatchStatus.PENDING
+    assert batch.status == IngestBatchStatus.OPEN
 
     bundles = get_triage_bundles(db_session)
     assert any(b.batch_id == batch.id for b in bundles)

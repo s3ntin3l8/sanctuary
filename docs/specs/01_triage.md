@@ -155,7 +155,7 @@ Clicking opens a modal with case + proceeding dropdowns (pre-filled from AI-dete
 
 1. **Sets `case_id` + `proceeding_id`** on all documents in the bundle
 2. **Migrates `ActionItem` records** parked under `_TRIAGE` to the target case
-3. **Transitions `IngestBatch.status`** → `COMPLETED` iff all docs are resolved
+3. **Transitions `IngestBatch.status`** → `CONFIRMED` iff all docs are resolved
 4. **Recomputes `review_reasons`** for each child: any doc whose only remaining blocker was `missing_case_id` gets `needs_review=False`
 5. Bundle disappears from the triage feed
 

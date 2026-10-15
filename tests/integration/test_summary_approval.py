@@ -66,7 +66,7 @@ def _bundle(db, docs):
         owner_id=_owner(db),
         source_type=IngestBatchSourceType.EMAIL,
         subject="Klage",
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db.add(batch)
     db.flush()

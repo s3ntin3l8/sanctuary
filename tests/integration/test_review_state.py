@@ -213,7 +213,7 @@ def test_migration_backfill(db_session, sample_case):
         owner_id=owner,
         source_type=IngestBatchSourceType.EMAIL,
         subject="done",
-        status=IngestBatchStatus.COMPLETED,
+        status=IngestBatchStatus.CONFIRMED,
     )
     db_session.add(done)
     db_session.flush()
@@ -252,6 +252,11 @@ def test_migration_backfill(db_session, sample_case):
         d.confirmed_at = None
     db_session.commit()
 
+    # The migration ran before CONFIRMED existed: it saw the batch as COMPLETED.
+    db_session.execute(
+        text("UPDATE ingest_batches SET status = 'COMPLETED' WHERE id = :id"),
+        {"id": done.id},
+    )
     db_session.execute(text(mig.BACKFILL_CONFIRMED))
     db_session.execute(text(mig.BACKFILL_EVIDENCE_PROVENANCE))
     db_session.commit()
@@ -274,7 +279,7 @@ def test_triage_bundle_names_its_open_reasons(db_session):
         owner_id=owner,
         source_type=IngestBatchSourceType.EMAIL,
         subject="Klage",
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()

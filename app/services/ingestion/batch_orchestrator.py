@@ -464,20 +464,20 @@ def _ingest_email_docs_and_commit(
         logger.info("Batch #%d: attachment %r queued", batch.id, att["filename"])
 
     if docs_to_process:
-        batch.status = IngestBatchStatus.PROCESSING
+        batch.status = IngestBatchStatus.OPEN
     else:
         # Nothing to ingest: every attachment was a duplicate already ingested
         # elsewhere, empty or unnamed (the body is discarded whenever there are
         # attachments), or the email had neither attachments nor a body. Commit
-        # a COMPLETED, document-less tombstone for the message instead of
-        # leaving a PENDING 0-doc batch (which nothing ever advances and
+        # a CONFIRMED, document-less tombstone for the message instead of
+        # leaving an OPEN 0-doc batch (which nothing ever advances and
         # delete_bundle could not remove) or rolling back (which made the next
         # fetch of the same Message-ID — routine, the Gmail sync watermark
         # overlaps on purpose — re-process it, and left the Gmail import page
-        # offering the message again for ever). COMPLETED is the honest status:
+        # offering the message again for ever). CONFIRMED is the honest status:
         # there is no bundle for the user to triage, so nothing is hidden from
         # the feed; the tombstone only records "this message was seen".
-        batch.status = IngestBatchStatus.COMPLETED
+        batch.status = IngestBatchStatus.CONFIRMED
         batch.meta = {**(batch.meta or {}), "reason": NO_NEW_DOCUMENTS}
         db.commit()
         logger.info(
@@ -589,7 +589,7 @@ def ingest_scanned_file(
         db.add(doc)
         db.flush()
         _pipeline_init(doc, batched=False, db=db)
-        batch.status = IngestBatchStatus.PROCESSING
+        batch.status = IngestBatchStatus.OPEN
         db.commit()
         logger.info("Scan batch #%d: single-page PDF, dispatching extraction", batch.id)
         dispatch_task("app.tasks.document_processing.process_document_task", doc.id)

@@ -141,7 +141,7 @@ def test_delete_batch_in_processing_state_with_no_in_flight_stage_allowed(db_ses
     work has actually finished (no RUNNING/RETRYING stage) must be
     deletable, or almost every live batch would be permanently stuck."""
     batch, _ = _make_batch_with_docs(db_session, doc_count=1)
-    batch.status = IngestBatchStatus.PROCESSING
+    batch.status = IngestBatchStatus.OPEN
     db_session.commit()
     batch_id = batch.id
 
@@ -156,7 +156,7 @@ def test_delete_batch_with_in_flight_stage_rejected(db_session):
     from app.models.database import DocumentPipelineStage
 
     batch, docs = _make_batch_with_docs(db_session, doc_count=1)
-    batch.status = IngestBatchStatus.PROCESSING
+    batch.status = IngestBatchStatus.OPEN
     db_session.add(
         DocumentPipelineStage(document_id=docs[0].id, stage="extract", status="running")
     )

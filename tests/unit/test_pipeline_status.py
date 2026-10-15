@@ -2164,7 +2164,7 @@ def test_recover_stranded_batch_pending_promotes_and_dispatches(
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=__import__("datetime").datetime.now(),
         ingest_date=__import__("datetime").datetime.now(),
     )
@@ -2269,7 +2269,7 @@ def test_recover_stranded_batch_pending_ignores_single_doc_batches(
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=__import__("datetime").datetime.now(),
         ingest_date=__import__("datetime").datetime.now(),
     )

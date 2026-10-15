@@ -48,7 +48,7 @@ def _triage_batch(db, owner_id, subject):
         owner_id=owner_id,
         source_type=IngestBatchSourceType.EMAIL,
         subject=subject,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db.add(batch)
     db.flush()
@@ -482,7 +482,7 @@ def test_batch_confirm_skips_bundle_with_inaccessible_suggested_case(
 
     db_session.expire_all()
     refreshed_batch = db_session.get(IngestBatch, a_batch.id)
-    assert refreshed_batch.status != IngestBatchStatus.COMPLETED
+    assert refreshed_batch.status != IngestBatchStatus.CONFIRMED
 
 
 def test_confirm_rejects_proceeding_id_from_a_different_case(

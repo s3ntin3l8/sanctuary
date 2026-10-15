@@ -22,7 +22,7 @@ def batch_with_two_docs(db_session, sample_case):
         sender_email="court@ag-hamburg.de",
         subject="Begleitschreiben + Anlage",
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -229,7 +229,7 @@ def test_single_doc_gets_standalone_role(db_session, sample_case):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.SCAN,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -298,7 +298,7 @@ def test_metadata_originator_not_overwritten_by_batch(db_session, sample_case):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -371,7 +371,7 @@ def test_null_cover_letter_doc_id_leaves_doc_standalone(db_session, sample_case)
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -426,7 +426,7 @@ def test_metadata_attributed_originator_preserved_for_non_court_enclosure(
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -521,7 +521,7 @@ def test_completion_sweep_claims_unbundled_proceeding_siblings(db_session, sampl
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
         proceeding_id=proc.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -628,7 +628,7 @@ def test_two_cover_letters_dont_swallow_each_other(db_session, sample_case):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -737,7 +737,7 @@ def test_batch_overrides_court_originator_with_party_type(db_session, sample_cas
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -807,7 +807,7 @@ def test_completion_sweep_sets_attributed_originator_from_sender(
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -889,7 +889,7 @@ def test_completion_sweep_skips_attributed_originator_for_court_doc(
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -960,7 +960,7 @@ def test_batch_does_not_override_court_for_ruling_enclosure(db_session, sample_c
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -1030,7 +1030,7 @@ def test_batch_still_overrides_court_when_sender_is_party(db_session, sample_cas
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )
@@ -1094,7 +1094,7 @@ def _triage_pair(db_session, sample_case):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.SCAN,
         subject="packet.pdf",
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
     )

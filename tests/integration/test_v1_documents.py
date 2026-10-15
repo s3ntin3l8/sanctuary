@@ -691,7 +691,7 @@ def _batch_with_stale_barriers(db, doc):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         metadata_phase_queued_at=datetime.now(UTC),
         analysis_queued_at=datetime.now(UTC),
     )

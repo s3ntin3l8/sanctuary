@@ -55,7 +55,7 @@ def bundle(db_session):
     batch = IngestBatch(
         owner_id=owner.id,
         source_type=IngestBatchSourceType.SCAN,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime(2026, 10, 9, tzinfo=UTC),
     )
     db_session.add(batch)

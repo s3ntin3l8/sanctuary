@@ -14,7 +14,7 @@ Bundles seeded (all scoped to ADV-024-A / ADV-031-B / ADV-100-X)
  8  LOW_CONF      UNKNOWN originator; all-low extraction_confidence; all fields expanded
  9  REACTIONS     All four UserReactionType values pre-seeded on docs
 10  SYNTHETIC     Loose doc (no batch) → synthetic bundle
-11  COMPLETED     batch.status=COMPLETED → must NOT appear in triage feed
+11  CONFIRMED     batch.status=CONFIRMED → must NOT appear in triage feed
 """
 
 import sys
@@ -197,7 +197,7 @@ def make_batch(
     *,
     case_id=None,
     proceeding_id=None,
-    status=IngestBatchStatus.PENDING,
+    status=IngestBatchStatus.OPEN,
     sender_email=None,
     days_ago=1,
 ):
@@ -1054,15 +1054,15 @@ db.commit()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# BUNDLE 11 — COMPLETED: already left triage; must NOT appear in feed
-#   Tests: IngestBatch.status=COMPLETED excluded by get_triage_bundles query
+# BUNDLE 11 — CONFIRMED: already left triage; must NOT appear in feed
+#   Tests: IngestBatch.status=CONFIRMED excluded by get_triage_bundles query
 # ═══════════════════════════════════════════════════════════════════════════
 b11 = make_batch(
     IngestBatchSourceType.EMAIL,
     "Bereits bestätigtes Bundle — darf NICHT in Triage erscheinen",
     sender_email="done@kanzlei.de",
     case_id="ADV-100-X",
-    status=IngestBatchStatus.COMPLETED,
+    status=IngestBatchStatus.CONFIRMED,
     days_ago=10,
 )
 
@@ -3003,7 +3003,7 @@ print("  7  CRITICAL_SCAN — CRITICAL ruling, ai=failed, floats to top by urgen
 print("  8  LOW_CONF      — UNKNOWN originator, all-low confidence, all fields open")
 print("  9  REACTIONS     — LIES / NEEDS_PROOF / PRECEDENT / TRUE pre-seeded")
 print(" 10  SYNTHETIC     — loose doc, no batch (loose-N key, MANUAL icon)")
-print(" 11  COMPLETED     — EXCLUDED from feed (status=COMPLETED)")
+print(" 11  CONFIRMED     — EXCLUDED from feed (status=CONFIRMED)")
 print()
 print("Phase 8 graph — ADV-024-A:")
 print("  AG proceeding (003 F 426/25):")

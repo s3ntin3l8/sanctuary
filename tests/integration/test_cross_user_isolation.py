@@ -174,7 +174,7 @@ def test_reorder_ignores_lead_doc_from_another_batch(db_session, two_users):
         batch = IngestBatch(
             owner_id=owner_id,
             source_type=IngestBatchSourceType.EMAIL,
-            status=IngestBatchStatus.PROCESSING,
+            status=IngestBatchStatus.OPEN,
         )
         db_session.add(batch)
         db_session.flush()
@@ -238,7 +238,7 @@ def test_assigning_to_an_unseen_case_is_404_but_view_only_case_is_403(
     batch = IngestBatch(
         owner_id=a.id,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()

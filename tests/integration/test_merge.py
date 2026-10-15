@@ -74,7 +74,7 @@ def _rows(db, case_id, proc_id):
     batch = IngestBatch(
         owner_id=owner,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime(2026, 10, 9, tzinfo=UTC),
         case_id=case_id,
         proceeding_id=proc_id,

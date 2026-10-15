@@ -113,7 +113,7 @@ def create_manual_upload_batch(
         owner_id=owner_id,
         agent_token_id=agent_token_id,
     )
-    batch.status = IngestBatchStatus.PROCESSING
+    batch.status = IngestBatchStatus.OPEN
     db.flush()
     return batch.id
 

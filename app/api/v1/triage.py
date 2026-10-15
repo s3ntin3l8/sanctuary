@@ -258,7 +258,7 @@ def _bundle_by_key(db: Session, user: User, key: str) -> TriageBundle | None:
     if batch_id is not None:
         batch = db.get(IngestBatch, batch_id)
         if batch is None or batch.status in (
-            IngestBatchStatus.COMPLETED,
+            IngestBatchStatus.CONFIRMED,
             IngestBatchStatus.DISMISSED,
         ):
             return None

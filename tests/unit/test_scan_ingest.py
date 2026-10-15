@@ -52,7 +52,7 @@ def test_ingest_scanned_file_single_page_dispatches_process_task(db_session, tmp
     from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 
     assert batch.source_type == IngestBatchSourceType.SCAN
-    assert batch.status == IngestBatchStatus.PROCESSING
+    assert batch.status == IngestBatchStatus.OPEN
     assert len(dispatched) == 1
     assert "process_document_task" in dispatched[0]
 

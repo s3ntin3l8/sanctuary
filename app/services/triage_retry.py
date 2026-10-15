@@ -161,7 +161,6 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     from app.models.database import Case, Proceeding
     from app.models.enums import (
         DocumentRole,
-        IngestBatchStatus,
         PipelineStage,
         StageStatus,
     )
@@ -193,7 +192,6 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
 
     # Clear the cascade gate so the batch analysis can re-run
     batch.analysis_queued_at = None
-    batch.status = IngestBatchStatus.PENDING
     if full:
         # metadata_phase_queued_at is a one-time CAS flag (see
         # claim_batch_for_metadata_phase) — once set it never resets on its

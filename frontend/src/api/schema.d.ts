@@ -5304,9 +5304,11 @@ export interface components {
         IngestBatchSourceType: "email" | "scan" | "manual";
         /**
          * IngestBatchStatus
+         * @description Triage lifecycle of a batch. How far the pipeline got is per document
+         *     (``Document.pipeline_state``), never stored here.
          * @enum {string}
          */
-        IngestBatchStatus: "pending" | "processing" | "completed" | "failed" | "dismissed" | "awaiting_slicing";
+        IngestBatchStatus: "awaiting_slicing" | "open" | "confirmed" | "dismissed";
         /** InstanceExposure */
         InstanceExposure: {
             /** Allocation Source */
