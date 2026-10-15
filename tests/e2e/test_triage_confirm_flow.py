@@ -84,7 +84,7 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, str]:
         """
         INSERT INTO ingest_batches
             (owner_id, source_type, subject, status, received_at, ingest_date)
-        VALUES (%s, 'MANUAL', %s, 'PROCESSING', now(), now())
+        VALUES (%s, 'MANUAL', %s, 'OPEN', now(), now())
         RETURNING id
         """,
         (owner_id, f"e2e-confirm-{suffix}.txt"),
