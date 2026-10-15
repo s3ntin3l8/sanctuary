@@ -87,7 +87,7 @@ def test_slicing_confirm_idempotency_guard(db_session, tmp_path):
         source_type=IngestBatchSourceType.SCAN,
         subject="already_done.pdf",
         raw_source_path=str(pdf),
-        status=IngestBatchStatus.PROCESSING,  # already past AWAITING_SLICING
+        status=IngestBatchStatus.OPEN,  # already past AWAITING_SLICING
         meta={"slicing": {"status": "ready", "page_count": 2}},
     )
     db_session.add(batch)
@@ -184,7 +184,7 @@ def test_slicing_confirm_rereads_status_under_the_lock(db_session, tmp_path):
         found = original(batch_id, db, user)
         db_session.execute(
             text("UPDATE ingest_batches SET status = :s WHERE id = :id"),
-            {"s": IngestBatchStatus.PROCESSING.name, "id": found.id},
+            {"s": IngestBatchStatus.OPEN.name, "id": found.id},
         )
         db_session.commit()
         return found

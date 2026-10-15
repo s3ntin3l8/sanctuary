@@ -426,7 +426,7 @@ def test_batch_analysis_give_up_keeps_an_earlier_failure_cause(db_session, doc):
     from app.services.pipeline_status import _fail_poison_stage
 
     batch = IngestBatch(
-        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.OPEN
     )
     db_session.add(batch)
     db_session.flush()
@@ -470,7 +470,7 @@ def test_metadata_give_up_leaves_a_healthy_siblings_batch_analysis_alone(
     from app.services.pipeline_status import _fail_poison_stage
 
     batch = IngestBatch(
-        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.OPEN
     )
     db_session.add(batch)
     db_session.flush()

@@ -78,7 +78,7 @@ def test_one_failed_doc_never_blocks_the_case_brief(db_session):
 
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()

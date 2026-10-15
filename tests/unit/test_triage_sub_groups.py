@@ -16,7 +16,7 @@ from app.services.triage_subgroups import (
 def _make_batch(db_session) -> IngestBatch:
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()

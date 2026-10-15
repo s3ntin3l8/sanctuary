@@ -28,9 +28,9 @@ def _has_in_flight_stage(
 ) -> bool:
     """True when any document in the batch (or the one document) has a stage
     currently RUNNING or RETRYING — the actual "unsafe to delete out from under a worker"
-    condition. Deliberately not IngestBatchStatus.PROCESSING: that status is
+    condition. Deliberately not IngestBatchStatus.OPEN: that status is
     the batch's normal resting state until a user explicitly confirms it out
-    of triage (see confirm_bundle), so it stays PROCESSING long after every
+    of triage (see confirm_bundle), so it stays OPEN long after every
     document's pipeline work has finished — using it here would make almost
     every live batch permanently undeletable."""
     return bool(
@@ -92,9 +92,9 @@ def delete_bundle(
 
     Raises ValueError when the batch is mid-flight: AWAITING_SLICING (the
     user hasn't even confirmed slice boundaries yet), or any document has a
-    stage currently RUNNING/RETRYING. IngestBatchStatus.PROCESSING alone is
-    NOT mid-flight — see _has_in_flight_stage's docstring — so a COMPLETED,
-    PENDING, FAILED, or quiescent PROCESSING batch is deletable. Caller maps
+    stage currently RUNNING/RETRYING. IngestBatchStatus.OPEN alone is
+    NOT mid-flight — see _has_in_flight_stage's docstring — so a CONFIRMED
+    or quiescent OPEN batch is deletable. Caller maps
     to HTTP 409.
     """
     from app.services.document_service import DocumentService

@@ -346,7 +346,7 @@ def test_batch_analysis_retry_409s_when_every_failed_sibling_was_reclaimed(
     batch = IngestBatch(
         owner_id=user.id,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add_all([case, batch])
     db_session.flush()

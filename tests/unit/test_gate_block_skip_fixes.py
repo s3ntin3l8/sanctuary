@@ -69,7 +69,7 @@ def _make_batch(db, case_id: str, *, analysis_queued_at=None) -> IngestBatch:
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=case_id,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(),
         ingest_date=datetime.now(),
         analysis_queued_at=analysis_queued_at,
@@ -247,6 +247,8 @@ def test_recover_stuck_batches_clears_genuinely_stuck_batch(db_session, sample_c
         "recover_stuck_batches did NOT clear analysis_queued_at for a genuinely "
         "stuck batch (batch_analysis never ran)."
     )
+    # The sweep releases the claim only; the triage lifecycle is not its business.
+    assert batch.status == IngestBatchStatus.OPEN
 
 
 # ---------------------------------------------------------------------------

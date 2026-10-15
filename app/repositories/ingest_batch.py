@@ -84,7 +84,7 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             case_id=case_id,
             proceeding_id=proceeding_id,
             received_at=received_at or now_utc(),
-            status=IngestBatchStatus.PENDING,
+            status=IngestBatchStatus.OPEN,
             ingest_date=now_utc(),
             agent_token_id=agent_token_id,
         )

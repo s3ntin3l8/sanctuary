@@ -324,7 +324,7 @@ def test_trigger_case_brief_releases_claim_when_dispatch_fails(
     assert refreshed.brief_queued_at is None
 
 
-# --- mark_batch_failed_if_all_extracts_failed -------------------------------
+# --- batch_pipeline_state ---------------------------------------------------
 
 
 def _set_extract(db, doc_id: int, status: str) -> None:
@@ -348,8 +348,8 @@ def batch_with_two_docs(db_session):
 
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
-        subject="Orchestrator FAILED-wiring test",
-        status=IngestBatchStatus.PROCESSING,
+        subject="batch_pipeline_state test",
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.commit()
@@ -372,72 +372,88 @@ def batch_with_two_docs(db_session):
 
 
 @pytest.mark.unit
-def test_mark_batch_failed_when_every_extract_failed(db_session, batch_with_two_docs):
-    from app.models.enums import IngestBatchStatus
-    from app.services.intelligence.orchestrator import (
-        mark_batch_failed_if_all_extracts_failed,
-    )
+def test_batch_pipeline_state_failed_when_every_extract_failed(
+    db_session, batch_with_two_docs
+):
+    from app.services.pipeline_status import batch_pipeline_state
 
     batch, docs = batch_with_two_docs
     for d in docs:
         _set_extract(db_session, d.id, "failed")
 
-    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is True
-    db_session.refresh(batch)
-    assert batch.status == IngestBatchStatus.FAILED
+    assert batch_pipeline_state(db_session, batch) == "failed"
 
 
 @pytest.mark.unit
-def test_mark_batch_failed_not_triggered_by_single_doc_failure(
+def test_batch_pipeline_state_not_failed_by_single_doc_failure(
     db_session, batch_with_two_docs
 ):
-    """One bad attachment must not flip a multi-doc bundle to FAILED."""
-    from app.models.enums import IngestBatchStatus
-    from app.services.intelligence.orchestrator import (
-        mark_batch_failed_if_all_extracts_failed,
-    )
+    """One bad attachment must not make a multi-doc bundle 'failed'."""
+    from app.services.pipeline_status import batch_pipeline_state
 
     batch, docs = batch_with_two_docs
     _set_extract(db_session, docs[0].id, "failed")
     _set_extract(db_session, docs[1].id, "completed")
 
-    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is False
-    db_session.refresh(batch)
-    assert batch.status == IngestBatchStatus.PROCESSING
+    assert batch_pipeline_state(db_session, batch) == "done"
 
 
 @pytest.mark.unit
-def test_mark_batch_failed_is_idempotent(db_session, batch_with_two_docs):
-    from app.services.intelligence.orchestrator import (
-        mark_batch_failed_if_all_extracts_failed,
-    )
+def test_batch_pipeline_state_running_wins_over_failed(db_session, batch_with_two_docs):
+    from app.services.pipeline_status import batch_pipeline_state
 
     batch, docs = batch_with_two_docs
-    for d in docs:
-        _set_extract(db_session, d.id, "failed")
+    _set_extract(db_session, docs[0].id, "failed")
+    _set_extract(db_session, docs[1].id, "running")
+    assert batch_pipeline_state(db_session, batch) == "running"
 
-    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is True
-    # Second call on an already-FAILED batch is a no-op, not an error.
-    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is False
+    _set_extract(db_session, docs[1].id, "retrying")
+    assert batch_pipeline_state(db_session, batch) == "running"
 
 
 @pytest.mark.unit
-def test_mark_batch_failed_does_not_touch_completed_batch(
+def test_batch_pipeline_state_ignores_dismissed_documents(
     db_session, batch_with_two_docs
 ):
-    """A batch the user already confirmed out of triage (COMPLETED) must
-    never be silently flipped to FAILED by a background pipeline check."""
-    from app.models.enums import IngestBatchStatus
-    from app.services.intelligence.orchestrator import (
-        mark_batch_failed_if_all_extracts_failed,
-    )
+    from app.models.enums import DocumentStatus
+    from app.services.pipeline_status import batch_pipeline_state
 
     batch, docs = batch_with_two_docs
-    batch.status = IngestBatchStatus.COMPLETED
+    _set_extract(db_session, docs[0].id, "failed")
+    _set_extract(db_session, docs[1].id, "running")
+    docs[1].status = DocumentStatus.DISMISSED
+    db_session.commit()
+
+    assert batch_pipeline_state(db_session, batch) == "failed"
+
+
+@pytest.mark.unit
+def test_batch_pipeline_state_empty_batch_is_done(db_session, batch_with_two_docs):
+    from app.models.enums import DocumentStatus
+    from app.services.pipeline_status import batch_pipeline_state
+
+    batch, docs = batch_with_two_docs
+    assert batch_pipeline_state(db_session, batch) == "done"
+    for d in docs:
+        d.status = DocumentStatus.DISMISSED
+    db_session.commit()
+    assert batch_pipeline_state(db_session, batch) == "done"
+
+
+@pytest.mark.unit
+def test_batch_pipeline_state_leaves_batch_status_alone(
+    db_session, batch_with_two_docs
+):
+    """Pipeline progress is derived; a CONFIRMED batch stays CONFIRMED."""
+    from app.models.enums import IngestBatchStatus
+    from app.services.pipeline_status import batch_pipeline_state
+
+    batch, docs = batch_with_two_docs
+    batch.status = IngestBatchStatus.CONFIRMED
     db_session.commit()
     for d in docs:
         _set_extract(db_session, d.id, "failed")
 
-    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is False
+    assert batch_pipeline_state(db_session, batch) == "failed"
     db_session.refresh(batch)
-    assert batch.status == IngestBatchStatus.COMPLETED
+    assert batch.status == IngestBatchStatus.CONFIRMED

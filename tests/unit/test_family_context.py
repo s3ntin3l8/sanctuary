@@ -41,7 +41,7 @@ def env(db_session):
     batch = IngestBatch(
         owner_id=owner.id,
         source_type=IngestBatchSourceType.SCAN,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime(2026, 10, 9, tzinfo=UTC),
     )
     db_session.add(batch)
@@ -323,7 +323,7 @@ def test_a_draft_another_bundle_still_points_at_survives_the_exhibit_cleanup(env
     other_batch = IngestBatch(
         owner_id=batch.owner_id,
         source_type=IngestBatchSourceType.SCAN,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime(2026, 10, 9, tzinfo=UTC),
         proceeding_id=draft.id,
     )

@@ -119,7 +119,7 @@ def test_reingesting_same_duplicate_only_email_does_not_churn_batch_ids(db_sessi
         .all()
     )
     assert len(tombstones) == 1
-    assert tombstones[0].status == IngestBatchStatus.COMPLETED
+    assert tombstones[0].status == IngestBatchStatus.CONFIRMED
     assert tombstones[0].meta["reason"] == "no_new_documents"
     assert db_session.query(IngestBatch).count() == batch_count_before + 1
 

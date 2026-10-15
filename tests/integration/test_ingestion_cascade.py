@@ -31,7 +31,7 @@ def email_batch(db_session, sample_case):
         sender_email="court@ag-berlin.de",
         subject="Ladung zum Termin – ADV-001",
         case_id=sample_case.id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime.now(UTC),
     )
     db_session.add(batch)

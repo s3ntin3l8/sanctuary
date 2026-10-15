@@ -197,12 +197,13 @@ class IngestBatchSourceType(enum.StrEnum):
 
 
 class IngestBatchStatus(enum.StrEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    DISMISSED = "dismissed"
+    """Triage lifecycle of a batch. Pipeline progress is derived per document
+    (``batch_pipeline_state``), never stored here."""
+
     AWAITING_SLICING = "awaiting_slicing"
+    OPEN = "open"  # in triage
+    CONFIRMED = "confirmed"  # filed out of triage
+    DISMISSED = "dismissed"
 
 
 class RelationshipType(enum.StrEnum):

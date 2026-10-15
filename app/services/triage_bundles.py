@@ -280,7 +280,7 @@ def _build_bundles(
             or_(
                 and_(
                     IngestBatch.id.isnot(None),
-                    IngestBatch.status != IngestBatchStatus.COMPLETED,
+                    IngestBatch.status != IngestBatchStatus.CONFIRMED,
                     IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
                 ),
                 Document.case_id == "_TRIAGE",
@@ -288,7 +288,7 @@ def _build_bundles(
                     Document.confirmed_at.is_(None),
                     or_(
                         IngestBatch.id.is_(None),
-                        IngestBatch.status != IngestBatchStatus.COMPLETED,
+                        IngestBatch.status != IngestBatchStatus.CONFIRMED,
                     ),
                 ),
             ),

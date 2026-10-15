@@ -56,7 +56,7 @@ def _make_batch(db_session, case_id):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=case_id,
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()

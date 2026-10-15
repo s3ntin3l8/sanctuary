@@ -71,7 +71,7 @@ export const homeView: Schemas['HomeView'] = {
     {
       id: 42,
       key: 'batch-42',
-      status: 'pending',
+      status: 'open',
       received_at: '2026-06-21T09:12:00Z',
       sender_email: 'kanzlei-vogt@ra-vogt.de',
       title: 'Klageerwiderung',

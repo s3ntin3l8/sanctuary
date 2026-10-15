@@ -261,7 +261,7 @@ def test_metadata_task_dispatches_enrich_for_single_doc_batch_with_stale_claim(
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
-        status=IngestBatchStatus.PENDING,
+        status=IngestBatchStatus.OPEN,
         analysis_queued_at=datetime.now(UTC),
     )
     db_session.add(batch)

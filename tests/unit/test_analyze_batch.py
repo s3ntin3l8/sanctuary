@@ -27,7 +27,7 @@ def batch_with_docs(db_session, sample_case):
     from app.services.pipeline_status import initialize
 
     batch = IngestBatch(
-        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.OPEN
     )
     db_session.add(batch)
     db_session.flush()

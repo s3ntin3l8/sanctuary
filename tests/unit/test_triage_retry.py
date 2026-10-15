@@ -257,7 +257,7 @@ def test_reset_batch_for_retry_clears_metadata_phase_queued_at_on_full(db_sessio
 
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     batch.metadata_phase_queued_at = datetime.now(UTC).replace(tzinfo=None)
     db_session.add(batch)
@@ -293,7 +293,7 @@ def test_reset_batch_for_retry_partial_does_not_clear_metadata_phase_queued_at(
 
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     queued_at = datetime.now(UTC).replace(tzinfo=None)
     batch.metadata_phase_queued_at = queued_at
@@ -320,7 +320,7 @@ def test_reset_batch_for_retry_keeps_user_structure(db_session, full):
     from app.models.enums import DocumentRole
 
     batch = IngestBatch(
-        source_type=IngestBatchSourceType.SCAN, status=IngestBatchStatus.PROCESSING
+        source_type=IngestBatchSourceType.SCAN, status=IngestBatchStatus.OPEN
     )
     db_session.add(batch)
     db_session.flush()
@@ -343,7 +343,7 @@ def test_reset_batch_for_retry_without_sub_groups_resets_roles(db_session):
     from app.models.enums import DocumentRole
 
     batch = IngestBatch(
-        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.OPEN
     )
     db_session.add(batch)
     db_session.flush()

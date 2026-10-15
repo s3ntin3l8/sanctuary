@@ -42,7 +42,7 @@ def setup(db_session):
     batch = IngestBatch(
         owner_id=owner.id,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
         received_at=datetime(2026, 10, 9, tzinfo=UTC),
         case_id="PA-1",
     )

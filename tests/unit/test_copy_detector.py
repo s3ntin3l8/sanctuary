@@ -52,7 +52,7 @@ def env(db_session):
         b = IngestBatch(
             owner_id=owner.id,
             source_type=IngestBatchSourceType.SCAN,
-            status=IngestBatchStatus.PROCESSING,
+            status=IngestBatchStatus.OPEN,
             received_at=datetime(2026, 10, 9, tzinfo=UTC),
         )
         db_session.add(b)

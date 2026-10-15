@@ -27,7 +27,7 @@ def _make_failed_doc(db_session, sample_case) -> Document:
         source_type=IngestBatchSourceType.EMAIL,
         received_at=datetime.now(UTC),
         case_id=sample_case.id,
-        status=IngestBatchStatus.FAILED,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()

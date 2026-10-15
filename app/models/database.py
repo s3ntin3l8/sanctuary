@@ -741,7 +741,7 @@ class IngestBatch(Base):
     )
     status: Mapped[IngestBatchStatus] = mapped_column(
         SAEnum(IngestBatchStatus),
-        default=IngestBatchStatus.PENDING,
+        default=IngestBatchStatus.OPEN,
         nullable=False,
     )
     ingest_date: Mapped[datetime] = mapped_column(

@@ -1014,6 +1014,52 @@ def _fail_poison_stage(db: Session, doc, stage: PipelineStage) -> None:
     )
 
 
+def batch_pipeline_state(db: Session, batch) -> Literal["running", "failed", "done"]:
+    """Pipeline progress of a batch, derived from its documents' stages.
+
+    ``IngestBatch.status`` is the triage lifecycle only; how far the pipeline
+    got lives per document. Dismissed documents are ignored.
+
+    * ``running``: some document has a stage RUNNING or RETRYING.
+    * ``failed``: the batch has documents and every one's EXTRACT stage has
+      terminally failed (a single failed EXTRACT in a multi-document bundle is
+      not a failed batch).
+    * ``done``: anything else.
+    """
+    row = db.execute(
+        text(
+            """
+            SELECT
+              EXISTS (
+                SELECT 1 FROM document_pipeline_stages dps
+                JOIN documents d ON d.id = dps.document_id
+                WHERE d.ingest_batch_id = :batch_id
+                  AND d.status <> 'DISMISSED'
+                  AND dps.status IN ('running', 'retrying')
+              ) AS running,
+              EXISTS (
+                SELECT 1 FROM documents
+                WHERE ingest_batch_id = :batch_id AND status <> 'DISMISSED'
+              ) AND NOT EXISTS (
+                SELECT 1 FROM documents d
+                WHERE d.ingest_batch_id = :batch_id
+                  AND d.status <> 'DISMISSED'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM document_pipeline_stages dps
+                    WHERE dps.document_id = d.id
+                      AND dps.stage = 'extract'
+                      AND dps.status = 'failed'
+                  )
+              ) AS all_failed
+            """
+        ),
+        {"batch_id": batch.id},
+    ).one()
+    if row.running:
+        return "running"
+    return "failed" if row.all_failed else "done"
+
+
 def recover_orphaned_running_stages(
     db: Session,
     *,
@@ -1058,7 +1104,6 @@ def recover_orphaned_running_stages(
     """
     from app.config import CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
     from app.models.database import Document, IngestBatch
-    from app.models.enums import IngestBatchStatus
 
     cutoff = now_utc() - timedelta(seconds=min_age_seconds)
 
@@ -1274,8 +1319,6 @@ def recover_orphaned_running_stages(
         # re-analysis of an already-completed batch.
         if batch_id in batch_analysis_reset_ids:
             batch.analysis_queued_at = None
-        if batch.status == IngestBatchStatus.PROCESSING:
-            batch.status = IngestBatchStatus.PENDING
 
     if docs_reset:
         db.commit()
@@ -1341,7 +1384,7 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
     """
 
     from app.models.database import Document, IngestBatch
-    from app.models.enums import IngestBatchStatus, PipelineState
+    from app.models.enums import PipelineState
 
     cutoff = datetime.now(UTC) - timedelta(seconds=max_age_seconds)
 
@@ -1386,8 +1429,6 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
                 continue
             # No docs are running and batch_analysis not yet done. Release claim.
             batch.analysis_queued_at = None
-            if batch.status == IngestBatchStatus.PROCESSING:
-                batch.status = IngestBatchStatus.PENDING
             recovered_ids.append(batch.id)
 
     if recovered_ids:
