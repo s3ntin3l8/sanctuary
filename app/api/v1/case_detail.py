@@ -17,6 +17,7 @@ from app.api.access_guards import (
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
 from app.core.timezone import now_utc
+from app.core.validators import normalize_case_id
 from app.dependencies import get_current_user, get_db
 from app.models.database import (
     ActionItem,
@@ -416,6 +417,10 @@ def rename_case_id(
     case: Case = Depends(require_case_access(edit=True)),
 ):
     """Change the case's internal ID (its URL, breadcrumb and lead identifier)."""
+    existing = db.get(Case, normalize_case_id(body.new_id) or "")
+    if existing is not None and not access_service.can_edit_case(db, user, existing):
+        # Same answer as for a missing case: never confirm a case the caller can't edit.
+        raise ApiError(404, "not_found", "Case not found.")
     try:
         renamed = rename_case(db, case.id, body.new_id, user.id)
     except MergeError as exc:

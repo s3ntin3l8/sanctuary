@@ -309,3 +309,25 @@ def test_rename_case_endpoint_guards(db_session):
     ok = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "RE-9"})
     assert ok.status_code == 200, ok.text
     assert ok.json()["id"] == "RE-9"
+
+
+def test_rename_case_hides_cases_the_caller_cannot_edit(db_session):
+    from app.dependencies import get_current_user
+    from app.models.enums import UserRole
+
+    mine = User(email="me@example.com", password_hash="x", role=UserRole.USER)
+    theirs = User(email="them@example.com", password_hash="x", role=UserRole.USER)
+    db_session.add_all([mine, theirs])
+    db_session.flush()
+    for cid, owner in (("HID-1", mine), ("HID-2", theirs)):
+        db_session.add(
+            Case(id=cid, title=cid, status=CaseStatus.INTAKE, owner_id=owner.id)
+        )
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: mine
+    try:
+        resp = client.post("/api/v1/cases/HID-1/rename", json={"new_id": "HID-2"})
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert (resp.status_code, resp.json()["code"]) == (404, "not_found")

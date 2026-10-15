@@ -11,6 +11,7 @@ import {
   useUpdateProceeding,
 } from '../../../api/caseDetail'
 import { useCasesDirectory } from '../../../api/cases'
+import { normalizeCaseId } from '../caseId'
 import { leaveTo } from '../../../navigation'
 import { Button } from '../../../ui/Button'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog'
@@ -54,7 +55,7 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   function submitCase(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const d = new FormData(e.currentTarget)
-    const newId = String(d.get('case_id')).trim()
+    const newId = normalizeCaseId(String(d.get('case_id')))
     update.mutate(
       {
         title: String(d.get('title')),
@@ -87,7 +88,6 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
             name="case_id"
             defaultValue={detail.id}
             required
-            pattern="[A-Za-z0-9._\-]+"
             maxLength={64}
             className={`${inputClass} font-mono`}
           />

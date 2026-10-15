@@ -7,14 +7,14 @@ the source row is deleted. Nothing is merged across owners without edit access
 """
 
 import logging
-import re
+import os
 import shutil
 from pathlib import Path
 
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
-from app.core.validators import normalize_case_id
+from app.core.validators import validate_case_id
 from app.models.database import (
     ActionItem,
     ApiTokenCase,
@@ -243,9 +243,6 @@ def merge_cases(
     return db.get(Case, target_id)  # type: ignore[return-value]
 
 
-_CASE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-
-
 def _rekey(mapping: object, old: str, new: str) -> dict | None:
     """``mapping`` with key ``old`` moved to ``new``; None when nothing changes."""
     if not isinstance(mapping, dict) or old not in mapping:
@@ -259,34 +256,38 @@ def _move_case_dir(db: Session, old_id: str, new_id: str) -> tuple[Path, Path] |
     """Move ``DATA_DIR/<old>`` to ``<new>`` and repoint the stored relative paths."""
     from app.config import DATA_DIR  # late: tests repoint it
 
-    root = DATA_DIR.resolve()
-    old_dir, new_dir = (root / old_id).resolve(), (root / new_id).resolve()
-    if not (old_dir.is_relative_to(root) and new_dir.is_relative_to(root)):
+    root = os.path.realpath(DATA_DIR)
+    old_dir = os.path.realpath(os.path.join(root, old_id))
+    new_dir = os.path.realpath(os.path.join(root, new_id))
+    if not (old_dir.startswith(root + os.sep) and new_dir.startswith(root + os.sep)):
         raise MergeError("invalid_case_id", "Unsafe case ID.")
-    if not old_dir.is_dir():
+    if not os.path.isdir(old_dir):
         return None
-    if new_dir.exists():
+    if os.path.exists(new_dir):
         raise MergeError("case_id_taken", f"{new_id} already has stored files.")
-    shutil.move(str(old_dir), str(new_dir))
+    shutil.move(old_dir, new_dir)
     for column in (Document.file_path, IngestBatch.raw_source_path):
-        db.query(column.class_).filter(column.like(f"{old_id}/%")).update(
+        db.query(column.class_).filter(
+            column.startswith(f"{old_id}/", autoescape=True)
+        ).update(
             {column: func.concat(new_id, func.substr(column, len(old_id) + 1))},
             synchronize_session=False,
         )
-    return old_dir, new_dir
+    return Path(old_dir), Path(new_dir)
 
 
 def rename_case(
     db: Session, case_id: str, new_id: str, actor_user_id: int | None = None
 ) -> Case:
     """Change a case's internal ID; every FK follows through ON UPDATE CASCADE."""
-    new_id = normalize_case_id(new_id) or ""
-    if case_id == "_TRIAGE" or new_id == "_TRIAGE":
+    if case_id == "_TRIAGE" or new_id.strip().upper() == "_TRIAGE":
         raise MergeError("triage_case", "The Triage Inbox cannot be renamed.")
-    if not _CASE_ID_RE.match(new_id):
+    validated = validate_case_id(new_id)
+    if validated is None:
         raise MergeError(
-            "invalid_case_id", "Use letters, digits, dots, dashes and underscores."
+            "invalid_case_id", "Use a case number such as 8245-25 or ADV-024-A."
         )
+    new_id = validated
     if new_id == case_id:
         raise MergeError("same_target", "That is already the case ID.")
     if db.get(Case, case_id) is None:
@@ -325,7 +326,7 @@ def rename_case(
         AuditEventType.CASE_RENAMED,
         target_type="case",
         target_id=new_id,
-        payload={"old_id": case_id},
+        payload={"old_id": case_id, "new_id": new_id},
         actor_user_id=actor_user_id,
     )
     try:

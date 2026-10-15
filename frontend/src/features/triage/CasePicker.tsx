@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react'
 
 import type { Schemas } from '../../api/client'
 import { Icon } from '../../ui/Icon'
+import { normalizeCaseId } from '../cases/caseId'
 
 export type NewCase = { id: string; title: string }
 
@@ -48,7 +49,7 @@ export function CasePicker({
           autoFocus
           aria-label="New case ID"
           value={creating.id}
-          onChange={(e) => setCreating({ ...creating, id: e.target.value })}
+          onChange={(e) => setCreating({ ...creating, id: normalizeCaseId(e.target.value) })}
           placeholder="ADV-025-A"
           className="w-full rounded-md border border-line bg-transparent px-2 py-1.5 font-mono text-[12px] outline-none"
         />
@@ -109,7 +110,7 @@ export function CasePicker({
       {!exact && (
         <button
           type="button"
-          onClick={() => setCreating({ id: q, title: defaultTitle })}
+          onClick={() => setCreating({ id: normalizeCaseId(q), title: defaultTitle })}
           className="flex w-full items-center gap-2 border-t border-line2 px-3 py-2 text-left text-[11px] font-semibold text-tealink hover:bg-accent/7"
         >
           <Icon name="add" size={14} /> {q ? `Create case “${q}”` : 'Create new case…'}
