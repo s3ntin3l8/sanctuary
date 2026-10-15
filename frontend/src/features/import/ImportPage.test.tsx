@@ -148,28 +148,21 @@ test('import: lists case references oldest first with the case each files into',
   renderAt('/settings/gmail/import', <ImportPage />)
 
   expect(await screen.findByText('7 messages indexed · refreshed 2026-10-07')).toBeVisible()
-  const rows = (await screen.findAllByRole('row')).slice(1)
-  // Section header + case heading + reference, section header + reference, section header + reference.
-  expect(rows).toHaveLength(7)
-  const [caseHeader, caseRow, heading, noCaseHeader, noCase, unrefHeader, unref] =
-    rows as HTMLElement[] &
-      [HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement]
-  expect(caseHeader).toHaveTextContent('In a case')
   // The case heading links to the case and carries its title.
-  expect(within(caseRow).getByRole('link', { name: /8372-25/ })).toHaveAttribute(
-    'href',
-    '/cases/8372-25',
-  )
-  expect(within(caseRow).getByText('Vogt ./. Vogt')).toBeVisible()
-  // File numbers read "8372/25".
-  expect(within(heading).getByText('8372/25')).toBeVisible()
-  expect(within(heading).getByText('1/4')).toBeVisible()
-  expect(noCaseHeader).toHaveTextContent('No case yet')
+  const caseLink = await screen.findByRole('link', { name: /8372-25/ })
+  expect(caseLink).toHaveAttribute('href', '/cases/8372-25')
+  expect(within(caseLink).getByText('Vogt ./. Vogt')).toBeVisible()
+  // File numbers read "8372/25", with their own progress.
+  const reference = screen.getByRole('button', { name: 'Expand 8372/25' })
+  expect(within(reference.closest('.group') as HTMLElement).getByText('1/4')).toBeVisible()
+  // The chip and the section divider.
+  expect(screen.getAllByText('In a case')).toHaveLength(2)
+  expect(screen.getByText('No case yet')).toBeVisible()
   // Without a case the subject's topic describes the reference.
-  expect(within(noCase).getByText('Müller ./. Müller')).toBeVisible()
-  expect(unrefHeader).toHaveTextContent('Without a reference')
-  expect(within(unref).getByText('No reference')).toBeVisible()
-  expect(screen.getByText('1 of 7 imported')).toBeVisible()
+  expect(screen.getByText('Müller ./. Müller')).toBeVisible()
+  expect(screen.getByText('Without a reference')).toBeVisible()
+  expect(screen.getByText('No reference')).toBeVisible()
+  expect(screen.getByText(/1 of 7 imported/)).toBeVisible()
 })
 
 test('import: expanding a group shows its messages, already imported ones cannot be picked', async () => {
@@ -196,7 +189,7 @@ test('import: expanding a group shows its messages, already imported ones cannot
   })
 })
 
-test('import: "next N oldest" covers everything, or just the open reference', async () => {
+test('import: "next N oldest" covers everything; a row imports only its own reference', async () => {
   const fetch = stubApi({
     ...base,
     'POST /api/v1/gmail/import': { status: 202, body: { queued: 5 } },
@@ -209,17 +202,35 @@ test('import: "next N oldest" covers everything, or just the open reference', as
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
   expect(await post()).toEqual({ oldest_n: 25, group: null, new: false })
 
+  // Opening a reference doesn't scope the global button.
   await user.click(screen.getByRole('button', { name: 'Expand 8372/25' }))
-  expect(await screen.findByText('8372/25', { selector: 'strong' })).toBeVisible()
   const count = screen.getByRole('spinbutton', { name: 'How many' })
   await user.clear(count)
   await user.type(count, '10')
-  expect(screen.queryByRole('checkbox', { name: /strictly in order/ })).toBeNull()
   fetch.mockClear()
   await user.click(screen.getByRole('button', { name: 'Import' }))
+  await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
+  expect(await post()).toEqual({ oldest_n: 10, group: null, new: false })
 
+  fetch.mockClear()
+  await user.click(screen.getByRole('button', { name: 'Import oldest 10 from 8372/25' }))
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
   expect(await post()).toEqual({ oldest_n: 10, group: '8372-25', new: false })
+})
+
+test('import: search and chips narrow the list; an empty result offers to clear', async () => {
+  stubApi(base)
+  renderAt('/settings/gmail/import', <ImportPage />)
+  const user = userEvent.setup()
+
+  await screen.findByRole('button', { name: 'Expand 8372/25' })
+  await user.click(screen.getByRole('button', { name: /No case/ }))
+  expect(screen.queryByRole('button', { name: 'Expand 8372/25' })).toBeNull()
+
+  await user.type(screen.getByRole('searchbox', { name: 'Search references' }), 'zzzz')
+  expect(await screen.findByText('No references match.')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+  expect(await screen.findByRole('button', { name: 'Expand 8372/25' })).toBeVisible()
 })
 
 test('import: a running import shows what is being imported and can be stopped', async () => {
@@ -356,7 +367,8 @@ test('import: clearing the cache asks first and says it only touches local copie
   renderAt('/settings/gmail/import', <ImportPage />)
   const user = userEvent.setup()
 
-  await user.click(await screen.findByRole('button', { name: /Clear cache/ }))
+  await user.click(await screen.findByRole('button', { name: 'More actions' }))
+  await user.click(await screen.findByRole('menuitem', { name: /Clear cache/ }))
   const dialog = screen.getByRole('dialog')
   expect(dialog).toHaveTextContent('Nothing in Gmail and no already-imported bundle is touched')
   expect(sent(fetch, 'DELETE', '/api/v1/gmail/cache')).toBeUndefined()
@@ -370,7 +382,7 @@ test('import: no cache, no clear button', async () => {
   stubApi(base)
   renderAt('/settings/gmail/import', <ImportPage />)
   await screen.findByText(/7 messages indexed/)
-  expect(screen.queryByRole('button', { name: /Clear cache/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
 })
 
 const many = {
@@ -444,8 +456,7 @@ test('import: the hint offers to create the case, prefilled from the reference',
   renderAt('/settings/gmail/import', <ImportPage />)
   const user = userEvent.setup()
 
-  await user.click(await screen.findByRole('button', { name: 'Expand 8441/25' }))
-  await user.click(await screen.findByRole('button', { name: 'Create case' }))
+  await user.click(await screen.findByRole('button', { name: 'Create case for 8441/25' }))
   const dialog = screen.getByRole('dialog')
   expect(within(dialog).getByRole('textbox', { name: 'Case ID' })).toHaveValue('8441-25')
   expect(within(dialog).getByRole('textbox', { name: /Aktenzeichen/ })).toHaveValue('')
@@ -469,8 +480,7 @@ test('import: a court-reference group prefills the Aktenzeichen, not the case id
   renderAt('/settings/gmail/import', <ImportPage />)
   const user = userEvent.setup()
 
-  await user.click(await screen.findByRole('button', { name: 'Expand 3 F 426/25' }))
-  await user.click(await screen.findByRole('button', { name: 'Create case' }))
+  await user.click(await screen.findByRole('button', { name: 'Create case for 3 F 426/25' }))
   const dialog = screen.getByRole('dialog')
   expect(within(dialog).getByRole('textbox', { name: 'Case ID' })).toHaveValue('')
   expect(within(dialog).getByRole('textbox', { name: /Aktenzeichen/ })).toHaveValue('3 F 426/25')
