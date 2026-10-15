@@ -75,6 +75,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing: `ap
 
 ## Rules
 * **Pre-release — clean as you go.** Working with test data only. When a field, table, model, route, or template becomes unused or superseded, **remove it in the same change** — no deprecation shims, no backwards-compat layers, no "keep for now" comments. Migrations drop columns; templates lose unused branches; obsolete routes disappear. No dead code accumulates before v1.
+* **Case IDs are renameable** (`POST /api/v1/cases/{id}/rename`, `merge_service.rename_case`; Edit case → Case ID). Every `cases.id` FK is `ON UPDATE CASCADE`, so a new FK must be too; plain-string references (`Conversation.scope_id`, `UserSettings` keys, `OAuthCode.case_ids`) are rewritten by hand there. An ID that already exists is refused (`case_id_taken`): merge instead.
 * **Internal ID is the lead everywhere.** `Case.id` (e.g. `ADV-024-A`) is shown in sidebar, breadcrumb, URLs, chat, reports. Per-court Aktenzeichen lives on `Proceeding.az_court` — context, never identity.
 * **Management Summary:** 3-bullet (Legal Significance, Action/Deadline, Financial Impact). A court relay (cover letter forwarding someone else's filing) gets one line instead: the court's instruction (zur Kenntnisnahme / Stellungnahme binnen X / Verfügung), whose deadline is kept as an action item. Exhibits (enclosures of a party's filing) never create action items.
 * **Triage:** No `case_id`/`parent_id` → Triage Inbox. Bundle by `ingest_batch_id`.

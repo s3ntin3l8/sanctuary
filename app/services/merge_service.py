@@ -7,9 +7,12 @@ the source row is deleted. Nothing is merged across owners without edit access
 """
 
 import logging
+import re
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from app.core.validators import normalize_case_id
 from app.models.database import (
     ActionItem,
     ApiTokenCase,
@@ -21,7 +24,9 @@ from app.models.database import (
     Entity,
     IngestBatch,
     LegalCost,
+    OAuthCode,
     Proceeding,
+    UserSettings,
 )
 from app.models.enums import (
     AuditEventType,
@@ -234,3 +239,71 @@ def merge_cases(
     recompute_total_cost_exposure(target_id, db, commit=False)
     db.commit()
     return db.get(Case, target_id)  # type: ignore[return-value]
+
+
+_CASE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _rekey(mapping: object, old: str, new: str) -> dict | None:
+    """``mapping`` with key ``old`` moved to ``new``; None when nothing changes."""
+    if not isinstance(mapping, dict) or old not in mapping:
+        return None
+    out = dict(mapping)
+    out[new] = out.pop(old)
+    return out
+
+
+def rename_case(
+    db: Session, case_id: str, new_id: str, actor_user_id: int | None = None
+) -> Case:
+    """Change a case's internal ID; every FK follows through ON UPDATE CASCADE."""
+    new_id = normalize_case_id(new_id) or ""
+    if case_id == "_TRIAGE" or new_id == "_TRIAGE":
+        raise MergeError("triage_case", "The Triage Inbox cannot be renamed.")
+    if not _CASE_ID_RE.match(new_id):
+        raise MergeError(
+            "invalid_case_id", "Use letters, digits, dots, dashes and underscores."
+        )
+    if new_id == case_id:
+        raise MergeError("same_target", "That is already the case ID.")
+    if db.get(Case, case_id) is None:
+        raise MergeError("not_found", "Case not found.")
+    if db.get(Case, new_id) is not None:
+        raise MergeError(
+            "case_id_taken", f"{new_id} already exists. Merge into it instead."
+        )
+
+    db.execute(
+        update(Case)
+        .where(Case.id == case_id)
+        .values(id=new_id)
+        .execution_options(synchronize_session=False)
+    )
+    # References that are plain strings, not foreign keys.
+    db.query(Conversation).filter(
+        Conversation.scope_type == "case", Conversation.scope_id == case_id
+    ).update({Conversation.scope_id: new_id}, synchronize_session=False)
+    for row in db.query(UserSettings).all():
+        data = dict(row.settings_json or {})
+        changed = False
+        for key in ("last_viewed_cases", "active_proceeding"):
+            moved = _rekey(data.get(key), case_id, new_id)
+            if moved is not None:
+                data[key] = moved
+                changed = True
+        if changed:
+            row.settings_json = data
+    for code in db.query(OAuthCode).all():
+        if case_id in (code.case_ids or []):
+            code.case_ids = [new_id if c == case_id else c for c in code.case_ids]
+    audit_service.record(
+        db,
+        AuditEventType.CASE_RENAMED,
+        target_type="case",
+        target_id=new_id,
+        payload={"old_id": case_id},
+        actor_user_id=actor_user_id,
+    )
+    db.commit()
+    db.expire_all()
+    return db.get(Case, new_id)  # type: ignore[return-value]

@@ -624,6 +624,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Rename Case Id
+         * @description Change the case's internal ID (its URL, breadcrumb and lead identifier).
+         */
+        post: operations["v1_rename_case_id_api_v1_cases__case_id__rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/shares": {
         parameters: {
             query?: never;
@@ -3840,6 +3860,11 @@ export interface components {
             is_draft: boolean;
             /** Title */
             title: string;
+        };
+        /** CaseRename */
+        CaseRename: {
+            /** New Id */
+            new_id: string;
         };
         /**
          * CaseStatus
@@ -7846,6 +7871,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_rename_case_id_api_v1_cases__case_id__rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDetail"];
+                };
             };
             /** @description Error */
             default: {

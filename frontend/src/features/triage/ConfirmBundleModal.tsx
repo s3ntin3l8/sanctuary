@@ -12,8 +12,8 @@ import { OpenItems } from './OpenItems'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Field, inputClass } from '../../ui/Field'
+import { CasePicker, type NewCase } from './CasePicker'
 import { Modal } from '../../ui/Modal'
-import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
 
 export type ConfirmTarget =
@@ -153,7 +153,7 @@ function Dialog({
   const suggestion = target.mode === 'single' ? target.bundle.suggestion : null
   const suggestedProc = target.mode === 'single' ? target.bundle.proceeding : null
   const [useSuggested, setUseSuggested] = useState(!!suggestion)
-  const [newCase, setNewCase] = useState(false)
+  const [newCase, setNewCase] = useState<NewCase | null>(null)
   // A bundle already routed (assign_case) has no suggestion but knows its case.
   const routedCase = target.mode === 'single' ? target.bundle.confirmed_case_id : null
   const [caseId, setCaseId] = useState(suggestion?.case_id ?? routedCase ?? '')
@@ -173,8 +173,8 @@ function Dialog({
     const proc = String(d.get('proceeding_id') ?? '')
     const routing = {
       case_id: newCase ? null : useSuggested ? (suggestion?.case_id ?? null) : caseId || null,
-      new_case_id: newCase ? String(d.get('new_case_id')) : null,
-      new_case_title: newCase ? String(d.get('new_case_title')) : null,
+      new_case_id: newCase?.id ?? null,
+      new_case_title: newCase?.title ?? null,
       proceeding_id: proc ? Number(proc) : null,
     }
     const done = (msg: string) => {
@@ -260,47 +260,29 @@ function Dialog({
             )}
           </div>
         ) : newCase ? (
-          <div className="space-y-3 rounded-xl border border-line p-3">
-            <TextField
-              label="New case ID"
-              name="new_case_id"
-              required
-              className="font-mono"
-              placeholder="ADV-025-A"
-            />
-            <TextField label="Title" name="new_case_title" placeholder="Weber ./. Weber" />
+          <div className="flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 p-3">
+            <span className="font-mono text-[13px] font-semibold text-tealink">{newCase.id}</span>
+            <Badge tone="accent">new case</Badge>
+            <span className="min-w-0 truncate text-[11px] text-muted">{newCase.title}</span>
             <button
               type="button"
-              onClick={() => setNewCase(false)}
-              className="text-[10px] text-tealink hover:underline"
+              onClick={() => setNewCase(null)}
+              className="ml-auto text-[10px] text-tealink hover:underline"
             >
-              pick an existing case instead
+              change
             </button>
           </div>
         ) : (
-          <Field label="Case" htmlFor="case_id">
-            <select
-              id="case_id"
-              value={caseId}
-              onChange={(e) => setCaseId(e.target.value)}
-              required
-              className={inputClass}
-            >
-              <option value="">— choose a case —</option>
-              {cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.id} · {c.title}
-                  {c.is_draft ? ' (draft)' : ''}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setNewCase(true)}
-              className="mt-1 text-[10px] text-tealink hover:underline"
-            >
-              Create new case…
-            </button>
+          <Field label="Case">
+            <div className="overflow-hidden rounded-xl border border-line">
+              <CasePicker
+                cases={cases}
+                activeId={caseId || null}
+                defaultTitle={suggestion?.title ?? ''}
+                onPick={(id) => setCaseId(id)}
+                onCreate={setNewCase}
+              />
+            </div>
           </Field>
         )}
         {!newCase && (
@@ -334,7 +316,7 @@ function Dialog({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || (!newCase && !effectiveCase)}>
             {target.mode === 'batch'
               ? 'Assign'
               : target.action === 'confirm_bundle'

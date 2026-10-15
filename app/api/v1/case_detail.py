@@ -39,6 +39,7 @@ from app.schemas.case_detail import (
     CaseMerge,
     CaseMergeResult,
     CasePurge,
+    CaseRename,
     CaseUpdate,
     FinancialsView,
     GraphView,
@@ -80,7 +81,12 @@ from app.services.case_service import (
 )
 from app.services.case_timeline_service import CaseTimelineService
 from app.services.ingestion.extractors import canonical_az_court
-from app.services.merge_service import MergeError, merge_cases, merge_proceedings
+from app.services.merge_service import (
+    MergeError,
+    merge_cases,
+    merge_proceedings,
+    rename_case,
+)
 
 router = APIRouter(tags=["cases"])
 
@@ -400,6 +406,22 @@ def merge_proceeding(
         user_settings_service.set_active_proceeding(case_id, target.id, db, user.id)
         db.commit()
     return next(p for p in proceeding_views(db, case_id) if p.id == target.id)
+
+
+@router.post("/cases/{case_id}/rename", response_model=CaseDetail)
+def rename_case_id(
+    body: CaseRename,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    case: Case = Depends(require_case_access(edit=True)),
+):
+    """Change the case's internal ID (its URL, breadcrumb and lead identifier)."""
+    try:
+        renamed = rename_case(db, case.id, body.new_id, user.id)
+    except MergeError as exc:
+        status = {"not_found": 404, "invalid_case_id": 422}.get(exc.code, 409)
+        raise ApiError(status, exc.code, str(exc)) from exc
+    return case_detail(None, db, user, renamed)
 
 
 @router.post("/cases/{case_id}/merge", response_model=CaseMergeResult)

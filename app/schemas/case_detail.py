@@ -188,6 +188,10 @@ class CaseMerge(BaseModel):
     target_id: str = Field(max_length=64)
 
 
+class CaseRename(BaseModel):
+    new_id: str = Field(min_length=1, max_length=64)
+
+
 class CaseMergeResult(BaseModel):
     case_id: str
 

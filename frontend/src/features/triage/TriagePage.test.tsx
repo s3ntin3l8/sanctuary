@@ -590,7 +590,7 @@ test('confirming an already-routed bundle pre-fills its case', async () => {
   if (!row) throw new Error('row')
   await user.click(within(row).getByRole('button', { name: /^(Confirm|Route)/ }))
   const dialog = screen.getByRole('dialog')
-  expect(within(dialog).getByRole('combobox', { name: /case/i })).toHaveValue('ADV-024-A')
+  expect(within(dialog).getByRole('menuitem', { current: true })).toHaveTextContent('ADV-024-A')
 })
 
 test('the batch dialog skips a suggestion whose case does not exist yet', async () => {

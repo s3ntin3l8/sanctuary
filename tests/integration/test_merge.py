@@ -251,3 +251,48 @@ def test_merge_endpoints(db_session):
     assert db_session.get(Case, "API-2") is None
     missing = client.post("/api/v1/cases/API-1/merge", json={"target_id": "NOPE"})
     assert missing.status_code == 404
+
+
+def test_rename_case_moves_every_reference(db_session):
+    from app.services import user_settings_service
+    from app.services.merge_service import rename_case
+
+    _case(db_session, "R-1")
+    proc = _proc(db_session, "R-1", "1 F 1/26")
+    batch, doc = _rows(db_session, "R-1", proc.id)
+    user_id = _admin(db_session).id
+    user_settings_service.mark_viewed("R-1", db_session, user_id)
+    user_settings_service.set_active_proceeding("R-1", proc.id, db_session, user_id)
+    db_session.commit()
+
+    renamed = rename_case(db_session, "R-1", "r-2/26", user_id)
+
+    assert renamed.id == "R-2-26"
+    db_session.expire_all()
+    assert db_session.get(Case, "R-1") is None
+    assert db_session.get(Document, doc.id).case_id == "R-2-26"
+    assert db_session.get(IngestBatch, batch.id).case_id == "R-2-26"
+    assert db_session.get(Proceeding, proc.id).case_id == "R-2-26"
+    assert db_session.query(ActionItem).filter_by(case_id="R-2-26").count() == 1
+    assert user_settings_service.get_last_viewed("R-1", db_session, user_id) is None
+    assert user_settings_service.get_last_viewed("R-2-26", db_session, user_id)
+    assert (
+        user_settings_service.get_active_proceeding("R-2-26", db_session, user_id)
+        == proc.id
+    )
+
+
+def test_rename_case_endpoint_guards(db_session):
+    _case(db_session, "RE-1")
+    _case(db_session, "RE-2")
+    db_session.commit()
+
+    taken = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "RE-2"})
+    assert (taken.status_code, taken.json()["code"]) == (409, "case_id_taken")
+    same = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "re-1"})
+    assert (same.status_code, same.json()["code"]) == (409, "same_target")
+    bad = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "a b"})
+    assert (bad.status_code, bad.json()["code"]) == (422, "invalid_case_id")
+    ok = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "RE-9"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["id"] == "RE-9"

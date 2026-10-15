@@ -5,6 +5,7 @@ import {
   useDeleteProceeding,
   useMergeCase,
   useMergeProceeding,
+  useRenameCase,
   usePurgeCase,
   useUpdateCase,
   useUpdateProceeding,
@@ -40,6 +41,7 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   const purge = usePurgeCase(detail.id)
   const mergeProc = useMergeProceeding(detail.id)
   const mergeCase = useMergeCase(detail.id)
+  const rename = useRenameCase(detail.id)
   const directory = useCasesDirectory()
   const [mergeProcSource, setMergeProcSource] = useState<CaseDetail['proceedings'][number] | null>(
     null,
@@ -52,6 +54,7 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   function submitCase(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const d = new FormData(e.currentTarget)
+    const newId = String(d.get('case_id')).trim()
     update.mutate(
       {
         title: String(d.get('title')),
@@ -61,8 +64,15 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
       },
       {
         onSuccess: () => {
-          toast('Case updated')
-          onClose()
+          if (!newId || newId === detail.id) {
+            toast('Case updated')
+            onClose()
+            return
+          }
+          rename.mutate(newId, {
+            onSuccess: (r) => leaveTo(`/cases/${encodeURIComponent(r.id)}`),
+            onError: (err) => toast(err.message, 'error'),
+          })
         },
         onError: (err) => toast(err.message, 'error'),
       },
@@ -72,6 +82,16 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   return (
     <Modal open onClose={onClose} title="Edit case" subtitle={detail.id} icon="edit" width={560}>
       <form onSubmit={submitCase} className="space-y-3">
+        <Field label="Case ID" hint="Changing it moves every document and link to the new ID.">
+          <input
+            name="case_id"
+            defaultValue={detail.id}
+            required
+            pattern="[A-Za-z0-9._\-]+"
+            maxLength={64}
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
         <Field label="Title">
           <input name="title" defaultValue={detail.title} required className={inputClass} />
         </Field>

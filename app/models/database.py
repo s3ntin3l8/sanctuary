@@ -134,7 +134,7 @@ class Document(Base):
     )
     case_id: Mapped[str | None] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="SET NULL"),
+        ForeignKey("cases.id", ondelete="SET NULL", onupdate="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -640,7 +640,7 @@ class Proceeding(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="CASCADE"),
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -729,7 +729,7 @@ class IngestBatch(Base):
     thread_refs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     case_id: Mapped[str | None] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="SET NULL"),
+        ForeignKey("cases.id", ondelete="SET NULL", onupdate="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -942,7 +942,7 @@ class ActionItem(Base):
     agent_token_id: Mapped[int | None] = _agent_token_column()
     case_id: Mapped[str] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="CASCADE"),
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1491,7 +1491,9 @@ class CaseShare(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
-        String, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
@@ -1706,7 +1708,7 @@ class LegalCost(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="CASCADE"),
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1817,7 +1819,7 @@ class CostSignal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="CASCADE"),
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1937,7 +1939,7 @@ class Entity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[str] = mapped_column(
         String,
-        ForeignKey("cases.id", ondelete="CASCADE"),
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )

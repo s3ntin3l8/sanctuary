@@ -2212,6 +2212,21 @@
         "title": "CaseRef",
         "type": "object"
       },
+      "CaseRename": {
+        "properties": {
+          "new_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "New Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_id"
+        ],
+        "title": "CaseRename",
+        "type": "object"
+      },
       "CaseStatus": {
         "enum": [
           "intake",
@@ -13131,6 +13146,59 @@
         "summary": "V1 Reject Draft",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/rename": {
+      "post": {
+        "description": "Change the case's internal ID (its URL, breadcrumb and lead identifier).",
+        "operationId": "v1_rename_case_id_api_v1_cases__case_id__rename_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Rename Case Id",
+        "tags": [
+          "cases"
         ]
       }
     },

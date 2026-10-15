@@ -374,6 +374,7 @@ class AuditEventType(enum.StrEnum):
     AI_DEBUG_REDACT_TOGGLED = "ai_debug_redact_toggled"
     CASE_PURGED = "case_purged"
     CASE_MERGED = "case_merged"
+    CASE_RENAMED = "case_renamed"
     PROCEEDING_MERGED = "proceeding_merged"
     DATA_EXPORTED = "data_exported"
     API_TOKEN_CREATED = "api_token_created"
