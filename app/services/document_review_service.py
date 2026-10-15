@@ -179,6 +179,7 @@ def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
         ),
         thread_open=bool(doc.thread_open),
         context_strategy=(doc.meta or {}).get("ai_context_strategy"),
+        context_windows=(doc.meta or {}).get("ai_context_windows"),
         has_original=bool(doc.file_path),
     )
 

@@ -1,5 +1,7 @@
 """Per-stage AI inference options — centralises all magic numbers in one place."""
 
+import os
+
 _TAIL_CHARS = 2000  # chars to include from document tail in head+tail previews
 
 # Qwen3.5 official sampling parameters for thinking-mode reasoning models.
@@ -19,6 +21,15 @@ _QWEN_SAMPLING = {
     "repeat_penalty": 1.0,
 }
 
+
+# How much document text one LLM call reads. A longer document is read in
+# several windows of at most this size (see ai_summary.content_windows), never
+# cut down to a sample. Sized so a window plus the largest answer fits num_ctx.
+AI_CONTEXT_CHARS = 60_000
+# Windows read per document. Each is an LLM call (two passes for ENRICH) under
+# one Celery task, so the cap keeps a huge file inside the task time limit; the
+# document then records how much of it was read (meta.ai_context_chars).
+AI_MAX_WINDOWS = int(os.getenv("AI_MAX_WINDOWS", "8"))
 
 STAGE_OPTIONS: dict[str, dict] = {
     "metadata": {

@@ -244,6 +244,8 @@ class DocumentReader(DocumentReview):
     nav: ReaderNav
     thread_open: bool
     context_strategy: str | None
+    # How many windows the AI read the text in (ENRICH/CLAIMS/ENTITIES read all of it).
+    context_windows: int | None = None
     has_original: bool
 
 

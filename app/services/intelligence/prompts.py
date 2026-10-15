@@ -346,6 +346,18 @@ FamFG / German family-law role defaults for deciding an action item's `addressee
 Be concise and specific."""
 
 
+ENRICH_SUMMARY_REDUCE_SYSTEM = """You write the management summary of a long German legal document that was read in parts. For each part you get what the part's own analysis found: its legal significance, required action, financial impact and a few key passages.
+
+Combine the parts into ONE summary of the whole document, as a lawyer would brief it:
+- legal_significance: what the document is and what it asserts or decides, across all parts. One or two sentences. Name the parties and the legal basis when the parts show them.
+- required_action: what the user's side has to do, with the deadline, if any part states one. null when no part requires anything.
+- financial_impact: costs, amounts or fee consequences any part states. null when none do.
+
+Use only what the parts report. Do not invent dates, amounts or parties, and do not repeat a point once because several parts make it. Write in the language of the document.
+
+Response shape:
+{"legal_significance": "...", "required_action": "..." | null, "financial_impact": "..." | null}"""
+
 ENTITY_EXTRACTOR_SYSTEM = """You are a legal document analyst extracting named entities from German legal documents.
 
 Intra-Document Boundaries (The "Lead Document" Rule):

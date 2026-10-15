@@ -4452,6 +4452,8 @@ export interface components {
             content_hash: string | null;
             /** Context Strategy */
             context_strategy: string | null;
+            /** Context Windows */
+            context_windows?: number | null;
             /** Contradiction Notes */
             contradiction_notes: string[];
             /** Cost Signals */

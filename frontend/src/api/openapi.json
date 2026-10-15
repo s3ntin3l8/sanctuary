@@ -4292,6 +4292,17 @@
             ],
             "title": "Context Strategy"
           },
+          "context_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Windows"
+          },
           "contradiction_notes": {
             "items": {
               "type": "string"

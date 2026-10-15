@@ -39,7 +39,7 @@ from app.repositories.claim import ClaimRepository
 from app.repositories.claim_evidence import ClaimEvidenceRepository
 from app.services import family_context
 from app.services.ai_config import get_chat_config
-from app.services.ai_summary import get_content_preview
+from app.services.ai_summary import content_windows
 from app.services.claim_embedding import upsert_claim_embedding
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -93,8 +93,7 @@ def _call_claim_extractor_sync(
     base_url: str | None = None,
     reports_note: bool = False,
 ) -> dict:
-    """AI call only — no DB session held."""
-    content_preview = get_content_preview(doc, 60000)
+    """AI calls only — no DB session held. A long document is read window by window."""
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
 
@@ -102,32 +101,55 @@ def _call_claim_extractor_sync(
 
     existing_text = _format_existing_claims(existing_claims)
     originator_value = doc.originator_type.value if doc.originator_type else "unknown"
-    prompt = (
-        f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
-        f"DOCUMENT ORIGINATOR: {originator_value}\n"
-        f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n\n"
-        f"{_REPORTS_NOTE if reports_note else ''}"
-        f"CONTENT:\n{fence(content_preview, 'document')}\n\n"
-        f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
-    )
-
-    result = call_json_ai(
-        system_prompt=CLAIM_EXTRACTOR_SYSTEM,
-        user_prompt=prompt,
-        options=STAGE_OPTIONS["claims"],
-        debug_label=f"doc_{doc.id}_claims",
-        schema=ClaimExtraction,
-        model=model or None,
-        ingest_batch_id=doc.ingest_batch_id,
-        case_id=doc.case_id,
-        two_pass=True,
-        # Per-doc stage: suppress the case-narrative preamble. Party identities
-        # come from the explicit "Known Party Identity" block built into the
-        # user prompt below.
-        include_user_context=False,
-        base_url=base_url,
-    )
-    return result.model_dump()
+    merged: dict = {"new_claims": [], "evidence_links": []}
+    seen: set[str] = set()
+    seen_links: set[tuple] = set()
+    for window in content_windows(doc):
+        earlier = ""
+        if merged["new_claims"]:
+            earlier = (
+                "\n\nALREADY EXTRACTED FROM EARLIER PARTS OF THIS DOCUMENT "
+                "(do not repeat these):\n"
+                + "\n".join(f"- {c['claim_text'][:200]}" for c in merged["new_claims"])
+            )
+        prompt = (
+            f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
+            f"DOCUMENT ORIGINATOR: {originator_value}\n"
+            f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n\n"
+            f"{_REPORTS_NOTE if reports_note else ''}"
+            f"{window.note('Extract the claims made in THIS part only.')}"
+            f"CONTENT:\n{fence(window.text, 'document')}\n\n"
+            f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}{earlier}"
+        )
+        result = call_json_ai(
+            system_prompt=CLAIM_EXTRACTOR_SYSTEM,
+            user_prompt=prompt,
+            options=STAGE_OPTIONS["claims"],
+            debug_label=f"doc_{doc.id}_claims"
+            + (f"_p{window.index}" if window.is_part else ""),
+            schema=ClaimExtraction,
+            model=model or None,
+            ingest_batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
+            two_pass=True,
+            # Per-doc stage: suppress the case-narrative preamble. Party identities
+            # come from the explicit "Known Party Identity" block built into the
+            # user prompt below.
+            include_user_context=False,
+            base_url=base_url,
+        )
+        part = result.model_dump()
+        for claim in part["new_claims"]:
+            key = " ".join(claim["claim_text"].lower().split())[:80]
+            if key not in seen:
+                seen.add(key)
+                merged["new_claims"].append(claim)
+        for link in part["evidence_links"]:
+            link_key = (link["claim_id"], link["role"])
+            if link_key not in seen_links:
+                seen_links.add(link_key)
+                merged["evidence_links"].append(link)
+    return merged
 
 
 def _apply_claims(
