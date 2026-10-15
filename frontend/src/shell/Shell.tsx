@@ -61,7 +61,7 @@ export function Shell() {
     <div className="flex h-dvh overflow-hidden">
       <nav
         aria-label="Primary"
-        className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3 overflow-y-auto"
+        className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-line bg-rail py-3"
       >
         <a
           href="/"
@@ -78,8 +78,6 @@ export function Shell() {
           badge={<CountBadge count={shell?.triage_count ?? 0} tone="danger" />}
         />
         <RailButton icon="folder_open" label="Cases" to="/cases" />
-        <RailButton icon="payments" label="Costs" to="/costs" />
-        <RailButton icon="contacts" label="Contacts" to="/contacts" />
         <div className="flex-1" />
         <RailButton
           icon={theme === 'dark' ? 'light_mode' : 'dark_mode'}
