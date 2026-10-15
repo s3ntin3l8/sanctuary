@@ -38,7 +38,7 @@ R = ClaimEvidenceRole
 def mail(db_session, sample_case):
     """An own-mail body and the court packet attached to it, in one batch."""
     batch = IngestBatch(
-        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.OPEN
     )
     db_session.add(batch)
     db_session.flush()
