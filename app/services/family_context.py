@@ -44,14 +44,27 @@ def is_relay(doc: Document) -> bool:
     return doc.document_type == DocumentType.RELAY or bool(doc.court_relay)
 
 
+def is_email_body(doc: Document) -> bool:
+    """True for the text of an email kept as a document (``email_body_<batch>.txt``).
+
+    Only the user's own mail keeps its body next to attachments: it is a
+    transport note to their lawyer, not a filing.
+    """
+    name = doc.original_filename or ""
+    return name.startswith("email_body_") and name.endswith(".txt")
+
+
 def is_exhibit(doc: Document) -> bool:
     """An enclosure of a party's filing: evidence the party attached, not
-    correspondence addressed to us. What a court relays is not an exhibit."""
+    correspondence addressed to us. What a court relays is not an exhibit, and
+    neither is what the user forwards in their own mail: the mail is a
+    transport note, so its attachments keep their own standing."""
     parent = doc.parent
     return (
         doc.role == DocumentRole.ENCLOSURE
         and parent is not None
         and parent.originator_type != OriginatorType.COURT
+        and not is_email_body(parent)
     )
 
 
