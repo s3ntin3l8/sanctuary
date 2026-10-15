@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.3.0...v0.4.0) (2026-10-15)
+
+
+### Features
+
+* **ai:** read whole documents in windows instead of sampling ([#355](https://github.com/s3ntin3l8/sanctuary/issues/355)) ([30963c8](https://github.com/s3ntin3l8/sanctuary/commit/30963c8d097c2b0a0a93c403d6d718a22468fd24))
+* **claims:** the user's note about an attachment reports its claims, it does not assert them ([#359](https://github.com/s3ntin3l8/sanctuary/issues/359)) ([27ededf](https://github.com/s3ntin3l8/sanctuary/commit/27ededf5fc07e085949b7b0f66dc8b81788647da))
+* **ingest:** hint when a PDF seems to hold several letters ([#357](https://github.com/s3ntin3l8/sanctuary/issues/357)) ([122f5f7](https://github.com/s3ntin3l8/sanctuary/commit/122f5f7f13a378051dfd8dc1a9aa106799245178))
+* **slicing:** split an existing PDF document into parts ([#354](https://github.com/s3ntin3l8/sanctuary/issues/354)) ([be64d62](https://github.com/s3ntin3l8/sanctuary/commit/be64d62ce79685f9860a3247c1d14dda21afb235))
+
+
+### Bug Fixes
+
+* **family:** attachments of the user's own mail are not exhibits ([#351](https://github.com/s3ntin3l8/sanctuary/issues/351)) ([761b8ee](https://github.com/s3ntin3l8/sanctuary/commit/761b8eea19ad4b1878ea3f6e1d07560c93b6ea55))
+* **frontend:** stop rail flyouts from scrolling the rail; retire Contacts/Costs rail entries ([#352](https://github.com/s3ntin3l8/sanctuary/issues/352)) ([607ff32](https://github.com/s3ntin3l8/sanctuary/commit/607ff321d58f4c0ad1e5b24626a10a0361fd8ec7))
+
 ## [0.3.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.2.1...v0.3.0) (2026-10-14)
 
 
