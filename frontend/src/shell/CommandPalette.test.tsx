@@ -8,18 +8,18 @@ import { CommandPalette } from './CommandPalette'
 
 const empty = { documents: [], cases: [], contacts: [], total: 0 }
 
-test('palette exposes Contacts and Settings and resets an empty query', async () => {
+test('palette exposes Settings (no nameless Contacts page) and resets an empty query', async () => {
   stubApi({ 'GET /api/v1/search': { body: empty } })
   renderAt('/', <CommandPalette open onClose={() => {}} />)
   const dialog = screen.getByRole('dialog', { name: 'Command palette' })
-  expect(within(dialog).getByRole('button', { name: 'Contacts' })).toBeVisible()
+  expect(within(dialog).queryByRole('button', { name: 'Contacts' })).not.toBeInTheDocument()
   expect(within(dialog).getByRole('button', { name: 'Settings' })).toBeVisible()
   const user = userEvent.setup()
   await user.type(screen.getByLabelText('Search'), 'Nobody')
   await user.click(await screen.findByRole('button', { name: 'Reset search' }))
   expect(screen.getByLabelText('Search')).toHaveValue('')
   expect(screen.getByLabelText('Search')).toHaveFocus()
-  expect(screen.getByRole('button', { name: 'Contacts' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Settings' })).toBeVisible()
 })
 
 test('palette shows request failure with a working retry rather than no results', async () => {

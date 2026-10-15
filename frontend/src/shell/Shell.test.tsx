@@ -33,6 +33,8 @@ test('rail links: triage is a full page load, cases is client-side', async () =>
   renderShell()
   expect(await screen.findByRole('link', { name: 'Triage' })).toHaveAttribute('href', '/triage')
   expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute('href', '/cases')
+  expect(screen.queryByRole('link', { name: 'Costs' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument()
   expect(await screen.findByText('7')).toBeVisible() // triage badge
   expect(await screen.findByText('3')).toBeVisible() // processing badge: 1 executing + 2 queued
   expect(await screen.findByText('4')).toBeVisible() // notifications badge

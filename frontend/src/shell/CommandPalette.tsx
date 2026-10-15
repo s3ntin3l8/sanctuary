@@ -57,12 +57,6 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
             { key: 'cases', icon: 'folder_open', title: 'Cases', run: () => go('/cases', true) },
             { key: 'costs', icon: 'payments', title: 'Costs', run: () => go('/costs', true) },
             {
-              key: 'contacts',
-              icon: 'contacts',
-              title: 'Contacts',
-              run: () => go('/contacts', true),
-            },
-            {
               key: 'settings',
               icon: 'settings',
               title: 'Settings',
