@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.2.1...v0.3.0) (2026-10-14)
+
+
+### Features
+
+* **ai:** native Anthropic Messages API provider ([#350](https://github.com/s3ntin3l8/sanctuary/issues/350)) ([7aa3558](https://github.com/s3ntin3l8/sanctuary/commit/7aa3558070f38ba547a9b0b379bfcaa60eae9d34))
+* **import:** group history by case, show case titles and subject topics ([#339](https://github.com/s3ntin3l8/sanctuary/issues/339)) ([3d8d0cf](https://github.com/s3ntin3l8/sanctuary/commit/3d8d0cff53a9fb2c99abba3e527888fe96604eb7))
+
+
+### Bug Fixes
+
+* **ai:** accept hosted endpoint URLs ending in /v1 and detect Ollama first ([#345](https://github.com/s3ntin3l8/sanctuary/issues/345)) ([27efc05](https://github.com/s3ntin3l8/sanctuary/commit/27efc05cfcd27239e31691a046c26238117068d9))
+* **ai:** send anthropic-version so Anthropic endpoints are detected ([#346](https://github.com/s3ntin3l8/sanctuary/issues/346)) ([f3a1dca](https://github.com/s3ntin3l8/sanctuary/commit/f3a1dcabfcdd47a7429caf9b7ff7b4fbd122ca21))
+* **docker:** reinstall headless OpenCV after removing the GUI wheel ([#347](https://github.com/s3ntin3l8/sanctuary/issues/347)) ([a90819d](https://github.com/s3ntin3l8/sanctuary/commit/a90819da315f260a74b1a05f124d98ea7d9add61))
+* **relationships:** tolerate null legal_significance on candidates ([#341](https://github.com/s3ntin3l8/sanctuary/issues/341)) ([ec956a1](https://github.com/s3ntin3l8/sanctuary/commit/ec956a15b3844fa1ff6dfc907a14306964d82964))
+* **review:** don't crash on Docling chunks without a page ([#342](https://github.com/s3ntin3l8/sanctuary/issues/342)) ([be79aee](https://github.com/s3ntin3l8/sanctuary/commit/be79aee44c9d7fab3c7f1e9a052a228a60cad7bc))
+
 ## [0.2.1](https://github.com/s3ntin3l8/sanctuary/compare/v0.2.0...v0.2.1) (2026-10-13)
 
 
