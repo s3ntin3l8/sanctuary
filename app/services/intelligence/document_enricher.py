@@ -23,6 +23,7 @@ from app.models.schemas import (
 from app.services import family_context
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import ContentWindow, content_windows
+from app.services.content_text import condense_image_descriptions
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -55,6 +56,10 @@ def _is_placeholder(s: str | None) -> bool:
     """Return True if `s` is a known AI placeholder rather than real content."""
     return not s or s.strip().lower() in _PLACEHOLDER_VALUES or len(s.strip()) < 4
 
+
+# Key passages of each part that the summary reduction sees: enough to anchor the
+# summary without handing it the whole passage list.
+_REDUCE_PASSAGES_PER_PART = 3
 
 # What a court relay may still set: its own instruction to the user's side.
 _RELAY_ACTION_TYPES = {"response_required", "deadline", "filing_required", "court_date"}
@@ -240,13 +245,13 @@ def _reduce_summary(
         ):
             if not _is_placeholder(summary.get(key)):
                 lines.append(f"- {label}: {summary[key]}")
-        for passage in (part.get("key_passages") or [])[:3]:
+        for passage in (part.get("key_passages") or [])[:_REDUCE_PASSAGES_PER_PART]:
             lines.append(f"- key passage: {(passage.get('text') or '')[:200]}")
         lines.append("")
     try:
         result = call_json_ai(
             system_prompt=ENRICH_SUMMARY_REDUCE_SYSTEM,
-            user_prompt=fence("\n".join(lines), "ai_extracted"),
+            user_prompt=fence("\n".join(lines), "part_findings"),
             options=STAGE_OPTIONS["enrich"],
             debug_label=f"doc_{doc.id}_enricher_reduce",
             schema=SummaryReduction,
@@ -459,10 +464,14 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
 
     # Track strategy and character count for UI transparency
     windows = content_windows(doc)
+    read_chars = sum(len(w.text) for w in windows)
+    total_chars = len(condense_image_descriptions(doc.content or ""))
     new_meta = dict(doc.meta or {})
     new_meta["ai_context_strategy"] = "chunked" if len(windows) > 1 else "full"
     new_meta["ai_context_windows"] = len(windows)
-    new_meta["ai_context_chars"] = sum(len(w.text) for w in windows)
+    new_meta["ai_context_chars"] = read_chars
+    # Past AI_MAX_WINDOWS the rest of the text is not read; say so.
+    new_meta["ai_context_truncated"] = read_chars < total_chars
     doc.meta = new_meta
 
     # (court_relay was already applied above — moved earlier so the

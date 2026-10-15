@@ -348,3 +348,49 @@ def test_the_document_records_that_it_was_read_in_parts(db_session, sample_docum
     assert meta["ai_context_strategy"] == "chunked"
     assert meta["ai_context_windows"] == len(content_windows(sample_document))
     assert meta["ai_context_chars"] == len(sample_document.content)
+    assert meta["ai_context_truncated"] is False
+
+
+def test_a_document_cut_short_by_the_window_cap_says_so(db_session, sample_document):
+    from app.services.intelligence import document_enricher
+
+    sample_document.content = _pages(300, size=900)
+
+    with patch.object(
+        document_enricher,
+        "content_windows",
+        lambda doc: content_windows(doc, max_windows=1),
+    ):
+        document_enricher._apply_enrichment(
+            sample_document, {"title": "Schriftsatz"}, db_session
+        )
+
+    meta = sample_document.meta
+    assert meta["ai_context_windows"] == 1
+    assert meta["ai_context_truncated"] is True
+    assert meta["ai_context_chars"] < len(sample_document.content)
+
+
+def test_the_fuller_quotation_wins_when_a_stance_is_seen_twice():
+    from app.services.intelligence import claim_extractor
+
+    doc = _doc(_pages(12))
+    link = {"claim_id": 5, "role": "contests"}
+    answers = iter(
+        [
+            ClaimExtraction(evidence_links=[{**link, "excerpt": "kurz"}]),
+            ClaimExtraction(evidence_links=[{**link, "excerpt": "ein längeres Zitat"}]),
+        ]
+    )
+    with (
+        patch.object(claim_extractor, "content_windows") as windows,
+        patch.object(
+            claim_extractor, "call_json_ai", side_effect=lambda **_: next(answers)
+        ),
+    ):
+        windows.return_value = content_windows(doc, max_chars=len(doc.content) // 2 + 1)
+        merged = claim_extractor._call_claim_extractor_sync(doc, [])
+
+    assert [link["excerpt"] for link in merged["evidence_links"]] == [
+        "ein längeres Zitat"
+    ]

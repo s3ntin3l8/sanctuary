@@ -246,6 +246,8 @@ class DocumentReader(DocumentReview):
     context_strategy: str | None
     # How many windows the AI read the text in (ENRICH/CLAIMS/ENTITIES read all of it).
     context_windows: int | None = None
+    # True when the document was longer than the windows the AI reads (AI_MAX_WINDOWS).
+    context_truncated: bool = False
     has_original: bool
 
 

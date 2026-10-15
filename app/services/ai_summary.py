@@ -122,6 +122,8 @@ def get_content_preview(doc: Document, max_chars: int = AI_CONTEXT_CHARS) -> str
     return f"{head}{separator}{mid}{separator}{tail}"
 
 
+# The marker the page-by-page extractor writes (chandra_extractor); text from
+# another extractor has none and is cut at blank lines instead.
 _PAGE_MARK = re.compile(r"(?m)^--- PAGE (\d+) ---$")
 
 

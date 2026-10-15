@@ -538,6 +538,7 @@ export const documentReader: Schemas['DocumentReader'] = {
   },
   thread_open: true,
   context_strategy: null,
+  context_truncated: false,
   has_original: true,
 }
 

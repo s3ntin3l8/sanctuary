@@ -4292,6 +4292,11 @@
             ],
             "title": "Context Strategy"
           },
+          "context_truncated": {
+            "default": false,
+            "title": "Context Truncated",
+            "type": "boolean"
+          },
           "context_windows": {
             "anyOf": [
               {

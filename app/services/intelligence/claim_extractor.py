@@ -103,7 +103,7 @@ def _call_claim_extractor_sync(
     originator_value = doc.originator_type.value if doc.originator_type else "unknown"
     merged: dict = {"new_claims": [], "evidence_links": []}
     seen: set[str] = set()
-    seen_links: set[tuple] = set()
+    links: dict[tuple, dict] = {}
     for window in content_windows(doc):
         earlier = ""
         if merged["new_claims"]:
@@ -146,9 +146,17 @@ def _call_claim_extractor_sync(
                 merged["new_claims"].append(claim)
         for link in part["evidence_links"]:
             link_key = (link["claim_id"], link["role"])
-            if link_key not in seen_links:
-                seen_links.add(link_key)
+            if link_key not in links:
+                links[link_key] = link
                 merged["evidence_links"].append(link)
+            elif len(link.get("excerpt") or "") > len(
+                links[link_key].get("excerpt") or ""
+            ):
+                # The same stance seen again: keep the fuller quotation.
+                merged["evidence_links"][
+                    merged["evidence_links"].index(links[link_key])
+                ] = link
+                links[link_key] = link
     return merged
 
 

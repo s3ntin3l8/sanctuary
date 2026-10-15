@@ -317,7 +317,10 @@ function Hud({ reader }: { reader: Reader }) {
             {reader.thread_open && <Badge tone="warning">thread open</Badge>}
             {reader.context_strategy === 'windowed' && <Badge>split view</Badge>}
             {reader.context_strategy === 'chunked' && (
-              <Badge>read in {reader.context_windows ?? 'several'} parts</Badge>
+              <Badge tone={reader.context_truncated ? 'warning' : 'neutral'}>
+                read in {reader.context_windows ?? 'several'} parts
+                {reader.context_truncated && ', the rest not read'}
+              </Badge>
             )}
             {firstReaction && <span title="Your reaction">{REACTION_GLYPH[firstReaction]}</span>}
           </div>

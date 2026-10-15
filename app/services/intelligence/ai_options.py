@@ -28,7 +28,7 @@ _QWEN_SAMPLING = {
 AI_CONTEXT_CHARS = 60_000
 # Windows read per document. Each is an LLM call (two passes for ENRICH) under
 # one Celery task, so the cap keeps a huge file inside the task time limit; the
-# document then records how much of it was read (meta.ai_context_chars).
+# document then records that it was cut short (meta.ai_context_truncated).
 AI_MAX_WINDOWS = int(os.getenv("AI_MAX_WINDOWS", "8"))
 
 STAGE_OPTIONS: dict[str, dict] = {

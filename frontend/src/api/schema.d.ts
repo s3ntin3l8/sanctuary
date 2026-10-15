@@ -4452,6 +4452,11 @@ export interface components {
             content_hash: string | null;
             /** Context Strategy */
             context_strategy: string | null;
+            /**
+             * Context Truncated
+             * @default false
+             */
+            context_truncated: boolean;
             /** Context Windows */
             context_windows?: number | null;
             /** Contradiction Notes */
