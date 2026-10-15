@@ -349,6 +349,12 @@ def confirm_document_slices(
             slice_pdf.import_pages(src_pdf, page_indices)
             # The document's folder is shared with other files: name by source.
             part_path = pdf_path.parent / f"{pdf_path.stem}_part{part_idx + 1}.pdf"
+            clash = 2
+            while part_path.exists():  # a sibling attachment may already use the name
+                part_path = part_path.with_name(
+                    f"{pdf_path.stem}_part{part_idx + 1}_{clash}.pdf"
+                )
+                clash += 1
             slice_pdf.save(str(part_path))
             slice_pdf.close()
             written_slice_paths.append(part_path)

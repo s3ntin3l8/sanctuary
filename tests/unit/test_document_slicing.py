@@ -528,3 +528,21 @@ def test_a_failed_delete_leaves_the_source_and_its_pdf_untouched(env, monkeypatc
     assert os.path.exists(source_path)
     assert db.query(Document).count() == before
     assert not [p for p in os.listdir(os.path.dirname(source_path)) if "_part" in p]
+
+
+@pytest.mark.unit
+def test_a_part_never_overwrites_a_sibling_attachment_with_the_same_name(env):
+    import os
+    from pathlib import Path
+
+    db, _batch, _body, source = env
+    sibling = str(
+        Path(source.file_path).with_name(f"{Path(source.file_path).stem}_part1.pdf")
+    )
+    Path(sibling).write_bytes(b"another attachment")
+
+    ids = slicing_service.confirm_document_slices(db, source, CUTS)
+
+    assert Path(sibling).read_bytes() == b"another attachment"
+    first = db.get(Document, ids[0])
+    assert first.file_path != sibling and os.path.exists(first.file_path)

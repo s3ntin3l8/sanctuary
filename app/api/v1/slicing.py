@@ -234,7 +234,11 @@ def _document_slicing(doc: Document) -> dict:
 
 
 def _is_stale(slicing: dict) -> bool:
-    """A "preparing" mark whose task was lost: older than any task may run."""
+    """A "preparing" mark whose task was lost: older than any task may run.
+
+    Celery kills a task at CELERY_TASK_TIME_LIMIT, so a mark older than that has
+    no live task behind it (the clock is the dispatch time this API stamped).
+    """
     from datetime import datetime, timedelta
 
     from app.config import CELERY_TASK_TIME_LIMIT
