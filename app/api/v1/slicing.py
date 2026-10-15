@@ -27,6 +27,7 @@ from app.schemas.slicing import (
 from app.services.slicing_service import (
     SlicingFailed,
     SourceHasUserData,
+    SourceInFlight,
     confirm_document_slices,
     confirm_slices,
 )
@@ -361,6 +362,8 @@ def confirm_document_slicing(
     batch_id = locked.ingest_batch_id
     try:
         doc_ids = confirm_document_slices(db, locked, body.cuts, body.discard)
+    except SourceInFlight as exc:
+        raise ApiError(409, "in_flight", str(exc)) from exc
     except SourceHasUserData as exc:
         raise ApiError(409, "has_user_data", str(exc)) from exc
     except SlicingFailed as exc:

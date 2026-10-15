@@ -369,3 +369,162 @@ def test_confirm_names_the_work_that_would_be_lost(env, client):
     assert resp.json()["code"] == "has_user_data"
     assert "pins" in resp.json()["detail"]
     assert client.dispatched == []
+
+
+# --- Safety of replacing the source -----------------------------------------
+
+
+def _action_item(db, source, **kw):
+    from datetime import UTC, datetime
+
+    from app.models.database import ActionItem, Case
+    from app.models.enums import ActionItemType
+
+    if not db.get(Case, "AI-1"):
+        db.add(Case(id="AI-1", title="AI-1", owner_id=source.owner_id))
+        db.flush()
+    item = ActionItem(
+        case_id="AI-1",
+        source_document_id=source.id,
+        title=kw.pop("title", "Stellungnahme"),
+        due_date=datetime(2026, 9, 15, tzinfo=UTC),
+        action_type=ActionItemType.DEADLINE,
+        **kw,
+    )
+    db.add(item)
+    db.commit()
+    return item
+
+
+@pytest.mark.unit
+def test_the_sources_ai_action_items_go_with_it(env):
+    from app.models.database import ActionItem
+
+    db, _batch, _body, source = env
+    _action_item(db, source)
+
+    slicing_service.confirm_document_slices(db, source, CUTS)
+
+    # Not orphaned: the parts raise the deadline again from their own text.
+    assert db.query(ActionItem).count() == 0
+
+
+@pytest.mark.unit
+def test_an_action_item_you_closed_is_not_lost(env):
+    from app.models.enums import ActionItemStatus
+
+    db, _batch, _body, source = env
+    _action_item(db, source, status=ActionItemStatus.COMPLETED)
+
+    with pytest.raises(slicing_service.SourceHasUserData) as err:
+        slicing_service.confirm_document_slices(db, source, CUTS)
+
+    assert err.value.reasons == ["action items"]
+
+
+@pytest.mark.unit
+def test_edits_and_chats_on_the_source_are_named(env):
+    from app.models.database import Conversation
+
+    db, _batch, _body, source = env
+    source.extraction_confidence = {"title": "user_set", "case_id": "user_set"}
+    db.add(
+        Conversation(
+            scope_type="document", scope_id=str(source.id), user_id=source.owner_id
+        )
+    )
+    db.commit()
+
+    with pytest.raises(slicing_service.SourceHasUserData) as err:
+        slicing_service.confirm_document_slices(db, source, CUTS)
+
+    assert err.value.reasons == ["edited title", "chats"]
+
+
+@pytest.mark.unit
+def test_a_document_still_being_processed_is_not_replaced(env):
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import mark_started
+
+    db, _batch, body, source = env
+    # A sibling's stage is running: replacing the source would race it.
+    mark_started(body.id, PipelineStage.ENRICH, db)
+
+    with pytest.raises(slicing_service.SourceInFlight):
+        slicing_service.confirm_document_slices(db, source, CUTS)
+
+    assert db.get(Document, source.id) is not None
+
+
+@pytest.mark.unit
+def test_parts_stand_where_the_source_stood_in_its_group(env):
+    db, batch, body, source = env
+    owner_id = source.owner_id
+    group = BatchSubGroup(batch_id=batch.id, sort_order=0)
+    db.add(group)
+    db.flush()
+    tail = Document(
+        title="Anlage",
+        owner_id=owner_id,
+        case_id="_TRIAGE",
+        ingest_batch_id=batch.id,
+    )
+    db.add(tail)
+    db.flush()
+    for doc, pos in ((body, 0), (source, 1), (tail, 2)):
+        doc.sub_group_id = group.id
+        doc.sub_group_sort_order = pos
+    db.commit()
+
+    ids = slicing_service.confirm_document_slices(db, source, CUTS)
+
+    db.expire_all()
+    ordered = (
+        db.query(Document)
+        .filter(Document.sub_group_id == group.id)
+        .order_by(Document.sub_group_sort_order)
+        .all()
+    )
+    assert [d.id for d in ordered] == [body.id, *ids, tail.id]
+
+
+@pytest.mark.unit
+def test_a_loose_document_without_a_batch_is_split_too(env):
+    db, _batch, _body, source = env
+    source.ingest_batch_id = None
+    source.parent_id = None
+    db.commit()
+
+    ids = slicing_service.confirm_document_slices(db, source, CUTS)
+
+    first, second, third = (db.get(Document, i) for i in ids)
+    assert first.role == DocumentRole.COVER_LETTER
+    assert second.parent_id == first.id
+    assert third.role == DocumentRole.STANDALONE
+    assert third.sub_group_id is None  # no batch to group in
+
+
+@pytest.mark.unit
+def test_a_failed_delete_leaves_the_source_and_its_pdf_untouched(env, monkeypatch):
+    import os
+
+    from app.services.document_service import DocumentService
+
+    db, _batch, _body, source = env
+    source_id, source_path = source.id, source.file_path
+    before = db.query(Document).count()
+
+    def boom(self, doc_id):
+        raise RuntimeError("database is gone")
+
+    monkeypatch.setattr(DocumentService, "delete_document", boom)
+
+    with pytest.raises(slicing_service.SlicingFailed):
+        slicing_service.confirm_document_slices(db, source, CUTS)
+
+    db.expire_all()
+    kept = db.get(Document, source_id)
+    assert kept is not None and kept.file_path == source_path
+    assert os.path.exists(source_path)
+    assert db.query(Document).count() == before
+    assert not [p for p in os.listdir(os.path.dirname(source_path)) if "_part" in p]

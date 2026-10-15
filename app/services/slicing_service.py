@@ -6,13 +6,15 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.paths import resolve_storage_path, to_storage_path
 from app.models.database import (
+    ActionItem,
     BatchSubGroup,
     ClaimEvidence,
+    Conversation,
     Document,
     DocumentPin,
     DocumentRelationship,
@@ -20,6 +22,7 @@ from app.models.database import (
     UserReaction,
 )
 from app.models.enums import (
+    ActionItemStatus,
     DocumentRole,
     IngestBatchStatus,
     RelationshipConfidence,
@@ -33,6 +36,10 @@ from app.services.ingestion import page_text
 
 class SlicingFailed(RuntimeError):
     """A slice could not be written; everything written so far was removed."""
+
+
+class SourceInFlight(ValueError):
+    """The document, or a sibling in its batch, is still being processed."""
 
 
 class SourceHasUserData(ValueError):
@@ -254,6 +261,34 @@ def user_data_reasons(db: Session, doc: Document) -> list[str]:
         .first()
     ):
         reasons.append("relationships")
+    edited = [
+        key
+        for key, value in (doc.extraction_confidence or {}).items()
+        if key != "case_id" and value == "user_set"
+    ]
+    if edited:
+        reasons.append("edited " + "/".join(sorted(edited)))
+    if (
+        db.query(ActionItem.id)
+        .filter(
+            ActionItem.source_document_id == doc.id,
+            or_(
+                ActionItem.status != ActionItemStatus.OPEN,
+                ActionItem.agent_token_id.isnot(None),
+            ),
+        )
+        .first()
+    ):
+        reasons.append("action items")
+    if (
+        db.query(Conversation.id)
+        .filter(
+            Conversation.scope_type == "document",
+            Conversation.scope_id == str(doc.id),
+        )
+        .first()
+    ):
+        reasons.append("chats")
     return reasons
 
 
@@ -289,6 +324,13 @@ def confirm_document_slices(
     pdf_path = resolve_storage_path(doc.file_path)
     if not pdf_path.exists():
         raise ValueError("Source PDF no longer available")
+    from app.services.triage_dismissal import _has_in_flight_stage
+
+    if _has_in_flight_stage(db, doc_id=doc.id) or (
+        doc.ingest_batch_id is not None
+        and _has_in_flight_stage(db, batch_id=doc.ingest_batch_id)
+    ):
+        raise SourceInFlight("The document is still being processed; try again later.")
     reasons = user_data_reasons(db, doc)
     if reasons:
         raise SourceHasUserData(reasons)
@@ -349,8 +391,18 @@ def confirm_document_slices(
         raise SlicingFailed(f"Slicing failed: {exc}") from exc
 
     source_id = doc.id
+    source_file = pdf_path
     failure: Exception | None = None
     try:
+        # The pipeline's own action items would otherwise be orphaned (and
+        # raised again by the parts); delete_document only detaches them.
+        db.query(ActionItem).filter(ActionItem.source_document_id == source_id).delete(
+            synchronize_session=False
+        )
+        # delete_document unlinks the file before it commits. Keep it until the
+        # commit has gone through: a failed delete must not leave a document
+        # row without its PDF.
+        doc.file_path = None
         # Cascades the source's chunks, stages, claim evidence and edges away
         # and commits the parts with it. Its folder-mates (the other
         # attachments of the email) stay.
@@ -366,6 +418,10 @@ def confirm_document_slices(
                 f"Slicing failed: {failure or 'the source could not be removed'}"
             ) from failure
         # The delete committed and only its aftermath failed: the parts stand.
+    try:
+        source_file.unlink(missing_ok=True)
+    except OSError:
+        pass
 
     thumbs = (
         slicing_meta.get("pages")
@@ -414,15 +470,6 @@ def _wire_document_bundles(
         if parent is not None:
             parent.sub_group_id = group_id
             parent.sub_group_sort_order = 0
-    next_pos = 0
-    if group_id is not None:
-        db.flush()
-        top = (
-            db.query(func.max(Document.sub_group_sort_order))
-            .filter(Document.sub_group_id == group_id, Document.id != source.id)
-            .scalar()
-        )
-        next_pos = 0 if top is None else top + 1
     for members in bundles:
         lead, attachments = members[0], members[1:]
         if parent_id is not None:
@@ -451,8 +498,25 @@ def _wire_document_bundles(
                 confidence=RelationshipConfidence.USER_CREATED,
                 notes="split: attachment",
             )
-        if group_id is not None:
-            for doc in members:
-                doc.sub_group_id = group_id
-                doc.sub_group_sort_order = next_pos
-                next_pos += 1
+
+    if group_id is not None:
+        parts = [d for members in bundles for d in members]
+        db.flush()
+        others = (
+            db.query(Document)
+            .filter(
+                Document.sub_group_id == group_id,
+                Document.id != source.id,
+                Document.id.notin_([d.id for d in parts]),
+            )
+            .order_by(Document.sub_group_sort_order, Document.id)
+            .all()
+        )
+        # The parts stand where the source stood.
+        slot = len(others)
+        if source.sub_group_id == group_id:
+            before = source.sub_group_sort_order or 0
+            slot = sum(1 for d in others if (d.sub_group_sort_order or 0) < before)
+        for pos, d in enumerate(others[:slot] + parts + others[slot:]):
+            d.sub_group_id = group_id
+            d.sub_group_sort_order = pos

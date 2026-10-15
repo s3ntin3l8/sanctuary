@@ -236,7 +236,9 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
         </div>
       </div>
       {review.significance_tier && <Badge tone={tierTone}>{review.significance_tier}</Badge>}
-      {review.page_count > 1 && <SplitButton docId={review.id} />}
+      {review.page_count > 1 && review.original_filename?.toLowerCase().endsWith('.pdf') && (
+        <SplitButton docId={review.id} />
+      )}
       {onOpenHud && (
         <Button variant="secondary" size="sm" onClick={() => onOpenHud(review.id)}>
           <Icon name="open_in_full" size={12} /> HUD
