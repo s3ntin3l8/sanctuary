@@ -370,6 +370,7 @@ export const documentReview: Schemas['DocumentReview'] = {
   title: 'Klageerwiderung.pdf',
   original_filename: 'Klageerwiderung.pdf',
   page_count: 12,
+  packet_starts: [],
   case_id: '_TRIAGE',
   case: null,
   proceeding: null,

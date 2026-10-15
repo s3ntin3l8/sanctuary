@@ -181,6 +181,36 @@ def _boundary_signals(prev_head: str, prev_tail: str, curr_head: str) -> list[st
     return signals
 
 
+# Cues that another letter starts on a page. The weaker start cues (a salutation
+# or an "Anlage" mention alone) also turn up inside one long filing, which is why
+# the slicer asks the AI about them; a hint without that judgement uses only these.
+_PACKET_SIGNALS = frozenset(
+    {"page_reset", "az_change", "transmittal_page", "salutation_signature"}
+)
+
+
+def likely_document_starts(page_texts: dict[int, str]) -> list[int]:
+    """Pages after the first that open another letter, from the page text alone.
+
+    A page counts when it shows a strong start cue against the page before it
+    (page numbering restarts, a different Aktenzeichen, a transmission receipt,
+    a signature followed by a salutation) or opens with a court's letterhead.
+    No AI: this only decides whether the PDF is worth offering to split.
+    """
+    starts = []
+    for page in sorted(page_texts):
+        prev = page_texts.get(page - 1)
+        if page == 1 or prev is None:
+            continue
+        text = page_texts[page]
+        signals = _boundary_signals(
+            prev[:_TEXT_HEAD_CHARS], prev[-_TEXT_TAIL_CHARS:], text[:_TEXT_HEAD_CHARS]
+        )
+        if _PACKET_SIGNALS.intersection(signals) or _page_court_letterhead(text):
+            starts.append(page)
+    return starts
+
+
 # ---------------------------------------------------------------------------
 # Court relays
 # ---------------------------------------------------------------------------

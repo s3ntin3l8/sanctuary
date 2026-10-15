@@ -4411,6 +4411,14 @@
           "originator_type": {
             "$ref": "#/components/schemas/OriginatorType"
           },
+          "packet_starts": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Packet Starts",
+            "type": "array"
+          },
           "page_count": {
             "title": "Page Count",
             "type": "integer"
@@ -4774,6 +4782,14 @@
           },
           "originator_type": {
             "$ref": "#/components/schemas/OriginatorType"
+          },
+          "packet_starts": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Packet Starts",
+            "type": "array"
           },
           "page_count": {
             "title": "Page Count",

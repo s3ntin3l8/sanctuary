@@ -224,6 +224,7 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
         "title": doc.title,
         "original_filename": doc.original_filename,
         "page_count": doc.page_count or 0,
+        "packet_starts": [int(p) for p in (doc.meta or {}).get("packet_starts") or []],
         "case_id": doc.case_id,
         "case": case_ref(ctx["current_case"]) if ctx.get("current_case") else None,
         "proceeding": proceeding_ref(doc.proceeding) if doc.proceeding else None,
