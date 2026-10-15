@@ -405,3 +405,13 @@ def test_context_chars_measure_the_condensed_text(db_session, sample_document):
 
     assert sample_document.meta["ai_context_strategy"] == "full"
     assert sample_document.meta["ai_context_chars"] == len("\nShort")
+
+
+def test_text_before_the_first_page_marker_stays_with_the_first_page():
+    doc = _doc("OCR-Vorspann.\n\n" + _pages(12))
+
+    windows = content_windows(doc, max_chars=LIMIT)
+
+    assert "".join(w.text for w in windows) == doc.content
+    assert windows[0].text.startswith("OCR-Vorspann.")
+    assert windows[0].first_page == 1

@@ -140,7 +140,7 @@ def _call_claim_extractor_sync(
         )
         part = result.model_dump()
         for claim in part["new_claims"]:
-            key = " ".join(claim["claim_text"].lower().split())[:80]
+            key = " ".join(claim["claim_text"].lower().split())
             if key not in seen:
                 seen.add(key)
                 merged["new_claims"].append(claim)

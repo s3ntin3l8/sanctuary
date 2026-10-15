@@ -167,7 +167,9 @@ def _segments(content: str, max_chars: int) -> list[tuple[int | None, str]]:
             for i, m in enumerate(marks)
         ]
         if bounds[0] > 0:
-            pieces.insert(0, (None, content[: bounds[0]]))
+            # Text before the first marker belongs to the first page: it must not
+            # become a window of its own ahead of the letterhead.
+            pieces[0] = (pieces[0][0], content[: bounds[0]] + pieces[0][1])
     else:
         pieces = [(None, p) for p in re.split(r"(?<=\n\n)", content) if p]
     out: list[tuple[int | None, str]] = []
@@ -214,7 +216,8 @@ def content_windows(
         size += len(piece[1])
     if len(grouped) > max_windows:
         logger.warning(
-            "Doc %s: %d windows needed, reading the first %d (windows %d-%d are not read)",
+            "Doc %s: %d windows needed, reading the first %d (windows %d-%d are not read; "
+            "the document is marked truncated)",
             doc.id,
             len(grouped),
             max_windows,
