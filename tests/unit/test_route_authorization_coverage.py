@@ -35,6 +35,7 @@ _ALLOWLIST: dict[str, str] = {
     # carries the owner check.
     "GET /ingest/slice/{batch_id}": "SPA index; guarded by the v1 data route",
     "GET /document/{doc_id}": "SPA index; guarded by the v1 data route",
+    "GET /document/{doc_id}/slice": "SPA index; guarded by the v1 data route",
     "GET /cases/{case_id}": "SPA index; guarded by the v1 data route",
     "DELETE /api/v1/settings/agent-access/{token_id}": (
         "get_for_user matches the token to the caller; another user's id is a 404"
