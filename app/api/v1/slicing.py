@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -31,6 +32,8 @@ from app.services.slicing_service import (
     confirm_document_slices,
     confirm_slices,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/slicing", tags=["slicing"])
 
@@ -279,6 +282,7 @@ def _begin_document_slicing(db: Session, doc: Document, *, redo: bool) -> None:
     }
     locked.meta = meta
     db.commit()
+    logger.info("Document %d: split proposal queued", locked.id)
     dispatch_task(prepare_document_slicing_task, locked.id)
 
 

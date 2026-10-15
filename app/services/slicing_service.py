@@ -429,12 +429,8 @@ def confirm_document_slices(
     except OSError:
         pass
 
-    thumbs = (
-        slicing_meta.get("pages")
-        and Path(slicing_meta["pages"][0].get("thumbnail_path", "")).parent
-    )
-    if thumbs and thumbs.name.endswith("_thumbs"):
-        shutil.rmtree(thumbs, ignore_errors=True)
+    # The slicer wrote the proposal's thumbnails into this folder, next to the PDF.
+    shutil.rmtree(source_file.parent / f"{source_file.stem}_thumbs", ignore_errors=True)
     return [d.id for d in new_docs]
 
 

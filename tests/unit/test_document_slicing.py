@@ -546,3 +546,30 @@ def test_a_part_never_overwrites_a_sibling_attachment_with_the_same_name(env):
     assert Path(sibling).read_bytes() == b"another attachment"
     first = db.get(Document, ids[0])
     assert first.file_path != sibling and os.path.exists(first.file_path)
+
+
+@pytest.mark.unit
+def test_only_the_sources_own_thumbnail_folder_is_removed(env, tmp_path):
+    import os
+
+    db, _batch, _body, source = env
+    folder = os.path.dirname(source.file_path)
+    stem = os.path.splitext(os.path.basename(source.file_path))[0]
+    own = os.path.join(folder, f"{stem}_thumbs")
+    other = os.path.join(folder, "someone_elses_thumbs")
+    for d in (own, other):
+        os.makedirs(d)
+    # A thumbnail path pointing somewhere else must not steer the cleanup.
+    source.meta = {
+        **source.meta,
+        "slicing": {
+            "status": "ready",
+            "page_count": PAGES,
+            "pages": [{"thumbnail_path": os.path.join(other, "page_1.png")}],
+        },
+    }
+    db.commit()
+
+    slicing_service.confirm_document_slices(db, source, CUTS)
+
+    assert not os.path.exists(own) and os.path.exists(other)
