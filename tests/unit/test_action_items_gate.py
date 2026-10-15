@@ -306,6 +306,47 @@ def test_a_ruling_a_court_relays_is_not_an_exhibit(db_session, sample_case):
 
 
 @pytest.mark.unit
+def test_a_court_letter_forwarded_in_the_users_own_mail_keeps_its_deadline(
+    db_session, sample_case
+):
+    """The user's mail to their lawyer is transport, not a party filing: the
+    court's Frist on the letter they attach is still a deadline for us."""
+    from app.models.enums import DocumentRole
+
+    body = Document(
+        title="Anweisung",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.OWN,
+        role=DocumentRole.COVER_LETTER,
+        original_filename="email_body_41.txt",
+    )
+    db_session.add(body)
+    db_session.flush()
+    letter = _court_doc(
+        db_session,
+        sample_case,
+        relay=True,
+        parent_id=body.id,
+        role=DocumentRole.ENCLOSURE,
+    )
+
+    _enrich(
+        db_session,
+        letter,
+        {
+            "document_type": "relay",
+            "court_relay": True,
+            "action_items": [
+                _action("Stellungnahme", "response_required", "2026-09-15", "user")
+            ],
+        },
+    )
+
+    assert [i.title for i in _items(db_session, letter)] == ["Stellungnahme"]
+
+
+@pytest.mark.unit
 def test_a_relay_summary_is_one_line_and_other_documents_keep_three(
     db_session, sample_case
 ):

@@ -21,6 +21,7 @@ document's own reference resolved it).
 Nothing here commits.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -34,6 +35,10 @@ CaseSource = Literal["own", "inherited", "user"]
 
 _TRIAGE = "_TRIAGE"
 
+# What ingest names the stored text of a mail (batch_orchestrator): a file a
+# person uploads under a similar name is not one.
+_EMAIL_BODY_NAME = re.compile(r"email_body_\d+\.txt")
+
 
 def is_relay(doc: Document) -> bool:
     """True when the document is a court wrapper around someone else's filing.
@@ -44,14 +49,26 @@ def is_relay(doc: Document) -> bool:
     return doc.document_type == DocumentType.RELAY or bool(doc.court_relay)
 
 
+def is_email_body(doc: Document) -> bool:
+    """True for the text of an email kept as a document (``email_body_<batch>.txt``).
+
+    Only the user's own mail keeps its body next to attachments: it is a
+    transport note to their lawyer, not a filing.
+    """
+    return bool(_EMAIL_BODY_NAME.fullmatch(doc.original_filename or ""))
+
+
 def is_exhibit(doc: Document) -> bool:
     """An enclosure of a party's filing: evidence the party attached, not
-    correspondence addressed to us. What a court relays is not an exhibit."""
+    correspondence addressed to us. What a court relays is not an exhibit, and
+    neither is what the user forwards in their own mail: the mail is a
+    transport note, so its attachments keep their own standing."""
     parent = doc.parent
     return (
         doc.role == DocumentRole.ENCLOSURE
         and parent is not None
         and parent.originator_type != OriginatorType.COURT
+        and not is_email_body(parent)
     )
 
 

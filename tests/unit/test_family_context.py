@@ -122,6 +122,22 @@ def test_is_exhibit_depends_on_who_wrote_the_parent(env):
     assert not fc.is_exhibit(motion)
 
 
+def test_attachment_of_an_email_body_is_not_an_exhibit(env):
+    db, _batch, _proc, doc = env
+    body = doc(
+        "own mail", role=DocumentRole.COVER_LETTER, originator=OriginatorType.OWN
+    )
+    body.original_filename = "email_body_41.txt"
+    forwarded = doc("forwarded court letter", parent=body)
+    assert fc.is_email_body(body)
+    assert not fc.is_email_body(forwarded)
+    assert not fc.is_exhibit(forwarded)
+    # Only the name ingest writes counts: a file a person uploads is not a mail.
+    body.original_filename = "email_body_notes.txt"
+    assert not fc.is_email_body(body)
+    assert fc.is_exhibit(forwarded)
+
+
 def test_case_cascades_from_the_root_to_its_children(env):
     db, batch, proc, doc = env
     root = doc("motion", case_id="FC-1", role=DocumentRole.COVER_LETTER)
