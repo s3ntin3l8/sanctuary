@@ -1,12 +1,10 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   useClearGmailCache,
   useGmailGroups,
   useGmailImportStatus,
   useGmailIndexStatus,
-  useGmailMessages,
   useRefreshGmailIndex,
   useStartGmailImport,
 } from '../../api/gmailImport'
@@ -14,19 +12,28 @@ import type { Schemas } from '../../api/client'
 import { useGmail } from '../../api/settings'
 import { formatIsoDate, pluralize } from '../../format'
 import { Alert } from '../../ui/Alert'
-import { Badge } from '../../ui/Badge'
-import { Button } from '../../ui/Button'
+import { Button, buttonClass } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
+import { Menu } from '../../ui/Menu'
 import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 import { CreateCaseModal } from '../cases/CreateCaseModal'
 import { GmailImportStatus } from './GmailImportStatus'
-import { MessageRow } from './MessageRow'
+import { HistoryTable } from './HistoryTable'
+import { HistoryToolbar } from './HistoryToolbar'
+import {
+  type Filter,
+  type Group,
+  type Sort,
+  filterGroups,
+  isDone,
+  sectionGroups,
+  sortSections,
+  timeAxis,
+} from './historyModel'
 import { NewMailBanner } from './NewMailBanner'
-
-type Group = Schemas['GmailGroup']
 
 /** GmailImportRequest.gmail_ids accepts at most this many ids. */
 const MAX_SELECTED = 500
@@ -34,135 +41,6 @@ const MAX_SELECTED = 500
 function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-/** "8372-25" is stored as the case id; the lawyer's file number reads "8372/25". */
-function referenceLabel(group: Group) {
-  if (group.key === 'unreferenced') return 'No reference'
-  return group.kind === 'internal_id' ? group.key.replace('-', '/') : group.key
-}
-
-type CaseBucket = { id: string; title: string; groups: Group[] }
-
-/** Referenced groups split by whether a case exists; groups sharing a case nest together. */
-function sectionGroups(groups: Group[]) {
-  const buckets = new Map<string, CaseBucket>()
-  const noCase: Group[] = []
-  let unreferenced: Group | undefined
-  for (const g of groups) {
-    if (g.key === 'unreferenced') unreferenced = g
-    else if (g.matched_case_id) {
-      const bucket = buckets.get(g.matched_case_id) ?? {
-        id: g.matched_case_id,
-        title: g.matched_case_title ?? '',
-        groups: [],
-      }
-      bucket.groups.push(g)
-      buckets.set(g.matched_case_id, bucket)
-    } else noCase.push(g)
-  }
-  return { cases: [...buckets.values()], noCase, unreferenced }
-}
-
-function bucketTotals(bucket: CaseBucket) {
-  const firsts = bucket.groups.map((g) => g.first_at).sort()
-  const lasts = bucket.groups.map((g) => g.last_at).sort()
-  return {
-    count: bucket.groups.reduce((sum, g) => sum + g.count, 0),
-    ingested: bucket.groups.reduce((sum, g) => sum + g.ingested_count, 0),
-    first: firsts[0],
-    last: lasts[lasts.length - 1],
-  }
-}
-
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <tr className="border-b border-line2 bg-panel2/30">
-      <th
-        colSpan={5}
-        className="px-4 py-1.5 text-left text-[10px] font-extrabold tracking-[.12em] text-muted uppercase"
-      >
-        {label}
-      </th>
-    </tr>
-  )
-}
-
-function GroupMessages({
-  group,
-  selected,
-  onToggle,
-  onSetMany,
-}: {
-  group: Group
-  selected: Set<string>
-  onToggle: (gmailId: string) => void
-  /** Select or clear several rows at once; the page enforces the import cap. */
-  onSetMany: (gmailIds: string[], on: boolean) => void
-}) {
-  const query = useGmailMessages(group.key, true)
-  const lastClicked = useRef<string | null>(null)
-  if (!query.data) return <QueryState error={query.error} pending={query.isPending} />
-  const items = query.data.pages.flatMap((page) => page.items)
-  // Rows already ingested can't be picked again.
-  const pickable = items.filter((m) => !m.ingested).map((m) => m.gmail_id)
-  const pickedCount = pickable.filter((id) => selected.has(id)).length
-  const allPicked = pickable.length > 0 && pickedCount === pickable.length
-
-  function onRowToggle(gmailId: string, range: boolean) {
-    const anchor = lastClicked.current
-    lastClicked.current = gmailId
-    const from = anchor ? pickable.indexOf(anchor) : -1
-    const to = pickable.indexOf(gmailId)
-    if (range && from >= 0 && to >= 0) {
-      // The clicked row's new state applies to the whole swept range.
-      const ids = pickable.slice(Math.min(from, to), Math.max(from, to) + 1)
-      onSetMany(ids, !selected.has(gmailId))
-    } else {
-      onToggle(gmailId)
-    }
-  }
-
-  return (
-    <div className="border-t border-line2 bg-panel2/40">
-      {pickable.length > 0 && (
-        <label className="flex items-center gap-2 px-4 py-1.5 text-muted">
-          <input
-            type="checkbox"
-            checked={allPicked}
-            ref={(el) => {
-              if (el) el.indeterminate = pickedCount > 0 && !allPicked
-            }}
-            onChange={() => onSetMany(pickable, !allPicked)}
-          />
-          Select all {pickable.length}
-          {query.hasNextPage && ' loaded'}
-        </label>
-      )}
-      <ul>
-        {items.map((m) => (
-          <MessageRow
-            key={m.gmail_id}
-            message={m}
-            selected={selected.has(m.gmail_id)}
-            onToggle={onRowToggle}
-          />
-        ))}
-      </ul>
-      {query.hasNextPage && (
-        <div className="px-4 py-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={query.isFetchingNextPage}
-            onClick={() => query.fetchNextPage()}
-          >
-            Load more
-          </Button>
-        </div>
-      )}
-    </div>
-  )
 }
 
 /** Index the lawyer's mailbox, browse it by case reference, import the history oldest first. */
@@ -182,6 +60,11 @@ export function ImportPage() {
   const [oldestInput, setOldestInput] = useState('25')
   const [confirmClear, setConfirmClear] = useState(false)
   const [creatingFor, setCreatingFor] = useState<Group | null>(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<Filter>('all')
+  const [sort, setSort] = useState<Sort>('oldest')
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     document.title = 'Import history | The Sanctuary'
@@ -198,10 +81,19 @@ export function ImportPage() {
   const total = groups.reduce((sum, g) => sum + g.count, 0)
   const imported = groups.reduce((sum, g) => sum + g.ingested_count, 0)
   const importing = run?.active ?? false
+  const busy = importing || start.isPending
   const ready = gmail.connected && (gmail.allowlist.length > 0 || gmail.label_filter.trim() !== '')
-  const sections = sectionGroups(groups)
-  const scope = groups.find((g) => g.key === expanded)
   const oldestN = Math.min(100, Math.max(1, parseInt(oldestInput, 10) || 1))
+  const counts: Record<Filter, number> = {
+    all: groups.length,
+    case: groups.filter((g) => g.matched_case_id).length,
+    nocase: groups.filter((g) => !g.matched_case_id).length,
+    pending: groups.filter((g) => !isDone(g)).length,
+    done: groups.filter(isDone).length,
+  }
+  const visible = filterGroups(groups, { query, filter })
+  const sections = sortSections(sectionGroups(visible), sort)
+  const axis = timeAxis(groups)
 
   function toggleGroup(key: string) {
     setSelected(new Set())
@@ -245,102 +137,71 @@ export function ImportPage() {
     })
   }
 
-  function renderGroup(g: Group, nested: boolean) {
-    const open = expanded === g.key
-    return (
-      <Fragment key={g.key}>
-        <tr className="border-b border-line2 hover:bg-panel2/40">
-          <td className={nested ? 'py-2 pr-4 pl-9' : 'px-4 py-2'}>
-            <button
-              type="button"
-              aria-expanded={open}
-              aria-label={`${open ? 'Collapse' : 'Expand'} ${referenceLabel(g)}`}
-              onClick={() => toggleGroup(g.key)}
-              className="flex items-center gap-1.5 font-mono font-semibold"
-            >
-              <Icon name={open ? 'expand_more' : 'chevron_right'} size={16} />
-              {referenceLabel(g)}
-              {g.kind && (
-                <Badge className="ml-1">{g.kind === 'internal_id' ? 'file no.' : 'court'}</Badge>
-              )}
-            </button>
-          </td>
-          <td className="max-w-[320px] px-2 py-2">
-            {g.matched_case_id || g.key === 'unreferenced' ? null : g.topic ? (
-              <span className="block truncate text-muted" title={g.topic}>
-                {g.topic}
-              </span>
-            ) : (
-              <span className="text-muted">no case yet</span>
-            )}
-          </td>
-          <td className="px-2 py-2 text-right font-mono">{g.count}</td>
-          <td className="px-2 py-2 text-right font-mono">
-            {g.ingested_count}/{g.count}
-          </td>
-          <td className="px-4 py-2 text-right font-mono text-muted">
-            {formatIsoDate(g.first_at)} – {formatIsoDate(g.last_at)}
-          </td>
-        </tr>
-        {open && (
-          <tr>
-            <td colSpan={5} className="p-0">
-              {!g.matched_case_id && g.key !== 'unreferenced' && (
-                <div className="flex items-center gap-3 px-4 py-2 text-muted">
-                  <p>
-                    No case for {referenceLabel(g)} yet — create it first and its mail is filed into
-                    it automatically on import.
-                  </p>
-                  <Button size="sm" variant="secondary" onClick={() => setCreatingFor(g)}>
-                    Create case
-                  </Button>
-                </div>
-              )}
-              <GroupMessages
-                group={g}
-                selected={selected}
-                onToggle={toggleMessage}
-                onSetMany={setMany}
-              />
-            </td>
-          </tr>
-        )}
-      </Fragment>
-    )
-  }
-
   return (
     <div className="text-[12px]">
-      <header className="mb-4 flex items-center gap-3">
-        <div>
+      <header className="mb-4 space-y-2">
+        <div className="flex items-center gap-3">
           <h1 className="font-display text-[22px] font-extrabold">Import history</h1>
-          <p className="text-muted">
-            {index.indexed_count} messages indexed
-            {index.last_indexed_at && ` · refreshed ${formatIsoDate(index.last_indexed_at)}`}
-            {index.cached_count > 0 &&
-              ` · ${index.cached_count} cached (${formatSize(index.cached_bytes)})`}
-          </p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          {index.cached_count > 0 && (
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="secondary"
-              disabled={importing || clearCache.isPending}
-              onClick={() => setConfirmClear(true)}
+              disabled={!ready || index.running || refresh.isPending}
+              onClick={() =>
+                refresh.mutate(undefined, { onError: (err) => toast(err.message, 'error') })
+              }
             >
-              <Icon name="delete_sweep" size={16} /> Clear cache
+              <Icon name="sync" size={16} /> {index.running ? 'Indexing…' : 'Refresh index'}
             </Button>
-          )}
-          <Button
-            variant="secondary"
-            disabled={!ready || index.running || refresh.isPending}
-            onClick={() =>
-              refresh.mutate(undefined, { onError: (err) => toast(err.message, 'error') })
-            }
-          >
-            <Icon name="sync" size={16} /> {index.running ? 'Indexing…' : 'Refresh index'}
-          </Button>
+            {index.cached_count > 0 && (
+              <>
+                <button
+                  ref={moreRef}
+                  type="button"
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={moreOpen}
+                  className={buttonClass('secondary', '', 'icon')}
+                  onClick={() => setMoreOpen((v) => !v)}
+                >
+                  <Icon name="more_horiz" size={16} />
+                </button>
+                <Menu
+                  open={moreOpen}
+                  onClose={() => setMoreOpen(false)}
+                  anchorRef={moreRef}
+                  label="More actions"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={importing || clearCache.isPending}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-panel2 disabled:opacity-50"
+                    onClick={() => {
+                      setMoreOpen(false)
+                      setConfirmClear(true)
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={16} /> Clear cache
+                  </button>
+                </Menu>
+              </>
+            )}
+          </div>
         </div>
+        <p className="text-muted">
+          {index.indexed_count} messages indexed
+          {index.last_indexed_at && ` · refreshed ${formatIsoDate(index.last_indexed_at)}`}
+          {index.cached_count > 0 &&
+            ` · ${index.cached_count} cached (${formatSize(index.cached_bytes)})`}
+        </p>
+        {index.indexed_count > 0 && (
+          <div className="space-y-1">
+            <Progress value={imported} max={total} label="History imported" />
+            <p className="font-mono text-muted">
+              {imported} of {total} imported · {total - imported} pending
+            </p>
+          </div>
+        )}
       </header>
 
       {!ready && (
@@ -374,106 +235,55 @@ export function ImportPage() {
 
       {run && run.total > 0 && <GmailImportStatus run={run} variant="full" />}
 
-      <NewMailBanner busy={importing || start.isPending} />
+      <NewMailBanner busy={busy} />
 
       {index.indexed_count > 0 && (
         <>
-          <section
-            aria-label="Import controls"
-            className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-card px-4 py-3"
-          >
-            <span>Import next</span>
-            <input
-              type="number"
-              aria-label="How many"
-              min={1}
-              max={100}
-              value={oldestInput}
-              onChange={(e) => setOldestInput(e.target.value)}
-              onBlur={() => setOldestInput(String(oldestN))}
-              className="w-16 rounded-[9px] border border-line bg-panel2 px-2 py-1 text-[12px]"
-            />
-            <span>
-              oldest from <strong>{scope ? referenceLabel(scope) : 'all references'}</strong>
-            </span>
-            <div className="ml-auto flex items-center gap-2">
-              {selected.size > 0 && (
-                <Button
-                  variant="secondary"
-                  disabled={importing || start.isPending}
-                  onClick={() => runImport({ gmail_ids: [...selected], new: false })}
-                >
-                  Import selected ({selected.size})
-                </Button>
-              )}
+          <HistoryToolbar
+            query={query}
+            onQuery={setQuery}
+            filter={filter}
+            onFilter={setFilter}
+            counts={counts}
+            sort={sort}
+            onSort={setSort}
+            oldestInput={oldestInput}
+            onOldestInput={setOldestInput}
+            onOldestBlur={() => setOldestInput(String(oldestN))}
+            busy={busy}
+            onImport={() => runImport({ oldest_n: oldestN, group: null, new: false })}
+          />
+
+          {visible.length === 0 ? (
+            <div className="rounded-xl border border-line bg-card px-4 py-6 text-center text-muted">
+              <p>No references match.</p>
               <Button
-                disabled={importing || start.isPending}
-                onClick={() =>
-                  runImport({ oldest_n: oldestN, group: scope?.key ?? null, new: false })
-                }
+                className="mt-2"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setQuery('')
+                  setFilter('all')
+                }}
               >
-                Import
+                Clear filters
               </Button>
             </div>
-          </section>
-
-          <div className="mb-2 space-y-1">
-            <div className="flex justify-between text-muted">
-              <span>History</span>
-              <span className="font-mono">
-                {imported} of {total} imported
-              </span>
-            </div>
-            <Progress value={imported} max={total} label="History imported" />
-          </div>
-
-          <table className="w-full border-collapse rounded-xl border border-line bg-card">
-            <thead>
-              <tr className="border-b border-line2 text-left text-[10px] tracking-[.12em] text-muted uppercase">
-                <th className="px-4 py-2 font-extrabold">Reference</th>
-                <th className="px-2 py-2 font-extrabold">Case</th>
-                <th className="px-2 py-2 text-right font-extrabold">Messages</th>
-                <th className="px-2 py-2 text-right font-extrabold">Imported</th>
-                <th className="px-4 py-2 text-right font-extrabold">Range</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sections.cases.length > 0 && <SectionHeader label="In a case" />}
-              {sections.cases.map((bucket) => {
-                const totals = bucketTotals(bucket)
-                return (
-                  <Fragment key={bucket.id}>
-                    <tr className="border-b border-line2 bg-panel2/20">
-                      <td colSpan={2} className="px-4 py-2">
-                        <Link to={`/cases/${bucket.id}`} className="flex items-center gap-2">
-                          <Badge tone="accent" mono>
-                            {bucket.id}
-                          </Badge>
-                          <span className="font-semibold">{bucket.title}</span>
-                        </Link>
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono">{totals.count}</td>
-                      <td className="px-2 py-2 text-right font-mono">
-                        {totals.ingested}/{totals.count}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-muted">
-                        {formatIsoDate(totals.first)} – {formatIsoDate(totals.last)}
-                      </td>
-                    </tr>
-                    {bucket.groups.map((g) => renderGroup(g, true))}
-                  </Fragment>
-                )
-              })}
-              {sections.noCase.length > 0 && <SectionHeader label="No case yet" />}
-              {sections.noCase.map((g) => renderGroup(g, false))}
-              {sections.unreferenced && (
-                <>
-                  <SectionHeader label="Without a reference" />
-                  {renderGroup(sections.unreferenced, false)}
-                </>
-              )}
-            </tbody>
-          </table>
+          ) : (
+            <HistoryTable
+              sections={sections}
+              axis={axis}
+              expanded={expanded}
+              selected={selected}
+              busy={busy}
+              oldestN={oldestN}
+              onToggleGroup={toggleGroup}
+              onToggleMessage={toggleMessage}
+              onSetMany={setMany}
+              onImportGroup={(g) => runImport({ oldest_n: oldestN, group: g.key, new: false })}
+              onCreateCase={setCreatingFor}
+            />
+          )}
         </>
       )}
 
@@ -482,6 +292,26 @@ export function ImportPage() {
           Nothing indexed yet. Refresh the index to read the headers of your lawyer&apos;s mail —
           nothing is imported until you choose.
         </p>
+      )}
+
+      {selected.size > 0 && (
+        <div
+          role="region"
+          aria-label="Selection"
+          className="sticky bottom-4 z-20 mt-4 flex items-center gap-3 rounded-xl border border-accent/30 bg-card px-4 py-2 shadow-[0_8px_24px_rgba(0,0,0,.4)]"
+        >
+          <span className="font-semibold">{selected.size} selected</span>
+          <Button
+            className="ml-auto"
+            disabled={busy}
+            onClick={() => runImport({ gmail_ids: [...selected], new: false })}
+          >
+            Import selected ({selected.size})
+          </Button>
+          <Button variant="secondary" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
       )}
 
       {creatingFor && (

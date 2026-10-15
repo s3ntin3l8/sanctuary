@@ -8,6 +8,7 @@ const longDate = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
 })
 const isoDate = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short' })
+const monthLabel = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' })
 const eur = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 })
 
 /** "18 Jun" */
@@ -23,6 +24,18 @@ export function formatLongDate(iso: string) {
 /** "2026-06-18" */
 export function formatIsoDate(iso: string | null | undefined) {
   return iso ? isoDate.format(new Date(iso)) : ''
+}
+
+/** "10.26" */
+export function formatMonthYear(iso: string | null | undefined) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}`
+}
+
+/** "Oct 2026" */
+export function formatMonthLabel(iso: string) {
+  return monthLabel.format(new Date(iso))
 }
 
 function startOfDay(date: Date) {
