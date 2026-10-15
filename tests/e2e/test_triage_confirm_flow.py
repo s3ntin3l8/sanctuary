@@ -131,10 +131,10 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     route_button.click()
 
     # The SPA confirm dialog: "Route" opens it without a suggestion, so the
-    # case <select> (id=case_id) is rendered rather than the suggestion card.
+    # case picker is rendered rather than the suggestion card.
     dialog = page.get_by_role("dialog")
     expect(dialog).to_be_visible(timeout=5_000)
-    dialog.locator("select#case_id").select_option(value=case_id)
+    dialog.get_by_role("menuitem").filter(has_text=case_id).click()
     submit_button = dialog.get_by_role("button", name="Assign")
     expect(submit_button).to_be_enabled(timeout=5_000)
 

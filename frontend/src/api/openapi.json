@@ -2248,6 +2248,19 @@
             ],
             "title": "Assume Worst Case"
           },
+          "case_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
           "case_type": {
             "anyOf": [
               {

@@ -3856,6 +3856,8 @@ export interface components {
         CaseUpdate: {
             /** Assume Worst Case */
             assume_worst_case?: boolean | null;
+            /** Case Id */
+            case_id?: string | null;
             case_type?: components["schemas"]["CaseType"] | null;
             status?: components["schemas"]["CaseStatus"] | null;
             /** Title */

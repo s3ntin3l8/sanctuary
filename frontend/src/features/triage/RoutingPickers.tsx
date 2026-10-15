@@ -5,6 +5,7 @@ import type { Schemas } from '../../api/client'
 import { type TriageBundle, useConfirmBundle } from '../../api/triage'
 import { Badge, type Tone } from '../../ui/Badge'
 import { Icon } from '../../ui/Icon'
+import { CasePicker } from './CasePicker'
 import { useToast } from '../../ui/toast'
 
 /** What the triage inbox hands the document review so its case/proceeding cards can route. */
@@ -12,7 +13,6 @@ export type Routing = {
   bundle: TriageBundle
   cases: Schemas['PickerCase'][]
   proceedings: Schemas['PickerProceeding'][]
-  onCreateCase: () => void
 }
 
 export const CONFIDENCE_TONE: Record<string, Tone> = {
@@ -31,19 +31,22 @@ export function RoutingCards({
   review: Schemas['DocumentReview']
   routing: Routing
 }) {
-  const { bundle, cases, proceedings, onCreateCase } = routing
+  const { bundle, cases, proceedings } = routing
   const confirm = useConfirmBundle()
   const queryClient = useQueryClient()
   const toast = useToast()
   const [open, setOpen] = useState<'case' | 'proceeding' | null>(null)
-  const [filter, setFilter] = useState('')
   const caseId = review.case?.id ?? null
   const suggested = bundle.suggestion?.case_id ?? null
   const confidence = bundle.sub_groups[0]?.case_confidence ?? null
   const reserveSub = review.case !== null || review.proceeding !== null
   const procOptions = proceedings.filter((p) => p.case_id === caseId)
 
-  function route(nextCase: string, nextProceeding: number | null) {
+  function route(
+    nextCase: string,
+    nextProceeding: number | null,
+    created?: { id: string; title: string },
+  ) {
     setOpen(null)
     confirm.mutate(
       {
@@ -51,24 +54,22 @@ export function RoutingCards({
         action: 'assign_case',
         batch_id: bundle.batch_id,
         doc_id: bundle.batch_id === null ? bundle.lead_doc_id : null,
-        case_id: nextCase,
+        case_id: created ? null : nextCase,
+        new_case_id: created?.id ?? null,
+        new_case_title: created?.title ?? null,
         proceeding_id: nextProceeding,
       },
       {
         onSuccess: (r) => {
           queryClient.invalidateQueries({ queryKey: ['document'] })
-          toast(`Assigned to ${r.case.id}`)
+          toast(
+            r.case.action === 'created' ? `Case ${r.case.id} created` : `Assigned to ${r.case.id}`,
+          )
         },
         onError: (e) => toast(e.message, 'error'),
       },
     )
   }
-
-  const q = filter.trim().toLowerCase()
-  const otherCases = cases.filter(
-    (c) => c.id !== suggested && (!q || `${c.id} ${c.title}`.toLowerCase().includes(q)),
-  )
-  const suggestedCase = cases.find((c) => c.id === suggested)
 
   return (
     <div className="grid grid-cols-2 gap-2.5">
@@ -100,42 +101,14 @@ export function RoutingCards({
         </PickerCard>
         {open === 'case' && (
           <Popover onClose={() => setOpen(null)}>
-            {suggestedCase && (
-              <PickRow
-                active={caseId === suggestedCase.id}
-                title={suggestedCase.id}
-                sub={`${suggestedCase.title} · AI-detected${suggestedCase.is_draft ? ' · draft' : ''}`}
-                onClick={() => route(suggestedCase.id, null)}
-              />
-            )}
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter cases…"
-              aria-label="Filter cases"
-              className="w-full border-y border-line2 bg-transparent px-3 py-1.5 text-[11px] outline-none"
+            <CasePicker
+              cases={cases}
+              suggestedId={suggested}
+              activeId={caseId}
+              defaultTitle={bundle.suggestion?.title ?? review.case?.title ?? ''}
+              onPick={(id) => route(id, null)}
+              onCreate={(c) => route('', null, c)}
             />
-            <div className="max-h-52 overflow-y-auto">
-              {otherCases.map((c) => (
-                <PickRow
-                  key={c.id}
-                  active={caseId === c.id}
-                  title={c.id}
-                  sub={c.is_draft ? `${c.title} · draft` : c.title}
-                  onClick={() => route(c.id, null)}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(null)
-                onCreateCase()
-              }}
-              className="flex w-full items-center gap-2 border-t border-line2 px-3 py-2 text-left text-[11px] font-semibold text-tealink hover:bg-accent/7"
-            >
-              <Icon name="add" size={14} /> Create new case…
-            </button>
           </Popover>
         )}
       </div>

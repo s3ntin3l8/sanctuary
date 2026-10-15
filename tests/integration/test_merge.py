@@ -1,5 +1,6 @@
 """Merging a duplicate proceeding or case folds its rows into the survivor."""
 
+import shutil
 from datetime import UTC, datetime
 
 import pytest
@@ -251,3 +252,88 @@ def test_merge_endpoints(db_session):
     assert db_session.get(Case, "API-2") is None
     missing = client.post("/api/v1/cases/API-1/merge", json={"target_id": "NOPE"})
     assert missing.status_code == 404
+
+
+def test_rename_case_moves_every_reference(db_session):
+    from app.services import user_settings_service
+    from app.services.merge_service import rename_case
+
+    _case(db_session, "R-1")
+    proc = _proc(db_session, "R-1", "1 F 1/26")
+    batch, doc = _rows(db_session, "R-1", proc.id)
+    user_id = _admin(db_session).id
+    user_settings_service.mark_viewed("R-1", db_session, user_id)
+    user_settings_service.set_active_proceeding("R-1", proc.id, db_session, user_id)
+    db_session.commit()
+
+    from app.config import DATA_DIR
+
+    old_dir = DATA_DIR / "R-1" / "proc"
+    old_dir.mkdir(parents=True, exist_ok=True)
+    (old_dir / "a.pdf").write_text("x")
+    doc.file_path = "R-1/proc/a.pdf"
+    db_session.commit()
+
+    renamed = rename_case(db_session, "R-1", "r-2/26", user_id)
+
+    assert renamed.id == "R-2-26"
+    db_session.expire_all()
+    assert db_session.get(Case, "R-1") is None
+    assert db_session.get(Document, doc.id).case_id == "R-2-26"
+    assert db_session.get(Document, doc.id).file_path == "R-2-26/proc/a.pdf"
+    assert (DATA_DIR / "R-2-26" / "proc" / "a.pdf").exists()
+    assert not (DATA_DIR / "R-1").exists()
+    shutil.rmtree(DATA_DIR / "R-2-26")
+    assert db_session.get(IngestBatch, batch.id).case_id == "R-2-26"
+    assert db_session.get(Proceeding, proc.id).case_id == "R-2-26"
+    assert db_session.query(ActionItem).filter_by(case_id="R-2-26").count() == 1
+    assert user_settings_service.get_last_viewed("R-1", db_session, user_id) is None
+    assert user_settings_service.get_last_viewed("R-2-26", db_session, user_id)
+    assert (
+        user_settings_service.get_active_proceeding("R-2-26", db_session, user_id)
+        == proc.id
+    )
+
+
+def test_rename_case_endpoint_guards(db_session):
+    _case(db_session, "RE-1")
+    _case(db_session, "RE-2")
+    db_session.commit()
+
+    taken = client.patch("/api/v1/cases/RE-1", json={"case_id": "RE-2"})
+    assert (taken.status_code, taken.json()["code"]) == (409, "case_id_taken")
+    same = client.patch("/api/v1/cases/RE-1", json={"case_id": "re-1"})
+    assert (same.status_code, same.json()["code"]) == (409, "same_target")
+    bad = client.patch("/api/v1/cases/RE-1", json={"case_id": "a b"})
+    assert (bad.status_code, bad.json()["code"]) == (422, "invalid_case_id")
+    refused = client.patch(
+        "/api/v1/cases/RE-1", json={"case_id": "RE-2", "title": "Changed"}
+    )
+    assert refused.status_code == 409
+    db_session.expire_all()
+    assert db_session.get(Case, "RE-1").title == "RE-1"  # nothing else was saved
+    ok = client.patch("/api/v1/cases/RE-1", json={"case_id": "RE-9"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["id"] == "RE-9"
+
+
+def test_rename_case_hides_cases_the_caller_cannot_edit(db_session):
+    from app.dependencies import get_current_user
+    from app.models.enums import UserRole
+
+    mine = User(email="me@example.com", password_hash="x", role=UserRole.USER)
+    theirs = User(email="them@example.com", password_hash="x", role=UserRole.USER)
+    db_session.add_all([mine, theirs])
+    db_session.flush()
+    for cid, owner in (("HID-1", mine), ("HID-2", theirs)):
+        db_session.add(
+            Case(id=cid, title=cid, status=CaseStatus.INTAKE, owner_id=owner.id)
+        )
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: mine
+    try:
+        resp = client.patch("/api/v1/cases/HID-1", json={"case_id": "HID-2"})
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert (resp.status_code, resp.json()["code"]) == (404, "not_found")

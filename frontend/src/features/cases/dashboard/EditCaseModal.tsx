@@ -10,6 +10,7 @@ import {
   useUpdateProceeding,
 } from '../../../api/caseDetail'
 import { useCasesDirectory } from '../../../api/cases'
+import { normalizeCaseId } from '../caseId'
 import { leaveTo } from '../../../navigation'
 import { Button } from '../../../ui/Button'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog'
@@ -52,15 +53,21 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   function submitCase(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const d = new FormData(e.currentTarget)
+    const newId = normalizeCaseId(String(d.get('case_id')))
     update.mutate(
       {
+        case_id: newId,
         title: String(d.get('title')),
         status: String(d.get('status')) as CaseDetail['status'],
         case_type: String(d.get('case_type')) as CaseDetail['case_type'],
         assume_worst_case: worst,
       },
       {
-        onSuccess: () => {
+        onSuccess: (r) => {
+          if (r.id !== detail.id) {
+            leaveTo(`/cases/${encodeURIComponent(r.id)}`)
+            return
+          }
           toast('Case updated')
           onClose()
         },
@@ -72,6 +79,15 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   return (
     <Modal open onClose={onClose} title="Edit case" subtitle={detail.id} icon="edit" width={560}>
       <form onSubmit={submitCase} className="space-y-3">
+        <Field label="Case ID" hint="Changing it moves every document and link to the new ID.">
+          <input
+            name="case_id"
+            defaultValue={detail.id}
+            required
+            maxLength={64}
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
         <Field label="Title">
           <input name="title" defaultValue={detail.title} required className={inputClass} />
         </Field>

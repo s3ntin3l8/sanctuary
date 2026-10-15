@@ -7,9 +7,14 @@ the source row is deleted. Nothing is merged across owners without edit access
 """
 
 import logging
+import os
+import shutil
+from pathlib import Path
 
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
+from app.core.validators import validate_case_id
 from app.models.database import (
     ActionItem,
     ApiTokenCase,
@@ -21,7 +26,9 @@ from app.models.database import (
     Entity,
     IngestBatch,
     LegalCost,
+    OAuthCode,
     Proceeding,
+    UserSettings,
 )
 from app.models.enums import (
     AuditEventType,
@@ -234,3 +241,98 @@ def merge_cases(
     recompute_total_cost_exposure(target_id, db, commit=False)
     db.commit()
     return db.get(Case, target_id)  # type: ignore[return-value]
+
+
+def _rekey(mapping: object, old: str, new: str) -> dict | None:
+    """``mapping`` with key ``old`` moved to ``new``; None when nothing changes."""
+    if not isinstance(mapping, dict) or old not in mapping:
+        return None
+    out = dict(mapping)
+    out[new] = out.pop(old)
+    return out
+
+
+def _move_case_dir(db: Session, old_id: str, new_id: str) -> tuple[Path, Path] | None:
+    """Move ``DATA_DIR/<old>`` to ``<new>`` and repoint the stored relative paths."""
+    from app.config import DATA_DIR  # late: tests repoint it
+
+    root = os.path.realpath(DATA_DIR)
+    old_dir = os.path.realpath(os.path.join(root, old_id))
+    new_dir = os.path.realpath(os.path.join(root, new_id))
+    if not (old_dir.startswith(root + os.sep) and new_dir.startswith(root + os.sep)):
+        raise MergeError("invalid_case_id", "Unsafe case ID.")
+    if not os.path.isdir(old_dir):
+        return None
+    if os.path.exists(new_dir):
+        raise MergeError("case_id_taken", f"{new_id} already has stored files.")
+    shutil.move(old_dir, new_dir)
+    for column in (Document.file_path, IngestBatch.raw_source_path):
+        db.query(column.class_).filter(column.startswith(f"{old_id}/")).update(
+            {column: func.concat(new_id, func.substr(column, len(old_id) + 1))},
+            synchronize_session=False,
+        )
+    return Path(old_dir), Path(new_dir)
+
+
+def rename_case(
+    db: Session, case_id: str, new_id: str, actor_user_id: int | None = None
+) -> Case:
+    """Change a case's internal ID; every FK follows through ON UPDATE CASCADE."""
+    if case_id == "_TRIAGE" or new_id.strip().upper() == "_TRIAGE":
+        raise MergeError("triage_case", "The Triage Inbox cannot be renamed.")
+    validated = validate_case_id(new_id)
+    if validated is None:
+        raise MergeError(
+            "invalid_case_id", "Use a case number such as 8245-25 or ADV-024-A."
+        )
+    new_id = validated
+    if new_id == case_id:
+        raise MergeError("same_target", "That is already the case ID.")
+    if db.get(Case, case_id) is None:
+        raise MergeError("not_found", "Case not found.")
+    if db.get(Case, new_id) is not None:
+        raise MergeError(
+            "case_id_taken", f"{new_id} already exists. Merge into it instead."
+        )
+
+    db.execute(
+        update(Case)
+        .where(Case.id == case_id)
+        .values(id=new_id)
+        .execution_options(synchronize_session=False)
+    )
+    # References that are plain strings, not foreign keys.
+    db.query(Conversation).filter(
+        Conversation.scope_type == "case", Conversation.scope_id == case_id
+    ).update({Conversation.scope_id: new_id}, synchronize_session=False)
+    for row in db.query(UserSettings).all():
+        data = dict(row.settings_json or {})
+        changed = False
+        for key in ("last_viewed_cases", "active_proceeding"):
+            moved = _rekey(data.get(key), case_id, new_id)
+            if moved is not None:
+                data[key] = moved
+                changed = True
+        if changed:
+            row.settings_json = data
+    for code in db.query(OAuthCode).all():
+        if case_id in (code.case_ids or []):
+            code.case_ids = [new_id if c == case_id else c for c in code.case_ids]
+    moved_dir = _move_case_dir(db, case_id, new_id)
+    try:
+        audit_service.record(
+            db,
+            AuditEventType.CASE_RENAMED,
+            target_type="case",
+            target_id=new_id,
+            payload={"old_id": case_id, "new_id": new_id},
+            actor_user_id=actor_user_id,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        if moved_dir is not None:
+            shutil.move(str(moved_dir[1]), str(moved_dir[0]))
+        raise
+    db.expire_all()
+    return db.get(Case, new_id)  # type: ignore[return-value]

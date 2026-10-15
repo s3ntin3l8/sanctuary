@@ -954,7 +954,6 @@ function BundleRow({
                   bundle: b,
                   cases,
                   proceedings,
-                  onCreateCase: () => onConfirm('assign_case'),
                 }}
               />
             ) : (

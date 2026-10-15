@@ -176,6 +176,10 @@ _BODY_ID_REVIEWED: dict[str, str] = {
     "POST /api/v1/cases/{case_id}/merge": (
         "target case checked with can_edit_case before merging"
     ),
+    "PATCH /api/v1/cases/{case_id}": (
+        "case_id is the guarded case's new label; an existing ID is checked with "
+        "can_edit_case (404 otherwise) before rename_case runs"
+    ),
     "POST /api/v1/documents/{doc_id}/pins": (
         "passage_id is an anchor inside the guarded document"
     ),
