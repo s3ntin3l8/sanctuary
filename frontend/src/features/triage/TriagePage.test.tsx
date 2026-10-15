@@ -138,7 +138,9 @@ test('a PDF that looks like several letters says where they start and offers the
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
   const hint = await screen.findByTestId('packet-hint')
-  expect(hint).toHaveTextContent('another one starts on pages 3, 17')
+  expect(hint).toHaveTextContent('more start on pages 3, 17')
+  // The hint carries the only Split button: the header's would be a second one.
+  expect(screen.getAllByRole('button', { name: /Split/ })).toHaveLength(1)
   expect(within(hint).getByRole('button', { name: /Split/ })).toBeVisible()
 })
 
@@ -662,4 +664,18 @@ test('filing the open bundle moves on to the next one', async () => {
   )
   await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('?bundle=batch-39'))
   expect(screen.getByTestId('search')).not.toHaveTextContent('doc=')
+})
+
+test('a single later start is worded as one more letter', async () => {
+  stub({
+    'GET /api/v1/documents/2211/review': {
+      body: { ...documentReview, packet_starts: [3] },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  expect(await screen.findByTestId('packet-hint')).toHaveTextContent(
+    'more than one letter: another starts on page 3',
+  )
 })

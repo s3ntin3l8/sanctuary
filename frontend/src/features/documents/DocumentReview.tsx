@@ -168,9 +168,10 @@ function PacketHint({ review }: { review: Review }) {
     >
       <Icon name="content_cut" size={14} />
       <p className="min-w-0 flex-1 text-[11px]">
-        This PDF seems to hold several letters: another one starts on{' '}
-        {starts.length === 1 ? 'page' : 'pages'} {starts.join(', ')}. The AI reads it as one
-        document until it is split.
+        {starts.length === 1
+          ? `This PDF seems to hold more than one letter: another starts on page ${starts[0]}.`
+          : `This PDF seems to hold several letters: more start on pages ${starts.join(', ')}.`}{' '}
+        The AI reads it as one document until it is split.
       </p>
       <SplitButton docId={review.id} />
     </section>
@@ -258,9 +259,11 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
         </div>
       </div>
       {review.significance_tier && <Badge tone={tierTone}>{review.significance_tier}</Badge>}
-      {review.page_count > 1 && review.original_filename?.toLowerCase().endsWith('.pdf') && (
-        <SplitButton docId={review.id} />
-      )}
+      {review.page_count > 1 &&
+        review.packet_starts.length === 0 &&
+        review.original_filename?.toLowerCase().endsWith('.pdf') && (
+          <SplitButton docId={review.id} />
+        )}
       {onOpenHud && (
         <Button variant="secondary" size="sm" onClick={() => onOpenHud(review.id)}>
           <Icon name="open_in_full" size={12} /> HUD

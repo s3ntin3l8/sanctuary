@@ -513,14 +513,16 @@ def _flag_packet(doc: Document) -> None:
     from app.services.ingestion import page_text
     from app.services.ingestion.slicer import likely_document_starts
 
-    meta = {k: v for k, v in (doc.meta or {}).items() if k != "packet_starts"}
-    if not (doc.meta or {}).get("slice_range") and (
-        doc.file_path or ""
-    ).lower().endswith(".pdf"):
+    current = dict(doc.meta or {})
+    starts: list[int] = []
+    if not current.get("slice_range") and (doc.file_path or "").lower().endswith(
+        ".pdf"
+    ):
         starts = likely_document_starts(page_text.page_texts(doc))
-        if starts:
-            meta["packet_starts"] = starts
-    doc.meta = meta
+    if starts:
+        doc.meta = {**current, "packet_starts": starts}
+    elif "packet_starts" in current:
+        doc.meta = {k: v for k, v in current.items() if k != "packet_starts"}
 
 
 def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
