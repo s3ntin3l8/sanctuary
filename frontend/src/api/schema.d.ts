@@ -2541,6 +2541,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/slicing/documents/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Document Slicing */
+        get: operations["v1_document_slicing_api_v1_slicing_documents__doc_id__get"];
+        put?: never;
+        /**
+         * V1 Start Document Slicing
+         * @description Start (or resume) the split review of one multi-page PDF document.
+         */
+        post: operations["v1_start_document_slicing_api_v1_slicing_documents__doc_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/documents/{doc_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Confirm Document Slicing
+         * @description Replace the document by its parts. Refused when it carries your own work.
+         */
+        post: operations["v1_confirm_document_slicing_api_v1_slicing_documents__doc_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/documents/{doc_id}/page/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Document Page Image */
+        get: operations["v1_document_page_image_api_v1_slicing_documents__doc_id__page__page__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/documents/{doc_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Retry Document Slicing
+         * @description Compute a fresh proposal (after a failure, or to redo a ready one).
+         */
+        post: operations["v1_retry_document_slicing_api_v1_slicing_documents__doc_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/documents/{doc_id}/thumb/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Document Thumbnail */
+        get: operations["v1_document_thumbnail_api_v1_slicing_documents__doc_id__thumb__page__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/slicing/{batch_id}": {
         parameters: {
             query?: never;
@@ -6064,10 +6159,15 @@ export interface components {
             /** Subject */
             subject: string | null;
         };
-        /** SlicingView */
+        /**
+         * SlicingView
+         * @description The cut review of one source: a scanned batch, or an existing PDF document.
+         */
         SlicingView: {
             /** Batch Id */
-            batch_id: number;
+            batch_id?: number | null;
+            /** Document Id */
+            document_id?: number | null;
             /** Error */
             error: string | null;
             /** Page Count */
@@ -11244,6 +11344,194 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ShellView"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_document_slicing_api_v1_slicing_documents__doc_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_start_document_slicing_api_v1_slicing_documents__doc_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_document_slicing_api_v1_slicing_documents__doc_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlicingConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingConfirmed"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_document_page_image_api_v1_slicing_documents__doc_id__page__page__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page: number;
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_document_slicing_api_v1_slicing_documents__doc_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_document_thumbnail_api_v1_slicing_documents__doc_id__thumb__page__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page: number;
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -9811,10 +9811,29 @@
         "type": "object"
       },
       "SlicingView": {
+        "description": "The cut review of one source: a scanned batch, or an existing PDF document.",
         "properties": {
           "batch_id": {
-            "title": "Batch Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
           },
           "error": {
             "anyOf": [
@@ -9905,7 +9924,6 @@
           }
         },
         "required": [
-          "batch_id",
           "subject",
           "status",
           "page_count",
@@ -17743,6 +17761,273 @@
         "summary": "V1 Shell",
         "tags": [
           "shell"
+        ]
+      }
+    },
+    "/api/v1/slicing/documents/{doc_id}": {
+      "get": {
+        "operationId": "v1_document_slicing_api_v1_slicing_documents__doc_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Document Slicing",
+        "tags": [
+          "slicing"
+        ]
+      },
+      "post": {
+        "description": "Start (or resume) the split review of one multi-page PDF document.",
+        "operationId": "v1_start_document_slicing_api_v1_slicing_documents__doc_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Start Document Slicing",
+        "tags": [
+          "slicing"
+        ]
+      }
+    },
+    "/api/v1/slicing/documents/{doc_id}/confirm": {
+      "post": {
+        "description": "Replace the document by its parts. Refused when it carries your own work.",
+        "operationId": "v1_confirm_document_slicing_api_v1_slicing_documents__doc_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlicingConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicingConfirmed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Confirm Document Slicing",
+        "tags": [
+          "slicing"
+        ]
+      }
+    },
+    "/api/v1/slicing/documents/{doc_id}/page/{page}": {
+      "get": {
+        "operationId": "v1_document_page_image_api_v1_slicing_documents__doc_id__page__page__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Document Page Image",
+        "tags": [
+          "slicing"
+        ]
+      }
+    },
+    "/api/v1/slicing/documents/{doc_id}/retry": {
+      "post": {
+        "description": "Compute a fresh proposal (after a failure, or to redo a ready one).",
+        "operationId": "v1_retry_document_slicing_api_v1_slicing_documents__doc_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Retry Document Slicing",
+        "tags": [
+          "slicing"
+        ]
+      }
+    },
+    "/api/v1/slicing/documents/{doc_id}/thumb/{page}": {
+      "get": {
+        "operationId": "v1_document_thumbnail_api_v1_slicing_documents__doc_id__thumb__page__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Document Thumbnail",
+        "tags": [
+          "slicing"
         ]
       }
     },

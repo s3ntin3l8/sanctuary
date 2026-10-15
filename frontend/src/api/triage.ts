@@ -506,25 +506,53 @@ export function useDocumentStatus(docId: number) {
   })
 }
 
-export function useSlicing(batchId: number) {
+/** What is being sliced: a scanned batch, or an existing PDF document (an email attachment). */
+export type SliceScope = { kind: 'batch' | 'document'; id: number }
+
+/** The API path prefix of one slicing source. */
+export const slicingBase = (scope: SliceScope) =>
+  scope.kind === 'batch' ? `/api/v1/slicing/${scope.id}` : `/api/v1/slicing/documents/${scope.id}`
+
+export function useSlicing(scope: SliceScope) {
   return useQuery<S['SlicingView'], ApiError>({
-    queryKey: ['slicing', batchId],
-    queryFn: () => unwrap(api.GET('/api/v1/slicing/{batch_id}', batchPath(batchId))),
+    queryKey: ['slicing', scope.kind, scope.id],
+    queryFn: () =>
+      unwrap(
+        scope.kind === 'batch'
+          ? api.GET('/api/v1/slicing/{batch_id}', batchPath(scope.id))
+          : api.GET('/api/v1/slicing/documents/{doc_id}', docPath(scope.id)),
+      ),
     refetchInterval: (query) => (query.state.data?.status === 'preparing' ? 3_000 : false),
   })
 }
 
-export function useSlicingConfirm(batchId: number) {
+export function useSlicingConfirm(scope: SliceScope) {
   return useMutation<S['SlicingConfirmed'], ApiError, S['SlicingConfirm']>({
     mutationFn: (body) =>
-      unwrap(api.POST('/api/v1/slicing/{batch_id}/confirm', { ...batchPath(batchId), body })),
+      unwrap(
+        scope.kind === 'batch'
+          ? api.POST('/api/v1/slicing/{batch_id}/confirm', { ...batchPath(scope.id), body })
+          : api.POST('/api/v1/slicing/documents/{doc_id}/confirm', { ...docPath(scope.id), body }),
+      ),
   })
 }
 
-export function useSlicingRetry(batchId: number) {
+export function useSlicingRetry(scope: SliceScope) {
   const queryClient = useQueryClient()
   return useMutation<S['SlicingView'], ApiError>({
-    mutationFn: () => unwrap(api.POST('/api/v1/slicing/{batch_id}/retry', batchPath(batchId))),
-    onSuccess: (view) => queryClient.setQueryData(['slicing', batchId], view),
+    mutationFn: () =>
+      unwrap(
+        scope.kind === 'batch'
+          ? api.POST('/api/v1/slicing/{batch_id}/retry', batchPath(scope.id))
+          : api.POST('/api/v1/slicing/documents/{doc_id}/retry', docPath(scope.id)),
+      ),
+    onSuccess: (view) => queryClient.setQueryData(['slicing', scope.kind, scope.id], view),
+  })
+}
+
+/** Start the split review of an existing PDF document (resumes one already prepared). */
+export function useStartDocumentSlicing() {
+  return useMutation<S['SlicingView'], ApiError, number>({
+    mutationFn: (docId) => unwrap(api.POST('/api/v1/slicing/documents/{doc_id}', docPath(docId))),
   })
 }

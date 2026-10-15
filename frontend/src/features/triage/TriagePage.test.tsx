@@ -6,6 +6,8 @@ import { documentReview, triageBundle, triageView } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
 import { useLocation } from 'react-router'
 
+import * as navigation from '../../navigation'
+
 import { TriagePage } from './TriagePage'
 
 function Search() {
@@ -105,6 +107,25 @@ test('expanding a row shows the bundle tree and the review panel', async () => {
     expect(await postedJson(fetch, '/2211/reactions')).toEqual({ reaction: 'lies' }),
   )
   expect(screen.getByRole('button', { name: '🚩 Lies' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('a multi-page PDF can be split into documents from its review header', async () => {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  const fetch = stub({
+    'POST /api/v1/slicing/documents/2211': {
+      body: { document_id: 2211, status: 'preparing', page_count: 12, pages: [] },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  await user.click(await screen.findByRole('button', { name: /Split/ }))
+  await waitFor(() => expect(navigation.leaveTo).toHaveBeenCalledWith('/document/2211/slice'))
+  expect(
+    fetch.mock.calls.some(
+      ([r]) => r.method === 'POST' && r.url.endsWith('/slicing/documents/2211'),
+    ),
+  ).toBe(true)
 })
 
 test('batch selection confirms every selected bundle', async () => {

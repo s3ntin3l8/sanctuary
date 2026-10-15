@@ -4,7 +4,8 @@ import { Icon } from '../../ui/Icon'
 type Kind = Schemas['SliceCut']['kind']
 
 type Props = {
-  batchId: number
+  /** API path prefix of the source being sliced. */
+  base: string
   page: number
   pages: Schemas['SlicingPage'][]
   /** Cuts keyed by the page they follow. */
@@ -20,7 +21,7 @@ type Props = {
 
 /** One page at reading size with the full OCR extract, so a cut can be judged and set in place. */
 export function PageViewer({
-  batchId,
+  base,
   page,
   pages,
   cuts,
@@ -83,7 +84,7 @@ export function PageViewer({
         <div className="flex min-w-0 flex-1 items-center justify-center overflow-auto p-4">
           <div className="relative flex max-h-full max-w-full">
             <img
-              src={`/api/v1/slicing/${batchId}/page/${page}`}
+              src={`${base}/page/${page}`}
               alt={`Page ${page}`}
               className={`max-h-full max-w-full rounded-md border border-line2 bg-white object-contain ${isDiscarded ? 'opacity-30' : ''}`}
             />

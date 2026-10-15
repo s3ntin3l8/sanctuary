@@ -26,7 +26,10 @@ class ProposedCut(BaseModel):
 
 
 class SlicingView(BaseModel):
-    batch_id: int
+    """The cut review of one source: a scanned batch, or an existing PDF document."""
+
+    batch_id: int | None = None
+    document_id: int | None = None
     subject: str | None
     status: Literal["preparing", "ready", "failed", "done"]
     page_count: int

@@ -427,14 +427,19 @@ def process_uploaded_document(doc: Document, db: Session):
     try:
         from app.services.user_settings_service import get_extraction_engine
 
-        engine = get_extraction_engine(db)
-        conversion_result = convert_file(file_path, engine=engine)
+        # A part cut from an already-extracted document carries its pages'
+        # reading with it (see page_text.extraction_for_pages): no second OCR.
+        conversion_result = (doc.meta or {}).get("prefilled_extraction")
+        if conversion_result is None:
+            engine = get_extraction_engine(db)
+            conversion_result = convert_file(file_path, engine=engine)
         markdown_content = conversion_result["content"]
         conversion_metadata = conversion_result["metadata"]
         # Add chunks to metadata
         conversion_metadata["chunks"] = conversion_result.get("chunks", [])
 
-        _record_ocr_run(doc, conversion_metadata, markdown_content)
+        if "reused_from_document" not in conversion_metadata:
+            _record_ocr_run(doc, conversion_metadata, markdown_content)
 
         if ext == ".pdf" and markdown_content:
             text_only = re.sub(r"[#*_\[\]()]|!\[.*?\]\(.*?\)", "", markdown_content)

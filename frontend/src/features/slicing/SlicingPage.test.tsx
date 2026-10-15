@@ -202,3 +202,51 @@ test('blank pages start discarded and Reset to proposal restores that', async ()
   await user.click(screen.getByRole('button', { name: 'Reset to proposal' }))
   expect(await confirmedBody(fetch)).toEqual({ cuts: [], discard: [2] })
 })
+
+test('splits an existing document and returns to its first part', async () => {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  const fetch = stubApi({
+    'GET /api/v1/slicing/documents/113': {
+      body: { ...view, batch_id: null, document_id: 113 },
+    },
+    'POST /api/v1/slicing/documents/113/confirm': { body: { document_ids: [200, 201] } },
+  })
+  renderAt(
+    '/document/113/slice',
+    <Routes>
+      <Route path="/document/:docId/slice" element={<SlicingPage />} />
+    </Routes>,
+  )
+  const user = userEvent.setup()
+  expect(await screen.findByText('Split d-113')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: /^Confirm/ }))
+  await waitFor(() => expect(navigation.leaveTo).toHaveBeenCalledWith('/document/200'))
+  const post = fetch.mock.calls.map(([x]) => x).find((x) => x.method === 'POST')
+  expect(new URL(post?.url ?? '').pathname).toBe('/api/v1/slicing/documents/113/confirm')
+})
+
+test('a document that carries your own work is not replaced, and says why', async () => {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  stubApi({
+    'GET /api/v1/slicing/documents/113': {
+      body: { ...view, batch_id: null, document_id: 113 },
+    },
+    'POST /api/v1/slicing/documents/113/confirm': {
+      status: 409,
+      body: {
+        code: 'has_user_data',
+        detail: 'The document has your own work attached: pins',
+      },
+    },
+  })
+  renderAt(
+    '/document/113/slice',
+    <Routes>
+      <Route path="/document/:docId/slice" element={<SlicingPage />} />
+    </Routes>,
+  )
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /^Confirm/ }))
+  expect(await screen.findByText(/your own work attached: pins/)).toBeVisible()
+  expect(navigation.leaveTo).not.toHaveBeenCalled()
+})

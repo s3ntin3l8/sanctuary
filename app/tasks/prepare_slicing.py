@@ -24,3 +24,24 @@ def prepare_slicing_task(self, batch_id: int):
                 exc=exc, countdown=30 * (self.request.retries + 1)
             ) from exc
         return {"status": "failed", "batch_id": batch_id, "error": str(exc)}
+
+
+@celery_app.task(
+    bind=True,
+    max_retries=2,
+    name="app.tasks.prepare_slicing.prepare_document_slicing_task",
+)
+def prepare_document_slicing_task(self, doc_id: int):
+    """Propose slicing cuts for one existing multi-page PDF document."""
+    from app.services.ingestion.slicer import prepare_document
+
+    try:
+        prepare_document(doc_id)
+        return {"status": "success", "doc_id": doc_id}
+    except Exception as exc:
+        logger.error("prepare_document_slicing_task doc %d failed: %s", doc_id, exc)
+        if self.request.retries < self.max_retries:
+            raise self.retry(
+                exc=exc, countdown=30 * (self.request.retries + 1)
+            ) from exc
+        return {"status": "failed", "doc_id": doc_id, "error": str(exc)}
