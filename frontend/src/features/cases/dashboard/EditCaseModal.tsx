@@ -5,7 +5,6 @@ import {
   useDeleteProceeding,
   useMergeCase,
   useMergeProceeding,
-  useRenameCase,
   usePurgeCase,
   useUpdateCase,
   useUpdateProceeding,
@@ -42,7 +41,6 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   const purge = usePurgeCase(detail.id)
   const mergeProc = useMergeProceeding(detail.id)
   const mergeCase = useMergeCase(detail.id)
-  const rename = useRenameCase(detail.id)
   const directory = useCasesDirectory()
   const [mergeProcSource, setMergeProcSource] = useState<CaseDetail['proceedings'][number] | null>(
     null,
@@ -58,22 +56,20 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
     const newId = normalizeCaseId(String(d.get('case_id')))
     update.mutate(
       {
+        case_id: newId,
         title: String(d.get('title')),
         status: String(d.get('status')) as CaseDetail['status'],
         case_type: String(d.get('case_type')) as CaseDetail['case_type'],
         assume_worst_case: worst,
       },
       {
-        onSuccess: () => {
-          if (!newId || newId === detail.id) {
-            toast('Case updated')
-            onClose()
+        onSuccess: (r) => {
+          if (r.id !== detail.id) {
+            leaveTo(`/cases/${encodeURIComponent(r.id)}`)
             return
           }
-          rename.mutate(newId, {
-            onSuccess: (r) => leaveTo(`/cases/${encodeURIComponent(r.id)}`),
-            onError: (err) => toast(err.message, 'error'),
-          })
+          toast('Case updated')
+          onClose()
         },
         onError: (err) => toast(err.message, 'error'),
       },

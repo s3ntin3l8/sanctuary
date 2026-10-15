@@ -267,9 +267,7 @@ def _move_case_dir(db: Session, old_id: str, new_id: str) -> tuple[Path, Path] |
         raise MergeError("case_id_taken", f"{new_id} already has stored files.")
     shutil.move(old_dir, new_dir)
     for column in (Document.file_path, IngestBatch.raw_source_path):
-        db.query(column.class_).filter(
-            column.startswith(f"{old_id}/", autoescape=True)
-        ).update(
+        db.query(column.class_).filter(column.startswith(f"{old_id}/")).update(
             {column: func.concat(new_id, func.substr(column, len(old_id) + 1))},
             synchronize_session=False,
         )
@@ -321,17 +319,18 @@ def rename_case(
         if case_id in (code.case_ids or []):
             code.case_ids = [new_id if c == case_id else c for c in code.case_ids]
     moved_dir = _move_case_dir(db, case_id, new_id)
-    audit_service.record(
-        db,
-        AuditEventType.CASE_RENAMED,
-        target_type="case",
-        target_id=new_id,
-        payload={"old_id": case_id, "new_id": new_id},
-        actor_user_id=actor_user_id,
-    )
     try:
+        audit_service.record(
+            db,
+            AuditEventType.CASE_RENAMED,
+            target_type="case",
+            target_id=new_id,
+            payload={"old_id": case_id, "new_id": new_id},
+            actor_user_id=actor_user_id,
+        )
         db.commit()
     except Exception:
+        db.rollback()
         if moved_dir is not None:
             shutil.move(str(moved_dir[1]), str(moved_dir[0]))
         raise

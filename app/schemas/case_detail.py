@@ -139,6 +139,8 @@ class CaseDetail(BaseModel):
 
 
 class CaseUpdate(BaseModel):
+    # A new internal ID renames the case (see merge_service.rename_case).
+    case_id: str | None = Field(default=None, min_length=1, max_length=64)
     title: str | None = Field(default=None, max_length=500)
     status: CaseStatus | None = None
     case_type: CaseType | None = None
@@ -186,10 +188,6 @@ class ProceedingMerge(BaseModel):
 
 class CaseMerge(BaseModel):
     target_id: str = Field(max_length=64)
-
-
-class CaseRename(BaseModel):
-    new_id: str = Field(min_length=1, max_length=64)
 
 
 class CaseMergeResult(BaseModel):

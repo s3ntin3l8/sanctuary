@@ -300,13 +300,19 @@ def test_rename_case_endpoint_guards(db_session):
     _case(db_session, "RE-2")
     db_session.commit()
 
-    taken = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "RE-2"})
+    taken = client.patch("/api/v1/cases/RE-1", json={"case_id": "RE-2"})
     assert (taken.status_code, taken.json()["code"]) == (409, "case_id_taken")
-    same = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "re-1"})
+    same = client.patch("/api/v1/cases/RE-1", json={"case_id": "re-1"})
     assert (same.status_code, same.json()["code"]) == (409, "same_target")
-    bad = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "a b"})
+    bad = client.patch("/api/v1/cases/RE-1", json={"case_id": "a b"})
     assert (bad.status_code, bad.json()["code"]) == (422, "invalid_case_id")
-    ok = client.post("/api/v1/cases/RE-1/rename", json={"new_id": "RE-9"})
+    refused = client.patch(
+        "/api/v1/cases/RE-1", json={"case_id": "RE-2", "title": "Changed"}
+    )
+    assert refused.status_code == 409
+    db_session.expire_all()
+    assert db_session.get(Case, "RE-1").title == "RE-1"  # nothing else was saved
+    ok = client.patch("/api/v1/cases/RE-1", json={"case_id": "RE-9"})
     assert ok.status_code == 200, ok.text
     assert ok.json()["id"] == "RE-9"
 
@@ -327,7 +333,7 @@ def test_rename_case_hides_cases_the_caller_cannot_edit(db_session):
 
     app.dependency_overrides[get_current_user] = lambda: mine
     try:
-        resp = client.post("/api/v1/cases/HID-1/rename", json={"new_id": "HID-2"})
+        resp = client.patch("/api/v1/cases/HID-1", json={"case_id": "HID-2"})
     finally:
         app.dependency_overrides.pop(get_current_user, None)
     assert (resp.status_code, resp.json()["code"]) == (404, "not_found")

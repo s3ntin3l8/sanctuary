@@ -210,26 +210,6 @@ export function useMergeCase(caseId: string) {
   })
 }
 
-export function useRenameCase(caseId: string) {
-  const queryClient = useQueryClient()
-  return useMutation<S['CaseDetail'], ApiError, string>({
-    mutationFn: (newId) =>
-      unwrap(
-        api.POST('/api/v1/cases/{case_id}/rename', {
-          ...casePath(caseId),
-          body: { new_id: newId },
-        }),
-      ),
-    // The old ID is gone; refetching it would 404.
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey: caseKey(caseId) })
-      queryClient.invalidateQueries({ queryKey: ['cases'] })
-      queryClient.invalidateQueries({ queryKey: ['home'] })
-      queryClient.invalidateQueries({ queryKey: ['shell'] })
-    },
-  })
-}
-
 export function useCaseActionStatus(caseId: string) {
   const invalidate = useCaseInvalidate(caseId)
   return useMutation<

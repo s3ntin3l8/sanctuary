@@ -40,7 +40,6 @@ from app.schemas.case_detail import (
     CaseMerge,
     CaseMergeResult,
     CasePurge,
-    CaseRename,
     CaseUpdate,
     FinancialsView,
     GraphView,
@@ -148,6 +147,18 @@ def mark_case_viewed(
     db.commit()
 
 
+def _rename(db: Session, user: User, case: Case, new_id: str) -> Case:
+    existing = db.get(Case, normalize_case_id(new_id) or "")
+    if existing is not None and not access_service.can_edit_case(db, user, existing):
+        # Same answer as for a missing case: never confirm a case the caller can't edit.
+        raise ApiError(404, "not_found", "Case not found.")
+    try:
+        return rename_case(db, case.id, new_id, user.id)
+    except MergeError as exc:
+        status = {"not_found": 404, "invalid_case_id": 422}.get(exc.code, 409)
+        raise ApiError(status, exc.code, str(exc)) from exc
+
+
 @router.patch("/cases/{case_id}", response_model=CaseDetail)
 def update_case(
     body: CaseUpdate,
@@ -155,6 +166,10 @@ def update_case(
     user: User = Depends(get_current_user),
     case: Case = Depends(require_case_access(edit=True)),
 ):
+    if body.case_id is not None and body.case_id != case.id:
+        # Renamed first and committed on its own: a refused ID leaves every other
+        # field of this request unsaved too.
+        case = _rename(db, user, case, body.case_id)
     if body.title is not None:
         case.title = body.title
     if body.status is not None:
@@ -407,26 +422,6 @@ def merge_proceeding(
         user_settings_service.set_active_proceeding(case_id, target.id, db, user.id)
         db.commit()
     return next(p for p in proceeding_views(db, case_id) if p.id == target.id)
-
-
-@router.post("/cases/{case_id}/rename", response_model=CaseDetail)
-def rename_case_id(
-    body: CaseRename,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    case: Case = Depends(require_case_access(edit=True)),
-):
-    """Change the case's internal ID (its URL, breadcrumb and lead identifier)."""
-    existing = db.get(Case, normalize_case_id(body.new_id) or "")
-    if existing is not None and not access_service.can_edit_case(db, user, existing):
-        # Same answer as for a missing case: never confirm a case the caller can't edit.
-        raise ApiError(404, "not_found", "Case not found.")
-    try:
-        renamed = rename_case(db, case.id, body.new_id, user.id)
-    except MergeError as exc:
-        status = {"not_found": 404, "invalid_case_id": 422}.get(exc.code, 409)
-        raise ApiError(status, exc.code, str(exc)) from exc
-    return case_detail(None, db, user, renamed)
 
 
 @router.post("/cases/{case_id}/merge", response_model=CaseMergeResult)
