@@ -275,6 +275,10 @@ class ClaimEvidenceRole(enum.StrEnum):
     CONTESTS = "contests"
     REFUTES = "refutes"
     CITES_AS_PROOF = "cites_as_proof"
+    # The document retells a claim another document makes ("Sie behauptet ...":
+    # the user's note to their lawyer about an attached filing) without being
+    # its source.
+    REPORTS = "reports"
 
 
 # One document holds one link to a claim. When two roles compete for the same
@@ -287,6 +291,7 @@ EVIDENCE_ROLE_STRENGTH: dict[ClaimEvidenceRole, int] = {
     ClaimEvidenceRole.CONTESTS: 3,
     ClaimEvidenceRole.SUPPORTS: 2,
     ClaimEvidenceRole.CITES_AS_PROOF: 1,
+    ClaimEvidenceRole.REPORTS: 0,
 }
 
 

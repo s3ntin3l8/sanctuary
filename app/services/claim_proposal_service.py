@@ -54,6 +54,46 @@ def _now() -> datetime:
     return now_utc()
 
 
+def demote_reported_assertions(db: Session, claim: Claim) -> None:
+    """Make the user's own mail a REPORTS source of a claim another document asserts.
+
+    A note to the lawyer that retells a filing ("Sie behauptet ...") is extracted
+    as asserting that claim. Once the claim also has an originating document, the
+    note only reports it: the originator keeps ASSERTS and the note drops to
+    REPORTS. Rows a person confirmed are left alone.
+    """
+    from app.models.database import Document
+    from app.models.enums import OriginatorType
+    from app.services import family_context
+
+    rows = (
+        db.query(ClaimEvidence)
+        .filter(
+            ClaimEvidence.claim_id == claim.id,
+            ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+        )
+        .all()
+    )
+    if len(rows) < 2:
+        return
+    docs = {
+        d.id: d
+        for d in db.query(Document).filter(
+            Document.id.in_([r.document_id for r in rows])
+        )
+    }
+    reporters = [
+        r
+        for r in rows
+        if r.confidence == RelationshipConfidence.AI_DETECTED
+        and family_context.is_email_body(docs[r.document_id])
+        and docs[r.document_id].originator_type == OriginatorType.OWN
+    ]
+    if reporters and len(reporters) < len(rows):
+        for r in reporters:
+            r.role = ClaimEvidenceRole.REPORTS
+
+
 # ---------------------------------------------------------------------------
 # Merge proposals
 # ---------------------------------------------------------------------------
@@ -125,6 +165,7 @@ def confirm_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
     # are no longer in that collection.
     db.flush()
     db.expire(new_claim, ["evidence"])
+    demote_reported_assertions(db, existing)
 
     # embedding lives on the claim row itself, so deleting it drops the vector too.
     db.delete(new_claim)

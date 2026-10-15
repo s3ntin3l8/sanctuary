@@ -423,7 +423,7 @@ Response shape:
     {"claim_text": "one atomic assertion", "claim_type": "factual|legal|procedural", "excerpt": "the exact sentence or passage that makes this assertion"}
   ],
   "evidence_links": [
-    {"claim_id": <integer from the provided list>, "role": "supports|contests|refutes|cites_as_proof", "excerpt": "the specific passage that supports this stance"}
+    {"claim_id": <integer from the provided list>, "role": "supports|contests|refutes|cites_as_proof|reports", "excerpt": "the specific passage that supports this stance"}
   ]
 }
 
@@ -443,6 +443,10 @@ When this document takes a stance on a listed existing claim, choose one role:
   evidence is conclusive, downgrade to "contests".
 - **cites_as_proof** — the document points to another document as proof of the
   claim (use when the source IS the evidence, not when it merely references it).
+- **reports** — the document only retells what another document asserts, without
+  taking a stance of its own. Use it ONLY when the user prompt says the document
+  is the user's note about attached documents; it replaces a new claim for
+  anything the note merely relays.
 
 Decision test: would a neutral reader say "this proves the other claim wrong"?
 If yes → refutes. If only "this party disagrees" → contests.
@@ -528,7 +532,7 @@ extraction. Outputting two near-identical claims is a hard failure.
 
 Each new_claim is ONE atomic assertion — one subject, one predicate, one claim. Split compound sentences.
 claim_type must be exactly one of: factual, legal, procedural.
-role must be exactly one of: supports, contests, refutes, cites_as_proof.
+role must be exactly one of: supports, contests, refutes, cites_as_proof, reports.
 Only use claim_ids from the provided existing claims list — never invent IDs.
 
 # LANGUAGE

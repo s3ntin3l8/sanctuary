@@ -1056,6 +1056,7 @@ const ROLE_LABEL: Record<string, string> = {
   supports: 'supports',
   asserts: 'asserts',
   cites_as_proof: 'cites as proof',
+  reports: 'reports (retells)',
 }
 
 /** AI-proposed links from this document to claims in the case, awaiting a decision. */

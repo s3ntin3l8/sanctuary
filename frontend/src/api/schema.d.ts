@@ -3895,7 +3895,7 @@ export interface components {
          * ClaimEvidenceRole
          * @enum {string}
          */
-        ClaimEvidenceRole: "asserts" | "supports" | "contests" | "refutes" | "cites_as_proof";
+        ClaimEvidenceRole: "asserts" | "supports" | "contests" | "refutes" | "cites_as_proof" | "reports";
         /** ClaimGroupView */
         ClaimGroupView: {
             /** Claims */
