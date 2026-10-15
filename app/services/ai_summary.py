@@ -214,10 +214,12 @@ def content_windows(
         size += len(piece[1])
     if len(grouped) > max_windows:
         logger.warning(
-            "Doc %s: %d windows needed, reading the first %d",
+            "Doc %s: %d windows needed, reading the first %d (windows %d-%d are not read)",
             doc.id,
             len(grouped),
             max_windows,
+            max_windows + 1,
+            len(grouped),
         )
         grouped = grouped[:max_windows]
     out = []
@@ -619,13 +621,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         )
     else:
         new_meta["ai_contradiction"] = False
-
-    # Track strategy and character count for UI transparency
-    content_len = len(condense_image_descriptions(doc.content or ""))
-    new_meta["ai_context_strategy"] = (
-        "windowed" if content_len > AI_CONTEXT_CHARS else "full"
-    )
-    new_meta["ai_context_chars"] = len(get_content_preview(doc, AI_CONTEXT_CHARS))
 
     doc.meta = new_meta
 

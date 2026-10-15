@@ -394,3 +394,14 @@ def test_the_fuller_quotation_wins_when_a_stance_is_seen_twice():
     assert [link["excerpt"] for link in merged["evidence_links"]] == [
         "ein längeres Zitat"
     ]
+
+
+def test_context_chars_measure_the_condensed_text(db_session, sample_document):
+    from app.services.intelligence.document_enricher import _apply_enrichment
+
+    sample_document.content = "![Crest]()" + "N" * 5000 + "\nShort"
+
+    _apply_enrichment(sample_document, {"title": "Schriftsatz"}, db_session)
+
+    assert sample_document.meta["ai_context_strategy"] == "full"
+    assert sample_document.meta["ai_context_chars"] == len("\nShort")

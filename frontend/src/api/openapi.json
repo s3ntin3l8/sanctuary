@@ -4284,6 +4284,10 @@
           "context_strategy": {
             "anyOf": [
               {
+                "enum": [
+                  "full",
+                  "chunked"
+                ],
                 "type": "string"
               },
               {

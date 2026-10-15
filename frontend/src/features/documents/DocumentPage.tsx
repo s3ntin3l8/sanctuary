@@ -315,7 +315,6 @@ function Hud({ reader }: { reader: Reader }) {
               </span>
             )}
             {reader.thread_open && <Badge tone="warning">thread open</Badge>}
-            {reader.context_strategy === 'windowed' && <Badge>split view</Badge>}
             {reader.context_strategy === 'chunked' && (
               <Badge tone={reader.context_truncated ? 'warning' : 'neutral'}>
                 read in {reader.context_windows ?? 'several'} parts

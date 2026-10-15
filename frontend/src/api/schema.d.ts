@@ -4451,7 +4451,7 @@ export interface components {
             /** Content Hash */
             content_hash: string | null;
             /** Context Strategy */
-            context_strategy: string | null;
+            context_strategy: ("full" | "chunked") | null;
             /**
              * Context Truncated
              * @default false

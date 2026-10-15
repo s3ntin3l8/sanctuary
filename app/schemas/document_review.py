@@ -243,7 +243,7 @@ class DocumentReader(DocumentReview):
     pins: list[PinView]
     nav: ReaderNav
     thread_open: bool
-    context_strategy: str | None
+    context_strategy: Literal["full", "chunked"] | None
     # How many windows the AI read the text in (ENRICH/CLAIMS/ENTITIES read all of it).
     context_windows: int | None = None
     # True when the document was longer than the windows the AI reads (AI_MAX_WINDOWS).
