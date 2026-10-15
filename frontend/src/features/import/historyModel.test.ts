@@ -159,6 +159,13 @@ describe('timeAxis', () => {
     expect(axis.pos('2026-03-01T00:00:00Z')).toBeLessThan(1)
     expect(axis.pos('2025-06-01T00:00:00Z')).toBeGreaterThan(axis.pos('2024-07-01T00:00:00Z'))
   })
+  it('clamps stamps that fall just outside the year edges', () => {
+    const axis = timeAxis([
+      group({ first_at: '2025-03-01T00:00:00Z', last_at: '2025-06-01T00:00:00Z' }),
+    ])
+    expect(axis.pos('2099-01-01T00:00:00Z')).toBe(1)
+    expect(axis.pos('1999-01-01T00:00:00Z')).toBe(0)
+  })
   it('is empty without groups', () => {
     expect(timeAxis([]).years).toEqual([])
   })

@@ -121,7 +121,9 @@ export function timeAxis(groups: Group[]): TimeAxis {
   const lastYear = new Date(t.last).getFullYear()
   const min = new Date(firstYear, 0, 1).getTime()
   const max = new Date(lastYear + 1, 0, 1).getTime()
-  const pos = (iso: string) => (new Date(iso).getTime() - min) / (max - min)
+  // Year edges are local midnight while stamps are UTC, so clamp at the axis ends.
+  const pos = (iso: string) =>
+    Math.max(0, Math.min(1, (new Date(iso).getTime() - min) / (max - min)))
   const years = []
   for (let year = firstYear; year <= lastYear; year++) {
     years.push({ year, at: (new Date(year, 0, 1).getTime() - min) / (max - min) })
