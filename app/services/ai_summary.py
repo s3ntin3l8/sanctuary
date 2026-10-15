@@ -179,6 +179,8 @@ def _segments(content: str, max_chars: int) -> list[tuple[int | None, str]]:
             text = text[cut:]
         if text:
             out.append((page, text))
+        else:
+            logger.debug("Empty block at page %s while cutting the text", page)
     return out
 
 

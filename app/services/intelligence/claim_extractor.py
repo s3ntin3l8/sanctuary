@@ -146,17 +146,13 @@ def _call_claim_extractor_sync(
                 merged["new_claims"].append(claim)
         for link in part["evidence_links"]:
             link_key = (link["claim_id"], link["role"])
-            if link_key not in links:
-                links[link_key] = link
-                merged["evidence_links"].append(link)
-            elif len(link.get("excerpt") or "") > len(
-                links[link_key].get("excerpt") or ""
+            kept = links.get(link_key)
+            # The same stance seen again: keep the fuller quotation.
+            if kept is None or len(link.get("excerpt") or "") > len(
+                kept.get("excerpt") or ""
             ):
-                # The same stance seen again: keep the fuller quotation.
-                merged["evidence_links"][
-                    merged["evidence_links"].index(links[link_key])
-                ] = link
                 links[link_key] = link
+    merged["evidence_links"] = list(links.values())
     return merged
 
 

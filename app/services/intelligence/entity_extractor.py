@@ -94,6 +94,8 @@ def _call_entity_extractor_sync(
         )
         for entity in result.model_dump()["entities"]:
             key = (str(entity.get("name", "")).lower().strip(), str(entity.get("type")))
+            # The first part's record of an entity wins: later parts only add the
+            # entities it did not name.
             if key not in seen:
                 seen.add(key)
                 entities.append(entity)
