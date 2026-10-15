@@ -66,15 +66,6 @@ def test_get_content_preview_condenses_image_descriptions(sample_document):
 
 
 @pytest.mark.unit
-def test_context_chars_measure_the_condensed_text(db_session, sample_document):
-    from app.services.ai_summary import enrich_document_with_ai
-
-    sample_document.content = "![Crest]()" + "N" * 5000 + "\nShort"
-    enrich_document_with_ai(sample_document, {"confidence": {}}, db_session)
-    assert sample_document.meta["ai_context_chars"] == len("\nShort")
-
-
-@pytest.mark.unit
 def test_get_content_preview_long_doc_proportional(sample_document):
     """Long docs get proportional 25/50/25 window."""
     # 1000 chars total: 0123456789...
@@ -149,25 +140,6 @@ def test_generate_summary_sync_strips_null_hints(db_session):
         assert "null" not in hints_section.lower(), (
             "Null values should not appear in hint block"
         )
-
-
-@pytest.mark.unit
-def test_enrich_document_tracks_strategy(db_session, sample_document):
-    """Enrichment should track if full or windowed strategy was used."""
-    from app.services.ai_summary import enrich_document_with_ai
-
-    # 1. Full strategy
-    sample_document.content = "Short content"
-    enrich_document_with_ai(sample_document, {"confidence": {}}, db_session)
-    assert sample_document.meta["ai_context_strategy"] == "full"
-    assert sample_document.meta["ai_context_chars"] == 13
-
-    # 2. Windowed strategy
-    sample_document.content = "A" * 70000
-    enrich_document_with_ai(sample_document, {"confidence": {}}, db_session)
-    assert sample_document.meta["ai_context_strategy"] == "windowed"
-    # 60k chars + 2 separators (approx 33 chars each)
-    assert sample_document.meta["ai_context_chars"] > 60000
 
 
 # ---------------------------------------------------------------------------

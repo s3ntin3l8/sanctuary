@@ -184,6 +184,10 @@ class _ManagementSummary(BaseModel):
     financial_impact: str | None = None
 
 
+class SummaryReduction(_ManagementSummary):
+    """ENRICH_SUMMARY_REDUCE_SYSTEM output: the summary of a document read in parts."""
+
+
 class _ActionItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

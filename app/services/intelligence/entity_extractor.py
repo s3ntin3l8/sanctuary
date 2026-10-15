@@ -9,7 +9,7 @@ from app.core.db_locks import ENTITIES_NS, advisory_xact_lock
 from app.models.database import Case, Document, Entity
 from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_chat_config
-from app.services.ai_summary import get_content_preview
+from app.services.ai_summary import content_windows
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import ENTITY_EXTRACTOR_SYSTEM
@@ -50,9 +50,7 @@ _CASE_TITLE_SEPARATOR_RE = re.compile(
 def _call_entity_extractor_sync(
     doc: Document, model: str = "", base_url: str | None = None
 ) -> dict:
-    """AI call only — no DB session held."""
-    content_preview = get_content_preview(doc, 60000)
-
+    """AI calls only — no DB session held. A long document is read window by window."""
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
 
@@ -66,29 +64,42 @@ def _call_entity_extractor_sync(
 
     from app.services.intelligence.prompts import fence, sanitize_oneline
 
-    prompt = (
-        f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
-        f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n"
-    )
-    if key_passages_text:
-        prompt += f"KEY PASSAGES:\n{fence(key_passages_text, 'ai_extracted')}\n"
-    prompt += f"\nCONTENT:\n{fence(content_preview, 'document')}"
-
-    result = call_json_ai(
-        system_prompt=ENTITY_EXTRACTOR_SYSTEM,
-        user_prompt=prompt,
-        options=STAGE_OPTIONS["entities"],
-        debug_label=f"doc_{doc.id}_entities",
-        schema=EntityList,
-        model=model or None,
-        ingest_batch_id=doc.ingest_batch_id,
-        case_id=doc.case_id,
-        two_pass=True,
-        # Per-doc stage: suppress the case-narrative preamble (Issue #5).
-        include_user_context=False,
-        base_url=base_url,
-    )
-    return result.model_dump()
+    entities: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for window in content_windows(doc):
+        prompt = (
+            f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
+            f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n"
+        )
+        if key_passages_text:
+            prompt += f"KEY PASSAGES:\n{fence(key_passages_text, 'ai_extracted')}\n"
+        prompt += (
+            f"\n{window.note('Extract the entities named in THIS part only.')}"
+            f"CONTENT:\n{fence(window.text, 'document')}"
+        )
+        result = call_json_ai(
+            system_prompt=ENTITY_EXTRACTOR_SYSTEM,
+            user_prompt=prompt,
+            options=STAGE_OPTIONS["entities"],
+            debug_label=f"doc_{doc.id}_entities"
+            + (f"_p{window.index}" if window.is_part else ""),
+            schema=EntityList,
+            model=model or None,
+            ingest_batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
+            two_pass=True,
+            # Per-doc stage: suppress the case-narrative preamble (Issue #5).
+            include_user_context=False,
+            base_url=base_url,
+        )
+        for entity in result.model_dump()["entities"]:
+            key = (str(entity.get("name", "")).lower().strip(), str(entity.get("type")))
+            # The first part's record of an entity wins: later parts only add the
+            # entities it did not name.
+            if key not in seen:
+                seen.add(key)
+                entities.append(entity)
+    return {"entities": entities}
 
 
 def _build_party_canonical_map(case: Case | None) -> dict[str, str]:

@@ -45,6 +45,31 @@ test('renders the body with highlights, the rail and navigation', async () => {
   expect(screen.getByRole('complementary', { name: 'Document intelligence' })).toBeVisible()
 })
 
+test('a document the AI read in several parts says so', async () => {
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: { ...documentReader, context_strategy: 'chunked', context_windows: 3 },
+    },
+  })
+  page()
+  expect(await screen.findByText('read in 3 parts')).toBeVisible()
+})
+
+test('a document cut short by the window cap says the rest was not read', async () => {
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        context_strategy: 'chunked',
+        context_windows: 8,
+        context_truncated: true,
+      },
+    },
+  })
+  page()
+  expect(await screen.findByText(/read in 8 parts, the rest not read/)).toBeVisible()
+})
+
 test('clicking a highlight selects its spine row; a pin can be added and removed', async () => {
   const fetch = stub({
     'POST /api/v1/documents/2211/pins': {

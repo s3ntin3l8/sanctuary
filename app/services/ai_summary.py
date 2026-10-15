@@ -1,6 +1,8 @@
 import json
 import logging
+import math
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
@@ -21,7 +23,11 @@ from app.services.ingestion.extractors import (
 )
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
-from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.ai_options import (
+    AI_CONTEXT_CHARS,
+    AI_MAX_WINDOWS,
+    STAGE_OPTIONS,
+)
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM, fence
 from app.services.intelligence.schemas import Phase1Metadata
 
@@ -85,7 +91,7 @@ def _looks_like_court(name: str | None) -> bool:
     return not (_LAW_FIRM_INDICATORS.search(name) and "gericht" not in name.lower())
 
 
-def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
+def get_content_preview(doc: Document, max_chars: int = AI_CONTEXT_CHARS) -> str:
     """Get a representative preview of document content using proportional windowing.
 
     When content exceeds max_chars, returns a composite view:
@@ -114,6 +120,124 @@ def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
 
     separator = "\n\n[... Omitted for brevity ...]\n\n"
     return f"{head}{separator}{mid}{separator}{tail}"
+
+
+# The marker the page-by-page extractor writes (chandra_extractor); text from
+# another extractor has none and is cut at blank lines instead.
+_PAGE_MARK = re.compile(r"(?m)^--- PAGE (\d+) ---$")
+
+
+@dataclass(frozen=True)
+class ContentWindow:
+    """One slice of a document, small enough for a single LLM call."""
+
+    text: str
+    index: int  # 1-based
+    total: int
+    first_page: int | None
+    last_page: int | None
+
+    @property
+    def is_part(self) -> bool:
+        return self.total > 1
+
+    def note(self, what: str) -> str:
+        """Tell the model it reads one part of a longer document ('' for a whole one)."""
+        if not self.is_part:
+            return ""
+        pages = (
+            f", pages {self.first_page}-{self.last_page}"
+            if self.first_page is not None
+            else ""
+        )
+        return (
+            f"This is PART {self.index} of {self.total} of a longer document{pages}. "
+            f"{what}\n\n"
+        )
+
+
+def _segments(content: str, max_chars: int) -> list[tuple[int | None, str]]:
+    """The document cut at page markers (else at blank lines) into pieces no larger
+    than ``max_chars``, each with the page it starts on."""
+    marks = list(_PAGE_MARK.finditer(content))
+    if marks:
+        bounds = [m.start() for m in marks] + [len(content)]
+        pieces: list[tuple[int | None, str]] = [
+            (int(m.group(1)), content[bounds[i] : bounds[i + 1]])
+            for i, m in enumerate(marks)
+        ]
+        if bounds[0] > 0:
+            # Text before the first marker belongs to the first page: it must not
+            # become a window of its own ahead of the letterhead.
+            pieces[0] = (pieces[0][0], content[: bounds[0]] + pieces[0][1])
+    else:
+        pieces = [(None, p) for p in re.split(r"(?<=\n\n)", content) if p]
+    out: list[tuple[int | None, str]] = []
+    for page, text in pieces:
+        while len(text) > max_chars:
+            cut = text.rfind("\n", 0, max_chars)
+            cut = cut if cut > max_chars // 2 else max_chars
+            out.append((page, text[:cut]))
+            text = text[cut:]
+        if text:
+            out.append((page, text))
+        else:
+            logger.debug("Empty block at page %s while cutting the text", page)
+    return out
+
+
+def content_windows(
+    doc: Document, max_chars: int = AI_CONTEXT_CHARS, max_windows: int = AI_MAX_WINDOWS
+) -> list[ContentWindow]:
+    """The document's text, in order, as windows of at most ``max_chars``.
+
+    A document that fits is one window. A longer one is cut at page boundaries
+    (blank lines when there are no page markers) into the fewest windows, filled
+    evenly, so nothing is left unread. Beyond ``max_windows`` the rest is not
+    read (each window is an LLM call); the windows then cover less than the text.
+    """
+    content = condense_image_descriptions(doc.content or "")
+    if len(content) <= max_chars:
+        pages = [int(m.group(1)) for m in _PAGE_MARK.finditer(content)]
+        return [
+            ContentWindow(
+                content, 1, 1, pages[0] if pages else None, pages[-1] if pages else None
+            )
+        ]
+    count = math.ceil(len(content) / max_chars)
+    target = math.ceil(len(content) / count)
+    grouped: list[list[tuple[int | None, str]]] = [[]]
+    size = 0
+    for piece in _segments(content, max_chars):
+        if grouped[-1] and (size >= target or size + len(piece[1]) > max_chars):
+            grouped.append([])
+            size = 0
+        grouped[-1].append(piece)
+        size += len(piece[1])
+    if len(grouped) > max_windows:
+        logger.warning(
+            "Doc %s: %d windows needed, reading the first %d (windows %d-%d are not read; "
+            "the document is marked truncated)",
+            doc.id,
+            len(grouped),
+            max_windows,
+            max_windows + 1,
+            len(grouped),
+        )
+        grouped = grouped[:max_windows]
+    out = []
+    for i, group in enumerate(grouped, start=1):
+        numbered = [p for p, _ in group if p is not None]
+        out.append(
+            ContentWindow(
+                "".join(t for _, t in group),
+                i,
+                len(grouped),
+                numbered[0] if numbered else None,
+                numbered[-1] if numbered else None,
+            )
+        )
+    return out
 
 
 def _is_department_misread(
@@ -501,11 +625,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     else:
         new_meta["ai_contradiction"] = False
 
-    # Track strategy and character count for UI transparency
-    content_len = len(condense_image_descriptions(doc.content or ""))
-    new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
-    new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
-
     doc.meta = new_meta
 
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
@@ -690,7 +809,7 @@ def generate_summary_sync(
 ) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     cfg = get_chat_config(db)
-    content_preview = get_content_preview(doc, 60000)
+    content_preview = get_content_preview(doc, AI_CONTEXT_CHARS)
 
     # Heuristic hints for verification
     batch_subject = None

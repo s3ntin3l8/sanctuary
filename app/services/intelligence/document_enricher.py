@@ -22,7 +22,7 @@ from app.models.schemas import (
 )
 from app.services import family_context
 from app.services.ai_config import get_chat_config
-from app.services.ai_summary import get_content_preview
+from app.services.ai_summary import ContentWindow, content_windows
 from app.services.content_text import condense_image_descriptions
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
@@ -57,6 +57,10 @@ def _is_placeholder(s: str | None) -> bool:
     return not s or s.strip().lower() in _PLACEHOLDER_VALUES or len(s.strip()) < 4
 
 
+# Key passages of each part that the summary reduction sees: enough to anchor the
+# summary without handing it the whole passage list.
+_REDUCE_PASSAGES_PER_PART = 3
+
 # What a court relay may still set: its own instruction to the user's side.
 _RELAY_ACTION_TYPES = {"response_required", "deadline", "filing_required", "court_date"}
 
@@ -76,9 +80,14 @@ def _call_enricher_sync(
     filing_context: str = "",
     base_url: str | None = None,
 ) -> dict:
-    """Synchronous AI call to enrich a single document. No DB session held."""
-    content_preview = get_content_preview(doc, 60000)
+    """Synchronous AI calls to enrich a single document. No DB session held.
 
+    A document that fits one window is enriched in one call. A longer one is
+    read window by window; the first window (letterhead, Lead Document) decides
+    title, type, tier and the relay flag, every window contributes key passages,
+    action items and cost signals, and one more call writes the summary from
+    what each part found.
+    """
     batch_context = ""
     if doc.role == DocumentRole.COVER_LETTER:
         batch_context = (
@@ -118,28 +127,144 @@ def _call_enricher_sync(
 
     from app.services.intelligence.prompts import fence
 
-    prompt = (
-        f"{party_block}{filing_block}{batch_context}{dates_context}{settled_context}"
-        f"{reactions_block}\n\n{fence(content_preview, 'document')}"
-    ).lstrip("\n")
+    def enrich_window(window: ContentWindow) -> dict:
+        part_note = (
+            window.note(
+                "Report the key passages, action items and cost signals found in "
+                "THIS part. Title, type and significance are decided from the "
+                "first part, so keep them as the document opens."
+            )
+            if window.index > 1
+            else window.note(
+                "Later parts are read separately; judge the document by how it opens."
+            )
+        )
+        prompt = (
+            f"{party_block}{filing_block}{batch_context}{dates_context}{settled_context}"
+            f"{reactions_block}\n\n{part_note}{fence(window.text, 'document')}"
+        ).lstrip("\n")
+        result = call_json_ai(
+            system_prompt=DOCUMENT_ENRICHER_SYSTEM,
+            user_prompt=prompt,
+            options=STAGE_OPTIONS["enrich"],
+            debug_label=f"doc_{doc.id}_enricher"
+            + (f"_p{window.index}" if window.is_part else ""),
+            schema=DocumentEnrichment,
+            model=model or None,
+            ingest_batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
+            two_pass=True,
+            # Per-doc stage: suppress the case-narrative preamble. The enricher was
+            # the worst offender — doc 44 (ICBC bank cert about Teilungsversteigerung)
+            # got `required_action="File as supporting evidence in custody
+            # proceedings"` because the preamble framed everything as custody.
+            include_user_context=False,
+            base_url=base_url,
+        )
+        return result.model_dump()
 
-    result = call_json_ai(
-        system_prompt=DOCUMENT_ENRICHER_SYSTEM,
-        user_prompt=prompt,
-        options=STAGE_OPTIONS["enrich"],
-        debug_label=f"doc_{doc.id}_enricher",
-        schema=DocumentEnrichment,
-        model=model or None,
-        ingest_batch_id=doc.ingest_batch_id,
-        case_id=doc.case_id,
-        two_pass=True,
-        # Per-doc stage: suppress the case-narrative preamble. The enricher was
-        # the worst offender — doc 44 (ICBC bank cert about Teilungsversteigerung)
-        # got `required_action="File as supporting evidence in custody
-        # proceedings"` because the preamble framed everything as custody.
-        include_user_context=False,
-        base_url=base_url,
+    windows = content_windows(doc)
+    parts = [enrich_window(w) for w in windows]
+    if len(parts) == 1:
+        return parts[0]
+    merged = _merge_parts(parts)
+    summary = _reduce_summary(doc, merged, parts, windows, model, base_url)
+    if summary is not None:
+        merged["management_summary"] = summary
+    return merged
+
+
+def _merge_parts(parts: list[dict]) -> dict:
+    """One enrichment from the per-window ones.
+
+    The first window is the Lead Document (see DOCUMENT_ENRICHER_SYSTEM), so its
+    title, type, tier, date and relay flag stand. Passages, action items and the
+    cost signal are collected from every window.
+    """
+    merged = dict(parts[0])
+    passages: list[dict] = []
+    seen_passages: set[str] = set()
+    items: list[dict] = []
+    seen_items: set[tuple] = set()
+    for part in parts:
+        for passage in part.get("key_passages") or []:
+            key = " ".join((passage.get("text") or "").lower().split())[:80]
+            if key and key not in seen_passages:
+                seen_passages.add(key)
+                passages.append(passage)
+        for item in part.get("action_items") or []:
+            item_key = ((item.get("title") or "").lower(), item.get("due_date"))
+            if item_key not in seen_items:
+                seen_items.add(item_key)
+                items.append(item)
+    merged["key_passages"] = passages
+    merged["action_items"] = items
+    if not merged.get("cost_delta"):
+        merged["cost_delta"] = next(
+            (p["cost_delta"] for p in parts[1:] if p.get("cost_delta")), None
+        )
+    return merged
+
+
+def _reduce_summary(
+    doc: Document,
+    merged: dict,
+    parts: list[dict],
+    windows: list[ContentWindow],
+    model: str,
+    base_url: str | None,
+) -> dict | None:
+    """The management summary of a document read in parts, from what each part found.
+
+    None when the call fails: the first part's summary then stands.
+    """
+    from app.services.intelligence.prompts import (
+        ENRICH_SUMMARY_REDUCE_SYSTEM,
+        fence,
+        sanitize_oneline,
     )
+    from app.services.intelligence.schemas import SummaryReduction
+
+    lines = [
+        f"DOCUMENT TITLE: {sanitize_oneline(merged.get('title') or doc.title, 200)}",
+        f"DOCUMENT TYPE: {merged.get('document_type') or 'unknown'}",
+        "",
+    ]
+    for window, part in zip(windows, parts, strict=True):
+        pages = (
+            f" (pages {window.first_page}-{window.last_page})"
+            if window.first_page is not None
+            else ""
+        )
+        summary = part.get("management_summary") or {}
+        lines.append(f"PART {window.index} of {window.total}{pages}:")
+        for label, key in (
+            ("legal significance", "legal_significance"),
+            ("required action", "required_action"),
+            ("financial impact", "financial_impact"),
+        ):
+            if not _is_placeholder(summary.get(key)):
+                lines.append(f"- {label}: {summary[key]}")
+        for passage in (part.get("key_passages") or [])[:_REDUCE_PASSAGES_PER_PART]:
+            lines.append(f"- key passage: {(passage.get('text') or '')[:200]}")
+        lines.append("")
+    try:
+        result = call_json_ai(
+            system_prompt=ENRICH_SUMMARY_REDUCE_SYSTEM,
+            user_prompt=fence("\n".join(lines), "part_findings"),
+            options=STAGE_OPTIONS["enrich"],
+            debug_label=f"doc_{doc.id}_enricher_reduce",
+            schema=SummaryReduction,
+            model=model or None,
+            ingest_batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
+            two_pass=False,
+            include_user_context=False,
+            base_url=base_url,
+        )
+    except Exception as exc:
+        logger.warning("Doc %d: summary reduction failed: %s", doc.id, exc)
+        return None
     return result.model_dump()
 
 
@@ -338,10 +463,15 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             logger.warning("Doc %d: invalid ai_summary skipped: %s", doc.id, e)
 
     # Track strategy and character count for UI transparency
-    content_len = len(condense_image_descriptions(doc.content or ""))
+    windows = content_windows(doc)
+    read_chars = sum(len(w.text) for w in windows)
+    total_chars = len(condense_image_descriptions(doc.content or ""))
     new_meta = dict(doc.meta or {})
-    new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
-    new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
+    new_meta["ai_context_strategy"] = "chunked" if len(windows) > 1 else "full"
+    new_meta["ai_context_windows"] = len(windows)
+    new_meta["ai_context_chars"] = read_chars
+    # Past AI_MAX_WINDOWS the rest of the text is not read; say so.
+    new_meta["ai_context_truncated"] = read_chars < total_chars
     doc.meta = new_meta
 
     # (court_relay was already applied above — moved earlier so the

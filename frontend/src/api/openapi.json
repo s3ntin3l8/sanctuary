@@ -4284,6 +4284,10 @@
           "context_strategy": {
             "anyOf": [
               {
+                "enum": [
+                  "full",
+                  "chunked"
+                ],
                 "type": "string"
               },
               {
@@ -4291,6 +4295,22 @@
               }
             ],
             "title": "Context Strategy"
+          },
+          "context_truncated": {
+            "default": false,
+            "title": "Context Truncated",
+            "type": "boolean"
+          },
+          "context_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Windows"
           },
           "contradiction_notes": {
             "items": {
