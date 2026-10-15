@@ -2370,7 +2370,8 @@
           "supports",
           "contests",
           "refutes",
-          "cites_as_proof"
+          "cites_as_proof",
+          "reports"
         ],
         "title": "ClaimEvidenceRole",
         "type": "string"

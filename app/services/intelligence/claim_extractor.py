@@ -37,6 +37,7 @@ from app.models.enums import (
 )
 from app.repositories.claim import ClaimRepository
 from app.repositories.claim_evidence import ClaimEvidenceRepository
+from app.services import family_context
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.claim_embedding import upsert_claim_embedding
@@ -74,11 +75,23 @@ def _format_existing_claims(claims: list[Claim]) -> str:
     return "\n".join(lines)
 
 
+# Only for the user's own mail with claims already extracted from what it carries.
+_REPORTS_NOTE = (
+    "DOCUMENT KIND: this is the user's own note to their lawyer about the attached "
+    "documents of the same email. The first claims in the list below were extracted "
+    "from those attachments. When the note only retells what an attachment says "
+    '("Sie behauptet ...", "der Antrag verlangt ..."), do NOT create a new claim: '
+    'link the matching existing claim with role "reports". Create a new claim only '
+    "for what the user themself asserts.\n\n"
+)
+
+
 def _call_claim_extractor_sync(
     doc: Document,
     existing_claims: list[Claim],
     model: str = "",
     base_url: str | None = None,
+    reports_note: bool = False,
 ) -> dict:
     """AI call only — no DB session held."""
     content_preview = get_content_preview(doc, 60000)
@@ -93,6 +106,7 @@ def _call_claim_extractor_sync(
         f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
         f"DOCUMENT ORIGINATOR: {originator_value}\n"
         f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n\n"
+        f"{_REPORTS_NOTE if reports_note else ''}"
         f"CONTENT:\n{fence(content_preview, 'document')}\n\n"
         f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
     )
@@ -399,16 +413,34 @@ def extract(doc_id: int) -> str | None:
             db.commit()
 
         claim_repo = ClaimRepository(db)
-        existing_claims = list(
-            claim_repo.get_open_in_case(doc.case_id, limit=MAX_EXISTING_CLAIMS)
+        # The user's own note about an email's attachments is matched against the
+        # claims those attachments make first, whatever else is open in the case.
+        sibling_claims = (
+            claim_repo.asserted_by_batch_siblings(doc)
+            if family_context.is_email_body(doc)
+            and doc.originator_type == OriginatorType.OWN
+            else []
         )
+        sibling_ids = {c.id for c in sibling_claims}
+        existing_claims = (
+            sibling_claims
+            + [
+                c
+                for c in claim_repo.get_open_in_case(
+                    doc.case_id, limit=MAX_EXISTING_CLAIMS
+                )
+                if c.id not in sibling_ids
+            ]
+        )[: max(MAX_EXISTING_CLAIMS, len(sibling_claims))]
         model = cfg.summary_model
         # doc and existing_claims remain accessible after session closes
     finally:
         db.close()
 
     # Phase 2: AI call — no DB session held
-    result = _call_claim_extractor_sync(doc, existing_claims, model=model)
+    result = _call_claim_extractor_sync(
+        doc, existing_claims, model=model, reports_note=bool(sibling_claims)
+    )
 
     # Phase 3: write
     db = SessionLocal()

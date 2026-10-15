@@ -128,6 +128,30 @@ class ClaimRepository(BaseRepository[Claim]):
             .all()
         )
 
+    def asserted_by_batch_siblings(self, doc: Document) -> list[Claim]:
+        """Open claims the other documents of ``doc``'s batch assert, newest first.
+
+        The claims an email's attachments make, for matching against the user's
+        own note about them.
+        """
+        if doc.ingest_batch_id is None:
+            return []
+        return list(
+            self.db.query(Claim)
+            .join(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
+            .join(Document, Document.id == ClaimEvidence.document_id)
+            .filter(
+                Document.ingest_batch_id == doc.ingest_batch_id,
+                Document.id != doc.id,
+                ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+                Claim.status.in_([ClaimStatus.ASSERTED, ClaimStatus.CONTESTED]),
+                Claim.dismissed_at.is_(None),
+            )
+            .distinct()
+            .order_by(Claim.last_updated_at.desc())
+            .all()
+        )
+
     def get_open_in_case(self, case_id: str, limit: int = 20) -> Sequence[Claim]:
         """Open, non-dismissed claims (ASSERTED/CONTESTED) with evidence in this case.
 

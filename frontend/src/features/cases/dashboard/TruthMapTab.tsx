@@ -33,6 +33,7 @@ const STATUS_TONE: Record<string, Tone> = {
 }
 const ROLE_GLYPH: Record<string, string> = {
   asserts: '→',
+  reports: '↪',
   supports: '＋',
   refutes: '✕',
   concedes: '✓',
