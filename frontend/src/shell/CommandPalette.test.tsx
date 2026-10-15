@@ -13,6 +13,7 @@ test('palette exposes Settings (no nameless Contacts page) and resets an empty q
   renderAt('/', <CommandPalette open onClose={() => {}} />)
   const dialog = screen.getByRole('dialog', { name: 'Command palette' })
   expect(within(dialog).queryByRole('button', { name: 'Contacts' })).not.toBeInTheDocument()
+  expect(within(dialog).getByRole('button', { name: 'Costs' })).toBeVisible()
   expect(within(dialog).getByRole('button', { name: 'Settings' })).toBeVisible()
   const user = userEvent.setup()
   await user.type(screen.getByLabelText('Search'), 'Nobody')
