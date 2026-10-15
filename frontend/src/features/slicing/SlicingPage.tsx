@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 
-import { useSlicing, useSlicingConfirm, useSlicingRetry } from '../../api/triage'
+import {
+  slicingBase,
+  useSlicing,
+  useSlicingConfirm,
+  useSlicingRetry,
+  type SliceScope,
+} from '../../api/triage'
 import type { Schemas } from '../../api/client'
 import { leaveTo } from '../../navigation'
 import { Badge } from '../../ui/Badge'
@@ -13,13 +19,18 @@ import { PageViewer } from './PageViewer'
 
 type Kind = Schemas['SliceCut']['kind']
 
-/** Decide where a scanned multi-page PDF splits into documents, and whether each new part is a
- * letter of its own or an attachment of the letter before it. */
+/** Decide where a multi-page PDF (a scanned batch, or a document that came by email) splits
+ * into documents, and whether each new part is a letter of its own or an attachment of the
+ * letter before it. */
 export function SlicingPage() {
-  const batchId = Number(useParams().batchId)
-  const query = useSlicing(batchId)
-  const confirm = useSlicingConfirm(batchId)
-  const retry = useSlicingRetry(batchId)
+  const params = useParams()
+  const scope: SliceScope =
+    params.docId !== undefined
+      ? { kind: 'document', id: Number(params.docId) }
+      : { kind: 'batch', id: Number(params.batchId) }
+  const query = useSlicing(scope)
+  const confirm = useSlicingConfirm(scope)
+  const retry = useSlicingRetry(scope)
   const toast = useToast()
   const [cuts, setCuts] = useState<Map<number, Kind> | null>(null)
   // null = the pages the server marked blank; edited once the user toggles a page.
@@ -27,6 +38,7 @@ export function SlicingPage() {
   const [cursor, setCursor] = useState(1)
   const [viewing, setViewing] = useState<number | null>(null)
   const view = query.data
+  const backTo = scope.kind === 'document' ? `/document/${scope.id}` : '/triage'
 
   useEffect(() => {
     document.title = 'Slicing review | The Sanctuary'
@@ -70,7 +82,7 @@ export function SlicingPage() {
       else if (e.key.toLowerCase() === 'a') setKind(cursor, 'attachment')
       else if (e.key.toLowerCase() === 'd') toggleDiscard(cursor + 1)
       else if (e.key === 'Enter' && !confirm.isPending) submit()
-      else if (e.key === 'Escape') leaveTo('/triage')
+      else if (e.key === 'Escape') leaveTo(backTo)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -85,7 +97,11 @@ export function SlicingPage() {
       {
         onSuccess: (r) => {
           toast(`${r.document_ids.length} document(s) queued`)
-          leaveTo('/triage')
+          leaveTo(
+            scope.kind === 'document' && r.document_ids[0] !== undefined
+              ? `/document/${r.document_ids[0]}`
+              : '/triage',
+          )
         },
         onError: (e) => toast(e.message, 'error'),
       },
@@ -150,11 +166,11 @@ export function SlicingPage() {
     <div className="flex min-h-full flex-col">
       <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
         <div>
-          <a href="/triage" className="font-mono text-[11px] text-muted hover:underline">
-            Triage ›
+          <a href={backTo} className="font-mono text-[11px] text-muted hover:underline">
+            {scope.kind === 'document' ? `d-${scope.id} ›` : 'Triage ›'}
           </a>
           <h1 className="font-display text-[22px] font-extrabold tracking-tight">
-            Slice scan #{batchId}
+            {scope.kind === 'document' ? `Split d-${scope.id}` : `Slice scan #${scope.id}`}
           </h1>
           <p className="font-mono text-[11px] text-muted">
             {view.subject ?? 'scan'} · {view.page_count} pages · {partCount} document
@@ -296,7 +312,7 @@ export function SlicingPage() {
                       >
                         {p.has_thumbnail ? (
                           <img
-                            src={`/api/v1/slicing/${batchId}/thumb/${p.page}`}
+                            src={`${slicingBase(scope)}/thumb/${p.page}`}
                             alt={`Page ${p.page}`}
                             className="h-full w-full object-cover"
                             loading="lazy"
@@ -399,7 +415,7 @@ export function SlicingPage() {
       </div>
       {viewing !== null && view.status === 'ready' && (
         <PageViewer
-          batchId={batchId}
+          base={slicingBase(scope)}
           page={viewing}
           pages={view.pages}
           cuts={activeCuts}

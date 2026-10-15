@@ -28,6 +28,11 @@ def document_page(doc_id: int) -> Response:
     return spa_index()
 
 
+@router.get("/document/{doc_id}/slice")
+def document_slicing_review(doc_id: int) -> Response:
+    return spa_index()
+
+
 @router.get("/cases")
 def case_directory() -> Response:
     return spa_index()

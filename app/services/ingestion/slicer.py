@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import httpx
 import pypdfium2 as pdfium
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.async_utils import run_async
 from app.core.paths import resolve_storage_path
-from app.models.database import IngestBatch
+from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchStatus
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import ProviderType, chat_provider
@@ -625,46 +625,87 @@ def render_page_png(pdf_path, page: int, dpi: int = _VIEWER_DPI) -> bytes | None
         pdf_doc.close()
 
 
-def _write_progress(db: Session, batch: IngestBatch, done: int, total: int, phase: str):
+def _write_progress(
+    db: Session, source: IngestBatch | Document, done: int, total: int, phase: str
+):
     """Record prep progress for the review page.
 
     Merges into the existing ``meta["slicing"]`` so ``dispatched_at`` /
     ``recovered`` (read by the stuck-prep sweep) survive.
     """
-    meta = dict(batch.meta or {})
+    meta = dict(source.meta or {})
     meta["slicing"] = {
         **meta.get("slicing", {}),
         "progress": {"done": done, "total": total, "phase": phase},
     }
-    batch.meta = meta
+    source.meta = meta
     db.commit()
 
 
 def prepare(batch_id: int) -> None:
     """Render thumbnails, OCR, judge every page boundary with the AI, write proposed_cuts to batch.meta."""
-    from app.config import SessionLocal
+    _prepare(IngestBatch, batch_id)
 
+
+def prepare_document(doc_id: int) -> None:
+    """The same proposal for one existing PDF document, written to ``doc.meta["slicing"]``.
+
+    A PDF that arrived by email is already a document, so there is no batch to
+    hold it. Its per-page OCR text is reused where the extractor kept it.
+    """
+    _prepare(Document, doc_id)
+
+
+def _prepare(model: type[IngestBatch] | type[Document], source_id: int) -> None:
+    from app.config import SessionLocal
+    from app.services.ingestion import page_text as page_text_service
+
+    label = "batch" if model is IngestBatch else "document"
     db: Session = SessionLocal()
     try:
-        batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
-        if not batch:
-            logger.warning("prepare_slicing: batch %d not found", batch_id)
+        source = cast("IngestBatch | Document | None", db.get(model, source_id))
+        if not source:
+            logger.warning("prepare_slicing: %s %d not found", label, source_id)
             return
-        if batch.status != IngestBatchStatus.AWAITING_SLICING:
-            logger.info(
-                "prepare_slicing: batch %d not in AWAITING_SLICING, skipping", batch_id
-            )
-            return
+        known_text: dict[int, str] = {}
+        if isinstance(source, IngestBatch):
+            if source.status != IngestBatchStatus.AWAITING_SLICING:
+                logger.info(
+                    "prepare_slicing: batch %d not in AWAITING_SLICING, skipping",
+                    source_id,
+                )
+                return
+            stored_path = source.raw_source_path
+            batch_id: int | None = source.id
+            run_ids: dict[str, Any] = {"kind": "batch", "scope_id": str(source.id)}
+        else:
+            if (source.meta or {}).get("slicing", {}).get("status") != "preparing":
+                logger.info(
+                    "prepare_slicing: document %d has no pending split, skipping",
+                    source_id,
+                )
+                return
+            stored_path = source.file_path
+            batch_id = source.ingest_batch_id
+            known_text = page_text_service.page_texts(source)
+            run_ids = {
+                "kind": "document",
+                "scope_id": str(source.id),
+                "doc_id": source.id,
+            }
 
-        if not batch.raw_source_path:
+        if not stored_path:
             # Raise (not return) so the handler below records slicing as failed
             # instead of leaving it "preparing" forever.
-            raise ValueError(f"batch {batch_id} has no raw_source_path")
-        pdf_path = resolve_storage_path(batch.raw_source_path)
+            raise ValueError(f"{label} {source_id} has no source PDF path")
+        pdf_path = resolve_storage_path(stored_path)
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found at {pdf_path}")
 
-        thumbs_dir = pdf_path.parent / "thumbs"
+        # A batch owns its folder; a document shares it with the email's other files.
+        thumbs_dir = pdf_path.parent / (
+            "thumbs" if isinstance(source, IngestBatch) else f"{pdf_path.stem}_thumbs"
+        )
         thumbs_dir.mkdir(exist_ok=True)
 
         pdf_doc = pdfium.PdfDocument(str(pdf_path))
@@ -679,8 +720,11 @@ def prepare(batch_id: int) -> None:
                 img = bitmap.to_pil()
 
                 # OCR the full render: at thumbnail size the text is garbled
-                # ("Sete 2", "freundichen") and the boundary regexes miss.
-                text = _ocr_page_text(img)
+                # ("Sete 2", "freundichen") and the boundary regexes miss. A
+                # document already read page by page keeps that reading.
+                text = known_text.get(i + 1)
+                if text is None:
+                    text = _ocr_page_text(img)
 
                 # Resize long edge to _THUMBNAIL_LONG_EDGE
                 w, h = img.size
@@ -706,7 +750,7 @@ def prepare(batch_id: int) -> None:
                     }
                 )
                 if (i + 1) % _PROGRESS_EVERY == 0 or i + 1 == page_count:
-                    _write_progress(db, batch, i + 1, page_count, "ocr")
+                    _write_progress(db, source, i + 1, page_count, "ocr")
         finally:
             pdf_doc.close()
 
@@ -731,9 +775,10 @@ def prepare(batch_id: int) -> None:
         if page_count > _AI_MAX_PAGES:
             signalled = [c for c in candidates if c.signals]
             logger.info(
-                "prepare_slicing: batch %d has %d pages (> %d) — judging only the "
+                "prepare_slicing: %s %d has %d pages (> %d) — judging only the "
                 "%d boundaries with a heuristic signal, skipping %d",
-                batch_id,
+                label,
+                source_id,
                 page_count,
                 _AI_MAX_PAGES,
                 len(signalled),
@@ -746,7 +791,7 @@ def prepare(batch_id: int) -> None:
 
         # AI pass
         if candidates:
-            _write_progress(db, batch, page_count, page_count, "ai")
+            _write_progress(db, source, page_count, page_count, "ai")
         chat_provider.reload_from_db(db)
         chat_cfg = get_chat_config(db)
         summary_model = chat_cfg.summary_model
@@ -766,8 +811,7 @@ def prepare(batch_id: int) -> None:
             # docs don't exist yet at this point, so per-call/per-doc rows
             # aren't meaningful here.
             record_run(
-                kind="batch",
-                scope_id=str(batch_id),
+                **run_ids,
                 stage="slice",
                 batch_id=batch_id,
                 model=summary_model,
@@ -805,8 +849,7 @@ def prepare(batch_id: int) -> None:
             if not isinstance(outline, dict):
                 outline = {}
             record_run(
-                kind="batch",
-                scope_id=str(batch_id),
+                **run_ids,
                 stage="slice",
                 batch_id=batch_id,
                 model=summary_model,
@@ -823,31 +866,32 @@ def prepare(batch_id: int) -> None:
         if len(parts) > 1:
             proposed_cuts = _apply_relay_spans(proposed_cuts, parts, page_data)
 
-        meta = dict(batch.meta or {})
+        meta = dict(source.meta or {})
         meta["slicing"] = {
             "status": "ready",
             "page_count": page_count,
             "pages": page_data,
             "proposed_cuts": proposed_cuts,
         }
-        batch.meta = meta
+        source.meta = meta
         db.commit()
         logger.info(
-            "prepare_slicing: batch %d ready — %d proposed cuts",
-            batch_id,
+            "prepare_slicing: %s %d ready — %d proposed cuts",
+            label,
+            source_id,
             len(proposed_cuts),
         )
 
     except Exception as exc:
         logger.error(
-            "prepare_slicing batch %d failed: %s", batch_id, exc, exc_info=True
+            "prepare_slicing %s %d failed: %s", label, source_id, exc, exc_info=True
         )
         try:
-            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
-            if batch:
-                meta = dict(batch.meta or {})
+            failed = cast("IngestBatch | Document | None", db.get(model, source_id))
+            if failed:
+                meta = dict(failed.meta or {})
                 meta["slicing"] = {"status": "failed", "error": str(exc)}
-                batch.meta = meta
+                failed.meta = meta
                 db.commit()
         except Exception:
             db.rollback()

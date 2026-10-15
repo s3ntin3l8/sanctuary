@@ -11,10 +11,12 @@ import {
   useRelationshipDecision,
   useSetTitle,
   useStageRetry,
+  useStartDocumentSlicing,
   useSummaryAction,
   useUpdateMetadata,
 } from '../../api/triage'
 import { formatIsoDate, formatShortDate } from '../../format'
+import { leaveTo } from '../../navigation'
 import { AgentBadge } from '../../ui/AgentBadge'
 import { Badge, type Tone } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
@@ -153,6 +155,28 @@ function Section({
   )
 }
 
+/** Several letters in one PDF (a scanned packet that arrived by email): open the cut review. */
+function SplitButton({ docId }: { docId: number }) {
+  const start = useStartDocumentSlicing()
+  const toast = useToast()
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={start.isPending}
+      title="Cut this PDF into separate documents"
+      onClick={() =>
+        start.mutate(docId, {
+          onSuccess: () => leaveTo(`/document/${docId}/slice`),
+          onError: (e) => toast(e.message, 'error'),
+        })
+      }
+    >
+      <Icon name="content_cut" size={12} /> Split
+    </Button>
+  )
+}
+
 function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number) => void }) {
   const setTitle = useSetTitle()
   const toast = useToast()
@@ -212,6 +236,7 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
         </div>
       </div>
       {review.significance_tier && <Badge tone={tierTone}>{review.significance_tier}</Badge>}
+      {review.page_count > 1 && <SplitButton docId={review.id} />}
       {onOpenHud && (
         <Button variant="secondary" size="sm" onClick={() => onOpenHud(review.id)}>
           <Icon name="open_in_full" size={12} /> HUD

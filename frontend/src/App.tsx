@@ -48,6 +48,7 @@ const router = createBrowserRouter([
       { path: '/cases/:caseId', element: <CasePage /> },
       { path: '/triage', element: <TriagePage /> },
       { path: '/ingest/slice/:batchId', element: <SlicingPage /> },
+      { path: '/document/:docId/slice', element: <SlicingPage /> },
       { path: '/document/:id', element: <DocumentPage /> },
       { path: '/costs', element: <CostsPage /> },
       { path: '/contacts', element: <ContactPage /> },
