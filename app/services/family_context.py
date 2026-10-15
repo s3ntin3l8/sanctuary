@@ -21,6 +21,7 @@ document's own reference resolved it).
 Nothing here commits.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -33,6 +34,10 @@ from app.services.ingestion.extractors import normalize_az_court
 CaseSource = Literal["own", "inherited", "user"]
 
 _TRIAGE = "_TRIAGE"
+
+# What ingest names the stored text of a mail (batch_orchestrator): a file a
+# person uploads under a similar name is not one.
+_EMAIL_BODY_NAME = re.compile(r"email_body_\d+\.txt")
 
 
 def is_relay(doc: Document) -> bool:
@@ -50,8 +55,7 @@ def is_email_body(doc: Document) -> bool:
     Only the user's own mail keeps its body next to attachments: it is a
     transport note to their lawyer, not a filing.
     """
-    name = doc.original_filename or ""
-    return name.startswith("email_body_") and name.endswith(".txt")
+    return bool(_EMAIL_BODY_NAME.fullmatch(doc.original_filename or ""))
 
 
 def is_exhibit(doc: Document) -> bool:

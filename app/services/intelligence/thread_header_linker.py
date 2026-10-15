@@ -48,6 +48,7 @@ from app.models.enums import (
 )
 from app.repositories.document_relationship import insert_edge_if_absent
 from app.repositories.ingest_batch import IngestBatchRepository
+from app.services import family_context
 from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ def lead_document(db: Session, batch_id: int) -> Document | None:
     covers = [d for d in roots if d.role == DocumentRole.COVER_LETTER]
     if covers:
         return covers[0] if len(covers) == 1 else None
-    bodies = [d for d in docs if (d.original_filename or "").startswith("email_body_")]
+    bodies = [d for d in docs if family_context.is_email_body(d)]
     if len(bodies) == 1:
         return bodies[0]
     if len(roots) == 1:

@@ -132,6 +132,10 @@ def test_attachment_of_an_email_body_is_not_an_exhibit(env):
     assert fc.is_email_body(body)
     assert not fc.is_email_body(forwarded)
     assert not fc.is_exhibit(forwarded)
+    # Only the name ingest writes counts: a file a person uploads is not a mail.
+    body.original_filename = "email_body_notes.txt"
+    assert not fc.is_email_body(body)
+    assert fc.is_exhibit(forwarded)
 
 
 def test_case_cascades_from_the_root_to_its_children(env):
