@@ -52,7 +52,7 @@ def env(db_session, tmp_path):
     batch = IngestBatch(
         owner_id=owner.id,
         source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.PROCESSING,
+        status=IngestBatchStatus.OPEN,
     )
     db_session.add(batch)
     db_session.flush()
