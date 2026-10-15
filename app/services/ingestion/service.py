@@ -487,7 +487,12 @@ def process_uploaded_document(doc: Document, db: Session):
         doc.title = h1_text
     elif not doc.title:
         doc.title = extract_clean_title(safe_filename, "")
+    # A person cut this document out of a larger PDF: keep that fact.
+    slice_range = (doc.meta or {}).get("slice_range")
+    if slice_range:
+        conversion_metadata["slice_range"] = slice_range
     doc.meta = conversion_metadata
+    _flag_packet(doc)
 
     _apply_script_extractors(doc, markdown_content or "", db)
 
@@ -497,6 +502,25 @@ def process_uploaded_document(doc: Document, db: Session):
     ]
 
     db.commit()
+
+
+def _flag_packet(doc: Document) -> None:
+    """Note, in ``meta["packet_starts"]``, the pages where another letter seems to begin.
+
+    Only for a PDF nobody has cut yet that was read page by page: the review
+    then offers to split it. Cleared when the extraction is redone.
+    """
+    from app.services.ingestion import page_text
+    from app.services.ingestion.slicer import likely_document_starts
+
+    meta = {k: v for k, v in (doc.meta or {}).items() if k != "packet_starts"}
+    if not (doc.meta or {}).get("slice_range") and (
+        doc.file_path or ""
+    ).lower().endswith(".pdf"):
+        starts = likely_document_starts(page_text.page_texts(doc))
+        if starts:
+            meta["packet_starts"] = starts
+    doc.meta = meta
 
 
 def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:

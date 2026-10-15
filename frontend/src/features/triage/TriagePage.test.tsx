@@ -128,6 +128,29 @@ test('a multi-page PDF can be split into documents from its review header', asyn
   ).toBe(true)
 })
 
+test('a PDF that looks like several letters says where they start and offers the split', async () => {
+  stub({
+    'GET /api/v1/documents/2211/review': {
+      body: { ...documentReview, packet_starts: [3, 17] },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  const hint = await screen.findByTestId('packet-hint')
+  expect(hint).toHaveTextContent('another one starts on pages 3, 17')
+  expect(within(hint).getByRole('button', { name: /Split/ })).toBeVisible()
+})
+
+test('a PDF without signs of several letters shows no packet hint', async () => {
+  stub()
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  await screen.findByText('Bundle contents · 3')
+  expect(screen.queryByTestId('packet-hint')).toBeNull()
+})
+
 test('batch selection confirms every selected bundle', async () => {
   const fetch = stub({
     'POST /api/v1/triage/batch/confirm': {

@@ -4483,6 +4483,11 @@ export interface components {
             /** Original Filename */
             original_filename: string | null;
             originator_type: components["schemas"]["OriginatorType"];
+            /**
+             * Packet Starts
+             * @default []
+             */
+            packet_starts: number[];
             /** Page Count */
             page_count: number;
             /** Pins */
@@ -4561,6 +4566,11 @@ export interface components {
             /** Original Filename */
             original_filename: string | null;
             originator_type: components["schemas"]["OriginatorType"];
+            /**
+             * Packet Starts
+             * @default []
+             */
+            packet_starts: number[];
             /** Page Count */
             page_count: number;
             pipeline: components["schemas"]["PipelineView"];

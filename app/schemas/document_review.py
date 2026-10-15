@@ -167,6 +167,8 @@ class DocumentReview(BaseModel):
     title: str
     original_filename: str | None
     page_count: int
+    # Pages after the first where another letter seems to start (a packet to split).
+    packet_starts: list[int] = []
     case_id: str | None
     case: CaseRef | None
     proceeding: ProceedingRef | None
