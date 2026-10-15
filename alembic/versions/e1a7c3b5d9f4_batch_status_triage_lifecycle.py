@@ -1,9 +1,13 @@
 """IngestBatch.status becomes the triage lifecycle only
 
 PENDING/PROCESSING -> OPEN, COMPLETED -> CONFIRMED, FAILED -> OPEN (pipeline
-progress is derived from the documents' stages, see batch_pipeline_state).
-The column is a non-native VARCHAR with no CHECK constraint, so only the
-stored member names change.
+progress lives per document, in Document.pipeline_state). The column is a
+non-native VARCHAR with no CHECK constraint, so only the stored member names
+change.
+
+The downgrade is data-only and lossy (PENDING/FAILED cannot be restored). It
+writes names only the previous release's enum knows, so run it together with
+that release's code, never under this one.
 
 Revision ID: e1a7c3b5d9f4
 Revises: c8f2d4a6b1e3

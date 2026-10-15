@@ -273,6 +273,29 @@ def test_reset_batch_for_retry_clears_metadata_phase_queued_at_on_full(db_sessio
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "status",
+    [
+        IngestBatchStatus.OPEN,
+        IngestBatchStatus.CONFIRMED,
+        IngestBatchStatus.DISMISSED,
+    ],
+)
+def test_reset_batch_for_retry_leaves_the_triage_status_alone(db_session, status):
+    """Status is the triage lifecycle: re-running the pipeline of a bundle that
+    was already filed (or dismissed) does not put it back in the inbox."""
+    batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL, status=status)
+    db_session.add(batch)
+    db_session.flush()
+    _make_doc(db_session, batch_id=batch.id)
+    db_session.refresh(batch)
+
+    assert reset_batch_for_retry(batch, db_session, full=True) != -1
+
+    assert batch.status == status
+
+
+@pytest.mark.unit
 def test_reset_batch_for_retry_partial_does_not_clear_metadata_phase_queued_at(
     db_session,
 ):

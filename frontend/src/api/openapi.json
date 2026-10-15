@@ -7072,7 +7072,7 @@
         "type": "string"
       },
       "IngestBatchStatus": {
-        "description": "Triage lifecycle of a batch. Pipeline progress is derived per document\n(``batch_pipeline_state``), never stored here.",
+        "description": "Triage lifecycle of a batch. How far the pipeline got is per document\n(``Document.pipeline_state``), never stored here.",
         "enum": [
           "awaiting_slicing",
           "open",

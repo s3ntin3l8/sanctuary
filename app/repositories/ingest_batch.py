@@ -10,7 +10,7 @@ from app.repositories.base import BaseRepository
 
 # ``meta["reason"]`` of the committed, document-less record left for an email
 # that produced nothing to ingest. The marker is the reason itself, not the
-# batch's status, so what COMPLETED means can change without making these rows
+# batch's status, so what CONFIRMED means can change without making these rows
 # look like ordinary empty batches (and get swept).
 NO_NEW_DOCUMENTS = "no_new_documents"
 

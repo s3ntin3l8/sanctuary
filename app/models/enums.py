@@ -197,8 +197,8 @@ class IngestBatchSourceType(enum.StrEnum):
 
 
 class IngestBatchStatus(enum.StrEnum):
-    """Triage lifecycle of a batch. Pipeline progress is derived per document
-    (``batch_pipeline_state``), never stored here."""
+    """Triage lifecycle of a batch. How far the pipeline got is per document
+    (``Document.pipeline_state``), never stored here."""
 
     AWAITING_SLICING = "awaiting_slicing"
     OPEN = "open"  # in triage

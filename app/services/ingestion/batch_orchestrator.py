@@ -470,7 +470,7 @@ def _ingest_email_docs_and_commit(
         # elsewhere, empty or unnamed (the body is discarded whenever there are
         # attachments), or the email had neither attachments nor a body. Commit
         # a CONFIRMED, document-less tombstone for the message instead of
-        # leaving a OPEN 0-doc batch (which nothing ever advances and
+        # leaving an OPEN 0-doc batch (which nothing ever advances and
         # delete_bundle could not remove) or rolling back (which made the next
         # fetch of the same Message-ID — routine, the Gmail sync watermark
         # overlaps on purpose — re-process it, and left the Gmail import page

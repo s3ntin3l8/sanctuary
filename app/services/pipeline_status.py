@@ -1014,52 +1014,6 @@ def _fail_poison_stage(db: Session, doc, stage: PipelineStage) -> None:
     )
 
 
-def batch_pipeline_state(db: Session, batch) -> Literal["running", "failed", "done"]:
-    """Pipeline progress of a batch, derived from its documents' stages.
-
-    ``IngestBatch.status`` is the triage lifecycle only; how far the pipeline
-    got lives per document. Dismissed documents are ignored.
-
-    * ``running``: some document has a stage RUNNING or RETRYING.
-    * ``failed``: the batch has documents and every one's EXTRACT stage has
-      terminally failed (a single failed EXTRACT in a multi-document bundle is
-      not a failed batch).
-    * ``done``: anything else.
-    """
-    row = db.execute(
-        text(
-            """
-            SELECT
-              EXISTS (
-                SELECT 1 FROM document_pipeline_stages dps
-                JOIN documents d ON d.id = dps.document_id
-                WHERE d.ingest_batch_id = :batch_id
-                  AND d.status <> 'DISMISSED'
-                  AND dps.status IN ('running', 'retrying')
-              ) AS running,
-              EXISTS (
-                SELECT 1 FROM documents
-                WHERE ingest_batch_id = :batch_id AND status <> 'DISMISSED'
-              ) AND NOT EXISTS (
-                SELECT 1 FROM documents d
-                WHERE d.ingest_batch_id = :batch_id
-                  AND d.status <> 'DISMISSED'
-                  AND NOT EXISTS (
-                    SELECT 1 FROM document_pipeline_stages dps
-                    WHERE dps.document_id = d.id
-                      AND dps.stage = 'extract'
-                      AND dps.status = 'failed'
-                  )
-              ) AS all_failed
-            """
-        ),
-        {"batch_id": batch.id},
-    ).one()
-    if row.running:
-        return "running"
-    return "failed" if row.all_failed else "done"
-
-
 def recover_orphaned_running_stages(
     db: Session,
     *,
