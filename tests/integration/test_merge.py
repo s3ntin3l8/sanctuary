@@ -1,5 +1,6 @@
 """Merging a duplicate proceeding or case folds its rows into the survivor."""
 
+import shutil
 from datetime import UTC, datetime
 
 import pytest
@@ -265,12 +266,24 @@ def test_rename_case_moves_every_reference(db_session):
     user_settings_service.set_active_proceeding("R-1", proc.id, db_session, user_id)
     db_session.commit()
 
+    from app.config import DATA_DIR
+
+    old_dir = DATA_DIR / "R-1" / "proc"
+    old_dir.mkdir(parents=True, exist_ok=True)
+    (old_dir / "a.pdf").write_text("x")
+    doc.file_path = "R-1/proc/a.pdf"
+    db_session.commit()
+
     renamed = rename_case(db_session, "R-1", "r-2/26", user_id)
 
     assert renamed.id == "R-2-26"
     db_session.expire_all()
     assert db_session.get(Case, "R-1") is None
     assert db_session.get(Document, doc.id).case_id == "R-2-26"
+    assert db_session.get(Document, doc.id).file_path == "R-2-26/proc/a.pdf"
+    assert (DATA_DIR / "R-2-26" / "proc" / "a.pdf").exists()
+    assert not (DATA_DIR / "R-1").exists()
+    shutil.rmtree(DATA_DIR / "R-2-26")
     assert db_session.get(IngestBatch, batch.id).case_id == "R-2-26"
     assert db_session.get(Proceeding, proc.id).case_id == "R-2-26"
     assert db_session.query(ActionItem).filter_by(case_id="R-2-26").count() == 1

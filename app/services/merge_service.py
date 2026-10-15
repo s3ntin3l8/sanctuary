@@ -8,8 +8,10 @@ the source row is deleted. Nothing is merged across owners without edit access
 
 import logging
 import re
+import shutil
+from pathlib import Path
 
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
 from app.core.validators import normalize_case_id
@@ -253,6 +255,27 @@ def _rekey(mapping: object, old: str, new: str) -> dict | None:
     return out
 
 
+def _move_case_dir(db: Session, old_id: str, new_id: str) -> tuple[Path, Path] | None:
+    """Move ``DATA_DIR/<old>`` to ``<new>`` and repoint the stored relative paths."""
+    from app.config import DATA_DIR  # late: tests repoint it
+
+    root = DATA_DIR.resolve()
+    old_dir, new_dir = (root / old_id).resolve(), (root / new_id).resolve()
+    if not (old_dir.is_relative_to(root) and new_dir.is_relative_to(root)):
+        raise MergeError("invalid_case_id", "Unsafe case ID.")
+    if not old_dir.is_dir():
+        return None
+    if new_dir.exists():
+        raise MergeError("case_id_taken", f"{new_id} already has stored files.")
+    shutil.move(str(old_dir), str(new_dir))
+    for column in (Document.file_path, IngestBatch.raw_source_path):
+        db.query(column.class_).filter(column.like(f"{old_id}/%")).update(
+            {column: func.concat(new_id, func.substr(column, len(old_id) + 1))},
+            synchronize_session=False,
+        )
+    return old_dir, new_dir
+
+
 def rename_case(
     db: Session, case_id: str, new_id: str, actor_user_id: int | None = None
 ) -> Case:
@@ -296,6 +319,7 @@ def rename_case(
     for code in db.query(OAuthCode).all():
         if case_id in (code.case_ids or []):
             code.case_ids = [new_id if c == case_id else c for c in code.case_ids]
+    moved_dir = _move_case_dir(db, case_id, new_id)
     audit_service.record(
         db,
         AuditEventType.CASE_RENAMED,
@@ -304,6 +328,11 @@ def rename_case(
         payload={"old_id": case_id},
         actor_user_id=actor_user_id,
     )
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        if moved_dir is not None:
+            shutil.move(str(moved_dir[1]), str(moved_dir[0]))
+        raise
     db.expire_all()
     return db.get(Case, new_id)  # type: ignore[return-value]
