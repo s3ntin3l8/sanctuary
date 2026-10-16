@@ -295,6 +295,8 @@ function Pipeline({ review }: { review: Review }) {
   const stages = review.pipeline.stages
   const done = stages.filter((s) => s.status === 'completed' || s.status === 'skipped').length
   const failed = stages.filter((s) => s.status === 'failed')
+  const skipped = stages.filter((s) => s.status === 'skipped')
+  const skippedGrouping = skipped.find((s) => s.key === 'batch_analysis' && s.reason)
   const running = stages.find((s) => s.status === 'running' || s.status === 'retrying')
   const complete = stages.length > 0 && done === stages.length
   const ocrFailures = review.pipeline.ocr_page_failures
@@ -306,7 +308,7 @@ function Pipeline({ review }: { review: Review }) {
           {stages.map((s) => (
             <span
               key={s.key}
-              title={`${s.label}: ${s.status ?? 'queued'}${s.error ? `\n${s.error}` : ''}`}
+              title={`${s.label}: ${s.status ?? 'queued'}${s.error || s.reason ? `\n${s.error || s.reason}` : ''}`}
               className={`h-[5px] w-[18px] rounded-sm ${
                 s.key === 'extract' &&
                 (ocrFailures.length > 0 || review.pipeline.ocr_unverified.length > 0) &&
@@ -319,7 +321,10 @@ function Pipeline({ review }: { review: Review }) {
         </div>
         {complete ? (
           <span className="flex items-center gap-1 text-[10px] text-success">
-            <Icon name="check_circle" size={13} /> All {stages.length} stages complete
+            <Icon name="check_circle" size={13} />{' '}
+            {skipped.length > 0
+              ? `${done - skipped.length} complete · ${skipped.length} skipped`
+              : `All ${stages.length} stages complete`}
           </span>
         ) : failed.length > 0 ? (
           <span className="text-[10px] text-danger">{failed.length} failed</span>
@@ -355,6 +360,9 @@ function Pipeline({ review }: { review: Review }) {
           </span>
         )}
       </div>
+      {skippedGrouping && (
+        <p className="mt-1.5 text-[10px] text-muted">Grouping skipped · {skippedGrouping.reason}</p>
+      )}
       {review.pipeline.ocr_crosscheck_unavailable && (
         <p className="mt-1.5 text-[10px] text-muted" data-testid="ocr-crosscheck-unavailable">
           The OCR cross-check did not run, so the extracted text has not been double-checked.

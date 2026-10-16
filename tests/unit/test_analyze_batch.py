@@ -91,6 +91,43 @@ def test_analyze_batch_retries_once_on_timeout_then_enqueues_enrich(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "legacy, acknowledged", [(False, False), (True, False), (True, True)]
+)
+def test_skipped_analysis_explains_legacy_reimport_requirement(
+    db_session, batch_with_docs, legacy, acknowledged
+):
+    from app.services.document_review_service import pipeline_view
+    from app.services.pipeline_status import stages_dict
+
+    batch, docs = batch_with_docs
+    batch.source_review_reasons = ["legacy_source_identity"] if legacy else []
+    batch.source_review_acknowledged = acknowledged
+    db_session.commit()
+    with (
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close"),
+        patch("app.services.intelligence.batch_analyzer.analyze", return_value=False),
+        patch("app.tasks.analyze_batch._enrich_if_pending"),
+    ):
+        result = analyze_batch_task.run(batch.id)
+    assert result["status"] == "success"
+    for doc in docs:
+        db_session.refresh(doc)
+        stage = stages_dict(doc)["batch_analysis"]
+        assert stage["status"] == "skipped"
+        assert stage["reason"] == (
+            "Legacy email source: reimport required before regrouping"
+            if legacy
+            else "single-doc or empty batch"
+        )
+        projected = next(
+            s for s in pipeline_view(doc).stages if s.key == "batch_analysis"
+        )
+        assert projected.reason == stage["reason"]
+
+
+@pytest.mark.unit
 def test_analyze_batch_soft_time_limit_fails_without_retry_and_enqueues_enrich(
     db_session, batch_with_docs
 ):

@@ -10522,6 +10522,17 @@
             ],
             "title": "Next At"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "status": {
             "anyOf": [
               {

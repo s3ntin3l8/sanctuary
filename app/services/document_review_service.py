@@ -89,6 +89,7 @@ def pipeline_view(doc: Document) -> PipelineView:
                 icon=spec.icon,
                 status=StageStatus(status) if status else None,
                 error=rec.get("error"),
+                reason=rec.get("reason"),
                 attempt=rec.get("attempt"),
                 max_attempts=rec.get("max_attempts"),
                 next_at=rec.get("next_at"),

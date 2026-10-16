@@ -400,3 +400,32 @@ test.each([false, true])(
     expect(screen.getByRole('dialog', { name: 'Document intelligence' })).toBeVisible()
   },
 )
+
+test('explains skipped legacy grouping and distinguishes it from completed stages', async () => {
+  const reason = 'Legacy email source: reimport required before regrouping'
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: {
+          ...documentReader.pipeline,
+          stages: [
+            { ...documentReader.pipeline.stages[0], status: 'completed' },
+            {
+              ...documentReader.pipeline.stages[0],
+              key: 'batch_analysis',
+              label: 'Batch analysis',
+              status: 'skipped',
+              reason,
+            },
+          ],
+        },
+      },
+    },
+  })
+  page()
+  expect(await screen.findByText(`Grouping skipped · ${reason}`)).toBeVisible()
+  expect(screen.getByText('1 complete · 1 skipped')).toBeVisible()
+  expect(screen.queryByText(/All 2 stages complete/)).not.toBeInTheDocument()
+  expect(screen.getByTitle(/Batch analysis: skipped\s+Legacy email source:/)).toBeInTheDocument()
+})
