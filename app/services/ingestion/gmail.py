@@ -30,6 +30,10 @@ class GmailReconnectRequired(Exception):
     """The stored grant is unusable (revoked/expired/over-scoped): reconnect."""
 
 
+class GmailMessageGone(Exception):
+    """The message was deleted in Gmail after it was listed: nothing to retry."""
+
+
 class GmailScopeError(GmailReconnectRequired):
     """The token carries scopes beyond gmail.readonly."""
 
@@ -183,12 +187,14 @@ def fetch_raw_message(service: Any, message_id: str) -> bytes:
     from email.parser import BytesHeaderParser
     from email.policy import default
 
-    message = (
-        service.users()
-        .messages()
-        .get(userId="me", id=message_id, format="raw")
-        .execute()
-    )
+    try:
+        message = execute_with_retry(
+            service.users().messages().get(userId="me", id=message_id, format="raw")
+        )
+    except HttpError as exc:
+        if _http_status(exc) == 404:
+            raise GmailMessageGone(message_id) from exc
+        raise
     raw = GmailRaw(base64.urlsafe_b64decode(message["raw"]))
     headers = BytesHeaderParser(policy=default).parsebytes(raw)
     metadata = parse_metadata(
@@ -265,6 +271,8 @@ def build_query(
         parts.append(f"after:{after}")
     if before is not None:
         parts.append(f"before:{before}")
+    # Every save of a draft is a new message; an unsent one is not correspondence.
+    parts.append("-in:drafts")
     return " ".join(parts)
 
 
@@ -333,7 +341,7 @@ def list_message_ids(service: Any, query: str) -> Iterator[str]:
                 **({"pageToken": page_token} if page_token else {}),
             )
         )
-        results = request.execute()
+        results = execute_with_retry(request)
         for message in results.get("messages", []):
             yield message["id"]
         page_token = results.get("nextPageToken")
@@ -364,6 +372,26 @@ def _is_rate_limited(exc: Exception) -> bool:
     return status == 403 and any(
         isinstance(d, dict) and d.get("reason") in _RATE_LIMIT_REASONS for d in details
     )
+
+
+def execute_with_retry(request: Any) -> Any:
+    """Run one Gmail request, waiting out rate limits like the metadata path.
+
+    A grant that died mid-run (``RefreshError``, or a 401) ends the run with a
+    reconnect request instead of failing every remaining message on its own.
+    """
+    for wait in (*_RETRY_WAITS_SECONDS, None):
+        try:
+            return request.execute()
+        except RefreshError as exc:
+            raise GmailReconnectRequired("Gmail access was revoked") from exc
+        except HttpError as exc:
+            if _http_status(exc) == 401:
+                raise GmailReconnectRequired("Gmail access was revoked") from exc
+            if wait is None or not _is_rate_limited(exc):
+                raise
+            logger.warning("Gmail rate-limited a request; retrying in %ds", wait)
+            time.sleep(wait)
 
 
 def fetch_metadata(

@@ -294,6 +294,20 @@ def _raw_mime_children(raw: bytes, boundary: str) -> list[bytes]:
     return children
 
 
+def _is_auto_reply(msg) -> bool:
+    """An out-of-office / autoresponder notice (RFC 3834 and the legacy headers).
+
+    Deliberately narrow: the sender is on the allowlist, so a mail dropped by
+    mistake is lost evidence. Bulk and list mail, and "auto-generated"
+    notifications (a court's receipt confirmation is one), are still ingested.
+    """
+    if str(msg.get("Auto-Submitted", "")).strip().lower() == "auto-replied":
+        return True
+    if str(msg.get("Precedence", "")).strip().lower() in {"auto_reply", "junk"}:
+        return True
+    return any(msg.get(h) for h in ("X-Autoreply", "X-Autorespond"))
+
+
 def parse_rfc822(raw_bytes: bytes) -> dict:
     """Read each attached RFC822 message as a separate transport source.
 
@@ -473,10 +487,6 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         )
         return source
 
-    root = read_source(
-        email.message_from_bytes(raw_bytes, policy=default),
-        "0",
-        None,
-        source_bytes=raw_bytes,
-    )
-    return {**root, "sources": sources}
+    root_msg = email.message_from_bytes(raw_bytes, policy=default)
+    root = read_source(root_msg, "0", None, source_bytes=raw_bytes)
+    return {**root, "sources": sources, "auto_replied": _is_auto_reply(root_msg)}
