@@ -389,13 +389,15 @@ def _ingest_email_docs_and_commit(
     from app.services.ingestion.email_sources import bind_manifests, persist_sources
     from app.services.pipeline_status import initialize as _pipeline_init
 
+    auto_replied = bool(parsed.get("auto_replied"))
+    if auto_replied:
+        batch.meta = {**(batch.meta or {}), "skipped": "auto_replied"}
     for source in parsed["sources"]:
-        if parsed["auto_replied"]:
+        if auto_replied:
             # Out-of-office notices carry no evidence: record the message as
             # handled (a tombstone) so it is not offered or fetched again.
             for att in source["attachments"]:
                 att.update(outcome="removed", reason="Automatic reply")
-            batch.meta = {**(batch.meta or {}), "skipped": "auto_replied"}
             continue
         source_sender = source["sender"]
         source_subject = source["subject"] or subject
@@ -484,8 +486,10 @@ def _ingest_email_docs_and_commit(
                 continue
             if (
                 magic_ext
-                and magic_ext not in {ext, ".eml"}  # "From " also opens plain text
+                and magic_ext != ext
                 and not (magic_ext == ".zip" and ext in {".docx", ".pptx", ".xlsx"})
+                # "From " is also how plain text can open.
+                and not (magic_ext == ".eml" and ext in {".txt", ".md"})
             ):
                 att.update(
                     outcome="unsupported",

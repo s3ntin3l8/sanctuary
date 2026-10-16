@@ -123,3 +123,20 @@ def test_other_automated_mail_is_still_ingested(db_session, headers):
         source_type=IngestBatchSourceType.EMAIL,
     )
     assert db_session.query(Document).filter_by(ingest_batch_id=batch.id).count() == 1
+
+
+@pytest.mark.integration
+def test_a_text_file_may_open_like_a_mailbox_but_a_pdf_may_not(db_session):
+    batch = ingest_raw_email(
+        db_session,
+        _mail(
+            [
+                ("notiz.txt", b"From Anwalt Text der Notiz"),
+                ("schreiben.pdf", b"From Anwalt not a pdf"),
+            ]
+        ),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+    docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
+    assert [d.original_filename for d in docs] == ["notiz.txt"]
+    assert _part_outcomes(batch)["schreiben.pdf"][0] == "unsupported"

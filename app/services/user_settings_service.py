@@ -260,11 +260,13 @@ def _keep_refresh_token(new_json: str, stored: str | None) -> str:
         if new.get("refresh_token") or not stored:
             return new_json
         old = json.loads(secrets.decrypt(stored))
+        refresh_token = old.get("refresh_token")
     except (ValueError, AttributeError, secrets.SecretsError):
+        logger.warning("Could not carry over the stored Gmail refresh token")
         return new_json
-    if not old.get("refresh_token"):
+    if not refresh_token:
         return new_json
-    return json.dumps({**new, "refresh_token": old["refresh_token"]})
+    return json.dumps({**new, "refresh_token": refresh_token})
 
 
 def set_gmail_credentials(
