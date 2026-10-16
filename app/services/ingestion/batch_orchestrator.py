@@ -2,7 +2,7 @@ import hashlib
 import logging
 import unicodedata
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
@@ -129,6 +129,9 @@ def ingest_raw_email(
     source_type: IngestBatchSourceType = IngestBatchSourceType.EMAIL,
     owner_id: int | None = None,
     own_addresses: Iterable[str] = (),
+    gmail_id: str | None = None,
+    gmail_thread_id: str | None = None,
+    mailbox_received_at: datetime | None = None,
 ) -> IngestBatch | None:
     """Ingest one RFC822 email as a batch.
 
@@ -137,12 +140,20 @@ def ingest_raw_email(
     """
     owner_id = _resolve_owner_id(db, owner_id)
     parsed = parse_rfc822(raw_bytes)
-    outgoing = _is_outgoing(parsed["sender"], own_addresses)
-    msg_id = parsed["message_id"]
+    msg_id = parsed["message_id"] or None
     sender = parsed["sender"] or "unknown"
     subject = parsed["subject"] or "No Subject"
 
     batch_repo = IngestBatchRepository(db)
+
+    if gmail_id:
+        existing_gmail = (
+            db.query(IngestBatch)
+            .filter(IngestBatch.owner_id == owner_id, IngestBatch.gmail_id == gmail_id)
+            .first()
+        )
+        if existing_gmail:
+            return None if is_no_document_tombstone(existing_gmail) else existing_gmail
 
     source_hash = None
     if msg_id:
@@ -160,6 +171,12 @@ def ingest_raw_email(
                     existing.id,
                     doc_count,
                 )
+                return existing
+            if (
+                existing.email_sources
+                and existing.source_review_reasons
+                and not is_no_document_tombstone(existing)
+            ):
                 return existing
             if is_no_document_tombstone(existing):
                 logger.info(
@@ -201,6 +218,12 @@ def ingest_raw_email(
                     doc_count,
                 )
                 return existing
+            if (
+                existing.email_sources
+                and existing.source_review_reasons
+                and not is_no_document_tombstone(existing)
+            ):
+                return existing
             if is_no_document_tombstone(existing):
                 logger.info(
                     "Email (fallback hash) already ingested as a no-document "
@@ -214,7 +237,7 @@ def ingest_raw_email(
         else:
             source_hash = fallback_hash if not msg_id else None
 
-    received_date = parsed.get("received_date")
+    received_date = mailbox_received_at or parsed.get("received_date") or now_utc()
 
     batch = batch_repo.create_batch(
         source_type=source_type,
@@ -231,14 +254,13 @@ def ingest_raw_email(
     if source_hash:
         batch.source_hash = source_hash
 
-    # Store attachment manifest and forwarding note extracted from the email body
-    # before the body is discarded (happens below when attachments are present).
-    raw_manifest = parsed.get("attachment_manifest") or []
-    if raw_manifest:
-        batch.attachment_manifest = raw_manifest
-    raw_note = parsed.get("email_note") or ""
-    if raw_note:
-        batch.email_note = raw_note
+    batch.gmail_id = gmail_id
+    batch.gmail_thread_id = gmail_thread_id
+    batch.received_source = (
+        "gmail"
+        if mailbox_received_at
+        else ("email_date" if parsed.get("received_date") else "ingest_time")
+    )
 
     try:
         db.flush()
@@ -291,6 +313,13 @@ def ingest_raw_email(
     written_paths: list[Path] = []
 
     try:
+        source_dir = DATA_DIR / "email_sources" / str(owner_id)
+        source_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        raw_path = source_dir / f"{batch.id}.eml"
+        raw_path.write_bytes(raw_bytes)
+        raw_path.chmod(0o600)
+        written_paths.append(raw_path)
+        batch.raw_source_path = to_storage_path(raw_path)
         _ingest_email_docs_and_commit(
             db,
             batch,
@@ -301,7 +330,7 @@ def ingest_raw_email(
             received_date,
             case_dir,
             has_attachments,
-            outgoing,
+            own_addresses,
             docs_to_process,
             written_paths,
         )
@@ -316,7 +345,7 @@ def ingest_raw_email(
         raise
 
     if not docs_to_process:
-        return None  # recorded as a no-document tombstone above; nothing to dispatch
+        return None if is_no_document_tombstone(batch) else batch
 
     logger.info(
         "Batch #%d committed — dispatching process_document_task for %d doc(s)",
@@ -339,179 +368,146 @@ def _ingest_email_docs_and_commit(
     received_date,
     case_dir: Path,
     has_attachments: bool,
-    outgoing: bool,
+    own_addresses: Iterable[str],
     docs_to_process: list[Document],
     written_paths: list[Path],
 ) -> None:
     """Body/attachment document creation and the final commit for
     ingest_raw_email — split out purely so the caller can wrap every raise
     point between here and the commit in one try/except for file cleanup."""
-    # Create a body document only when the email itself is the content: no
-    # attachments, or the user's own mail (their text is the substance). With
-    # inbound attachments the body is a transport cover note; metadata lives on
-    # the batch.
-    if parsed["body"].strip() and (not has_attachments or outgoing):
-        body_hash = hashlib.sha256(parsed["body"].encode()).hexdigest()
-        body_path = case_dir / f"email_body_{batch.id}.txt"
-        with open(body_path, "w") as f:
-            f.write(parsed["body"])
-        written_paths.append(body_path)
+    from app.services.ingestion.converters import ALLOWED_EXTENSIONS
+    from app.services.ingestion.email_sources import bind_manifests, persist_sources
+    from app.services.pipeline_status import initialize as _pipeline_init
 
-        _subject_internal_id = extract_internal_id_from_subject(subject)
-        doc = Document(
-            title=subject,
-            owner_id=owner_id,
-            file_path=to_storage_path(body_path),
-            original_filename=f"email_body_{batch.id}.txt",
-            content_hash=body_hash,
-            case_id=batch.case_id or "_TRIAGE",
-            proceeding_id=batch.proceeding_id,
-            ingest_batch_id=batch.id,
-            internal_id=_subject_internal_id or None,
-            sender=parsed["sender"] or None,
-            received_date=received_date,
-            issued_date=received_date,
-            page_count=0,
-        )
-        from app.services.pipeline_status import initialize as _pipeline_init
-
-        db.add(doc)
-        db.flush()
-        _pipeline_init(doc, batched=True, db=db)
-        docs_to_process.append(doc)
-        logger.info("Batch #%d: email body queued as document", batch.id)
-
-    for att in parsed["attachments"]:
-        if not att["content"] or not att["filename"]:
-            continue
-        att_hash = hashlib.sha256(att["content"]).hexdigest()
-
-        # Check for duplicate within the same user's own _TRIAGE.
-        existing_doc = (
-            db.query(Document)
-            .filter(
-                Document.content_hash == att_hash,
-                Document.case_id == "_TRIAGE",
-                Document.owner_id == owner_id,
+    for source in parsed["sources"]:
+        source_sender = source["sender"]
+        source_subject = source["subject"] or subject
+        # Resolve an attached message's own reference before inheriting the
+        # outer forwarding subject. Never overwrite the outer batch's identity.
+        source_case, source_proceeding = batch.case_id, batch.proceeding_id
+        if source["parent_id"] is not None:
+            inner = IngestBatch(owner_id=owner_id)
+            _try_assign_case_from_subject(db, inner, source_subject, owner_id)
+            if inner.case_id:
+                source_case, source_proceeding = inner.case_id, inner.proceeding_id
+        if source["body"].strip() and (
+            not source["has_attachments"] or _is_outgoing(source_sender, own_addresses)
+        ):
+            name = (
+                f"email_body_{batch.id}.txt"
+                if source["id"] == "0"
+                else f"email_body_{batch.id}_{source['id'].replace('.', '_')}.txt"
             )
-            .first()
-        )
-
-        if existing_doc:
-            # Leave it where it is: don't move it into this batch and don't
-            # re-run its pipeline. This is the same PDF already ingested
-            # (from an earlier email, forward, or reply-with-attachment) —
-            # moving it here would tear it out of its original batch and
-            # re-dispatching would burn a full re-extraction for content
-            # already extracted. (The lookup above is scoped to case_id ==
-            # "_TRIAGE" and owner_id == owner_id, so this never matches a doc
-            # already confirmed into a real case, or another user's
-            # still-untriaged duplicate — cross-user hash collisions would
-            # otherwise silently drop this user's own copy of the
-            # attachment, since it's the same content_hash but a document
-            # they can't see.)
-            logger.info(
-                "Batch #%d: attachment %r is a duplicate of doc #%d already "
-                "in batch #%s — leaving it in place, not re-processing",
-                batch.id,
-                att["filename"],
-                existing_doc.id,
-                existing_doc.ingest_batch_id,
+            path = case_dir / name
+            path.write_text(source["body"], encoding="utf-8")
+            written_paths.append(path)
+            part_id = source["id"] + ".body"
+            doc = Document(
+                title=source_subject,
+                owner_id=owner_id,
+                file_path=to_storage_path(path),
+                original_filename=name,
+                email_source_id=source["id"],
+                email_part_id=part_id,
+                content_hash=hashlib.sha256(source["body"].encode()).hexdigest(),
+                case_id=source_case or "_TRIAGE",
+                proceeding_id=source_proceeding,
+                ingest_batch_id=batch.id,
+                internal_id=extract_internal_id_from_subject(source_subject) or None,
+                sender=source_sender or None,
+                received_date=received_date,
+                issued_date=source["received_date"],
+                page_count=0,
             )
-            continue
-
-        safe_name = _sanitize_filename(att["filename"])
-        att_path = case_dir / f"{batch.id}_{safe_name}"
-        if att_path.exists():
-            # Two attachments in the same email sharing a filename would
-            # otherwise silently overwrite each other on disk — give the
-            # second (and any further) one a disambiguating suffix.
+            db.add(doc)
+            db.flush()
+            _pipeline_init(doc, batched=True, db=db)
+            docs_to_process.append(doc)
+            source["parts"].append(
+                {
+                    "id": part_id,
+                    "filename": name,
+                    "mime_type": "text/plain",
+                    "outcome": "ingested",
+                    "size": len(source["body"].encode()),
+                    "document_ids": [doc.id],
+                }
+            )
+        for att in source["attachments"]:
+            content = att["content"]
+            if not content:
+                att.update(
+                    outcome="empty", reason="Attachment contains no readable bytes"
+                )
+                continue
+            if Path(att["filename"]).suffix.lower() not in ALLOWED_EXTENSIONS:
+                att.update(outcome="unsupported", reason="File format is not supported")
+                continue
+            att_hash = hashlib.sha256(content).hexdigest()
+            existing_doc = (
+                db.query(Document)
+                .filter(
+                    Document.content_hash == att_hash,
+                    Document.case_id == "_TRIAGE",
+                    Document.owner_id == owner_id,
+                )
+                .first()
+            )
+            if existing_doc:
+                att.update(outcome="duplicate", document_ids=[existing_doc.id])
+                continue
+            safe_name = _sanitize_filename(att["filename"])
+            att_path = case_dir / f"{batch.id}_{safe_name}"
             stem, suffix = att_path.stem, att_path.suffix
             n = 2
             while att_path.exists():
                 att_path = case_dir / f"{stem}_{n}{suffix}"
                 n += 1
-        with open(att_path, "wb") as f:
-            f.write(att["content"])
-        written_paths.append(att_path)
+            att_path.write_bytes(content)
+            written_paths.append(att_path)
+            try:
+                pdf_doc = pdfium.PdfDocument(str(att_path))
+                page_count = len(pdf_doc)
+                pdf_doc.close()
+            except Exception:
+                page_count = 0
+            doc = Document(
+                title=att["filename"],
+                owner_id=owner_id,
+                file_path=to_storage_path(att_path),
+                original_filename=att["original_filename"] or att["filename"],
+                email_source_id=source["id"],
+                email_part_id=att["id"],
+                content_hash=att_hash,
+                case_id=source_case or "_TRIAGE",
+                proceeding_id=source_proceeding,
+                ingest_batch_id=batch.id,
+                internal_id=extract_internal_id_from_subject(source_subject) or None,
+                received_date=received_date,
+                page_count=page_count,
+            )
+            db.add(doc)
+            db.flush()
+            att.update(outcome="ingested", document_ids=[doc.id])
+            _pipeline_init(doc, batched=True, db=db)
+            docs_to_process.append(doc)
 
-        try:
-            pdf_doc = pdfium.PdfDocument(str(att_path))
-            att_page_count = len(pdf_doc)
-            pdf_doc.close()
-        except Exception:
-            att_page_count = 0
-
-        doc = Document(
-            title=att["filename"],
-            owner_id=owner_id,
-            file_path=to_storage_path(att_path),
-            original_filename=att["filename"],
-            content_hash=att_hash,
-            case_id=batch.case_id or "_TRIAGE",
-            proceeding_id=batch.proceeding_id,
-            ingest_batch_id=batch.id,
-            internal_id=extract_internal_id_from_subject(subject) or None,
-            received_date=received_date or datetime.now(UTC),
-            page_count=att_page_count,
+    batch.source_review_reasons = bind_manifests(parsed["sources"])
+    if batch.received_source != "gmail":
+        batch.source_review_reasons = sorted(
+            set(batch.source_review_reasons + ["mailbox_arrival_unavailable"])
         )
-        from app.services.pipeline_status import initialize as _pipeline_init
-
-        db.add(doc)
-        db.flush()
-        _pipeline_init(doc, batched=True, db=db)
-        docs_to_process.append(doc)
-        logger.info("Batch #%d: attachment %r queued", batch.id, att["filename"])
-
-    if docs_to_process:
+    batch.email_sources = persist_sources(parsed["sources"])
+    # Fully accounted duplicate-only messages remain completed tombstones.
+    # Problems survive as OPEN source-review bundles even without documents.
+    unresolved = [
+        r for r in batch.source_review_reasons if r != "mailbox_arrival_unavailable"
+    ]
+    if docs_to_process or unresolved:
         batch.status = IngestBatchStatus.OPEN
     else:
-        # Nothing to ingest: every attachment was a duplicate already ingested
-        # elsewhere, empty or unnamed (the body is discarded whenever there are
-        # attachments), or the email had neither attachments nor a body. Commit
-        # a CONFIRMED, document-less tombstone for the message instead of
-        # leaving an OPEN 0-doc batch (which nothing ever advances and
-        # delete_bundle could not remove) or rolling back (which made the next
-        # fetch of the same Message-ID — routine, the Gmail sync watermark
-        # overlaps on purpose — re-process it, and left the Gmail import page
-        # offering the message again for ever). CONFIRMED is the honest status:
-        # there is no bundle for the user to triage, so nothing is hidden from
-        # the feed; the tombstone only records "this message was seen".
         batch.status = IngestBatchStatus.CONFIRMED
         batch.meta = {**(batch.meta or {}), "reason": NO_NEW_DOCUMENTS}
-        db.commit()
-        logger.info(
-            "Email from=%s subject=%r produced no new documents (every "
-            "attachment was a duplicate, empty, or unnamed, or the message was "
-            "empty) — recorded as a completed no-document batch #%d",
-            sender,
-            subject,
-            batch.id,
-        )
-        return None
-
-    # Link manifest entries to their Document IDs now that all docs are flushed.
-    if batch.attachment_manifest:
-        filename_to_doc_id = {
-            d.original_filename: d.id for d in docs_to_process if d.original_filename
-        }
-        linked = False
-        for entry in batch.attachment_manifest:
-            entry_filename = entry.get("filename")
-            doc_id = (
-                filename_to_doc_id.get(entry_filename)
-                if entry_filename is not None
-                else None
-            )
-            if doc_id is not None:
-                entry["doc_id"] = doc_id
-                linked = True
-        if linked:
-            # Force SQLAlchemy to detect the JSON mutation
-            from sqlalchemy.orm.attributes import flag_modified
-
-            flag_modified(batch, "attachment_manifest")
-
     db.commit()
 
 

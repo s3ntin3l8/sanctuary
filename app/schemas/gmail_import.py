@@ -50,6 +50,8 @@ class GmailIndexedMessage(BaseModel):
     sender: str | None
     subject: str | None
     sent_at: datetime
+    received_at: datetime | None = None
+    source_review_reasons: list[str] = Field(default_factory=list)
     # Sent by the user (sender is one of their "Your addresses"), not received.
     outgoing: bool
     has_attachments: bool

@@ -140,6 +140,8 @@ class Document(Base):
     )
     file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     original_filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    email_source_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    email_part_id: Mapped[str | None] = mapped_column(String, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )  # SHA-256 hex digest
@@ -696,6 +698,9 @@ class IngestBatch(Base):
         # batches carry neither) are never equal to each other in Postgres,
         # so this only actually constrains the rows that do set one.
         UniqueConstraint(
+            "owner_id", "gmail_id", name="uq_ingest_batches_owner_gmail_id"
+        ),
+        UniqueConstraint(
             "owner_id", "message_id", name="uq_ingest_batches_owner_message_id"
         ),
         UniqueConstraint(
@@ -758,12 +763,16 @@ class IngestBatch(Base):
     )
     source_hash: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    attachment_manifest: Mapped[list[dict[str, Any]] | None] = mapped_column(
+    gmail_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    gmail_thread_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    email_sources: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
-    )  # [{filename, timestamp, source_label, doc_id}]
-    email_note: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )  # prose from lawyer's forwarding note (stripped, ≤800 chars)
+    )
+    received_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_review_reasons: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    source_review_acknowledged: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=_sa_text("false")
+    )
 
     case: Mapped["Case | None"] = relationship("Case")
     proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")

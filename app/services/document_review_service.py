@@ -221,10 +221,17 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
     if editable is not None:
         proc_q = proc_q.filter(Proceeding.case_id.in_(editable))
     enrich = (stages_dict(doc).get("enrich") or {}).get("status")
+    from app.services.ingestion.email_sources import provenance
+
     fields: dict = {
         "id": doc.id,
         "title": doc.title,
         "original_filename": doc.original_filename,
+        "email_provenance": provenance(doc.ingest_batch)
+        if doc.owner_id == user.id
+        else None,
+        "email_source_id": doc.email_source_id,
+        "email_part_id": doc.email_part_id,
         "page_count": doc.page_count or 0,
         "packet_starts": [int(p) for p in (doc.meta or {}).get("packet_starts") or []],
         "case_id": doc.case_id,

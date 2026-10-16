@@ -123,13 +123,29 @@ def messages(
         raise ApiError(422, "invalid_cursor", "Invalid page cursor.") from exc
     cached = gmail_cache.cached_ids(user.id, [row.gmail_id for row, _ in rows])
     own = _own_addresses(user_settings_service.get_gmail_config(db, user.id))
-    return GmailMessagePage(
+    result = GmailMessagePage(
         items=[
             _indexed_message(row, ingested, row.gmail_id in cached, own)
             for row, ingested in rows
         ],
         next_cursor=next_cursor,
     )
+    from app.models.database import IngestBatch
+
+    batches = {
+        b.gmail_id: b
+        for b in db.query(IngestBatch)
+        .filter(
+            IngestBatch.owner_id == user.id,
+            IngestBatch.gmail_id.in_([m.gmail_id for m in result.items]),
+        )
+        .all()
+    }
+    for item in result.items:
+        batch = batches.get(item.gmail_id)
+        if batch and not batch.source_review_acknowledged:
+            item.source_review_reasons = batch.source_review_reasons or []
+    return result
 
 
 def _own_addresses(cfg: dict) -> set[str]:
@@ -145,6 +161,7 @@ def _indexed_message(
         sender=row.sender,
         subject=row.subject,
         sent_at=row.sent_at,
+        received_at=row.received_at,
         # Sent by the user (derived, so changing "Your addresses" applies to
         # already-indexed mail).
         outgoing=(row.sender or "").lower() in own_addresses,

@@ -876,6 +876,9 @@ def generate_summary_sync(
 
     if hints:
         prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"
+    from app.services.intelligence.email_context import forwarding_context
+
+    prompt += forwarding_context(db, doc)
     prompt += f"### Document Content Preview:\n{fence(content_preview, 'document')}"
 
     try:

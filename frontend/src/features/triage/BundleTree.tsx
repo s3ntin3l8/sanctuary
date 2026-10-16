@@ -6,6 +6,7 @@ import { Badge } from '../../ui/Badge'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
 import { ORIGINATOR_COLOR } from '../documents/DocumentReview'
+import { EmailSources } from './EmailSources'
 
 type Props = {
   bundle: TriageBundle
@@ -193,8 +194,18 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
       </div>
       <div className="mt-2 space-y-0.5 font-mono text-[10px] text-muted">
         <div>source · {bundle.sender_email ?? bundle.source_type}</div>
-        <div>received · {formatShortDate(bundle.received_at)}</div>
+        <div>
+          {bundle.received_source === 'email_date'
+            ? 'sent · arrival unknown'
+            : bundle.received_source === 'ingest_time'
+              ? 'ingested · arrival unknown'
+              : 'received'}{' '}
+          · {formatShortDate(bundle.received_at)}
+        </div>
       </div>
+      {bundle.batch_id != null && (bundle.email_source_count ?? 0) > 0 && (
+        <EmailSources batchId={bundle.batch_id} />
+      )}
       {footer}
     </div>
   )

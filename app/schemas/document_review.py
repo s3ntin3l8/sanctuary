@@ -24,6 +24,7 @@ from app.models.enums import (
     UserReactionType,
 )
 from app.schemas.case_detail import EvidenceProposalView
+from app.schemas.email_source import EmailProvenance
 
 Confidence = Literal["high", "medium", "low"]
 
@@ -163,6 +164,9 @@ class ResolvedReference(BaseModel):
 
 
 class DocumentReview(BaseModel):
+    email_provenance: EmailProvenance | None = None
+    email_source_id: str | None = None
+    email_part_id: str | None = None
     id: int
     title: str
     original_filename: str | None

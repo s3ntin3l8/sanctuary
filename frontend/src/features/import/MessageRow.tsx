@@ -6,6 +6,14 @@ export type IndexedMessage = Schemas['GmailIndexedMessage']
 
 /** Leading state marker: imported (filled), cached locally (ring), otherwise empty. */
 function StateDot({ message: m }: { message: IndexedMessage }) {
+  if (m.ingested && (m.source_review_reasons ?? []).length > 0) {
+    return (
+      <span title="Imported · source issues need review">
+        <Icon name="warning" size={14} className="text-warning" />
+        <span className="sr-only">Source issues need review</span>
+      </span>
+    )
+  }
   if (m.ingested) {
     return (
       <span

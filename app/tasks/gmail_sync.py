@@ -92,7 +92,34 @@ def _raw_message(user_id: int, gmail_id: str, get_service) -> bytes:
         return cached
     raw = fetch_raw_message(get_service(), gmail_id)
     gmail_cache.write(user_id, gmail_id, raw)
+    metadata = getattr(raw, "metadata", None)
+    if isinstance(metadata, dict):
+        gmail_cache.write_metadata(user_id, gmail_id, metadata)
     return raw
+
+
+def _delivery_context(db: Session, user_id: int, gmail_id: str) -> dict:
+    metadata = gmail_cache.read_metadata(user_id, gmail_id)
+    if metadata:
+        values = dict(metadata)
+        for key in ("received_at", "sent_at"):
+            if values.get(key):
+                values[key] = datetime.fromisoformat(values[key])
+        gmail_index_service.upsert_metadata(db, user_id, [values])
+        db.commit()
+    row = (
+        db.query(GmailMessageIndex)
+        .filter(
+            GmailMessageIndex.owner_id == user_id,
+            GmailMessageIndex.gmail_id == gmail_id,
+        )
+        .first()
+    )
+    return {
+        "gmail_id": gmail_id,
+        "gmail_thread_id": row.thread_id if row else None,
+        "mailbox_received_at": row.received_at if row else None,
+    }
 
 
 class _LazyService:
@@ -138,7 +165,13 @@ def _ingest_messages(
         # before it gets this far, and ends the run with "Reconnect required".
         try:
             raw_bytes = _raw_message(user_id, msg_id, lambda: service)
-            ingest_raw_email(db, raw_bytes, owner_id=user_id, own_addresses=own)
+            ingest_raw_email(
+                db,
+                raw_bytes,
+                owner_id=user_id,
+                own_addresses=own,
+                **_delivery_context(db, user_id, msg_id),
+            )
             succeeded += 1
         except Exception:
             db.rollback()
@@ -687,11 +720,13 @@ def _import_one(
         "subject": _import_label(db, user_id, gmail_id),
     }
     try:
+        raw_bytes = _raw_message(user_id, gmail_id, get_service)
         ingest_raw_email(
             db,
-            _raw_message(user_id, gmail_id, get_service),
+            raw_bytes,
             owner_id=user_id,
             own_addresses=own_addresses,
+            **_delivery_context(db, user_id, gmail_id),
         )
     except (GmailReconnectRequired, SecretsError):
         raise  # not this message's fault: end the run and ask for a reconnect

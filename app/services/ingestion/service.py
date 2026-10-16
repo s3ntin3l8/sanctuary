@@ -530,7 +530,9 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
 
     Also refreshes review_reasons/needs_review since extraction results affect them.
     """
-    safe_filename = os.path.basename(doc.file_path) if doc.file_path else ""
+    safe_filename = doc.original_filename or (
+        os.path.basename(doc.file_path) if doc.file_path else ""
+    )
 
     result_case_id = extract_case_id(safe_filename, content)
     result_date = extract_issued_date(content, safe_filename)

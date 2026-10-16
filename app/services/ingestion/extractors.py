@@ -245,6 +245,20 @@ def extract_issued_date(content: str, filename: str) -> DateExtractionResult:
             except ValueError:
                 pass
 
+    if not value:
+        match = re.search(
+            r"(?<!\d)(\d{1,2})[_.-](\d{1,2})[_.-](\d{4}|\d{2})(?!\d)", filename
+        )
+        if match:
+            day, month, year = map(int, match.groups())
+            if year < 100:
+                year += 2000 if year < 50 else 1900
+            try:
+                value = datetime(year, month, day, tzinfo=UTC)
+                confidence = "low"
+            except ValueError:
+                pass
+
     return {"value": value, "confidence": confidence}
 
 

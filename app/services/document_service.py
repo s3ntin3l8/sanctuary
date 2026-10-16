@@ -47,6 +47,9 @@ class DocumentService:
         if not doc:
             return False
 
+        from app.services.ingestion.email_sources import sync_document_parts
+
+        sync_document_parts(self.db, doc.id, [])
         file_path = doc.file_path
         ingest_batch_id = doc.ingest_batch_id
 
@@ -170,18 +173,28 @@ class DocumentService:
                         if batch and batch.raw_source_path
                         else None
                     )
-                    self.db.query(IngestBatch).filter(
-                        IngestBatch.id == ingest_batch_id
-                    ).delete(synchronize_session=False)
-                    if raw_source and raw_source.exists():
-                        try:
-                            raw_source.unlink()
-                        except OSError as e:
-                            import logging
+                    unresolved_parts = bool(
+                        batch
+                        and not batch.source_review_acknowledged
+                        and any(
+                            p.get("outcome") in ("empty", "unsupported", "failed")
+                            for source in batch.email_sources or []
+                            for p in source.get("parts", [])
+                        )
+                    )
+                    if not unresolved_parts:
+                        self.db.query(IngestBatch).filter(
+                            IngestBatch.id == ingest_batch_id
+                        ).delete(synchronize_session=False)
+                        if raw_source and raw_source.exists():
+                            try:
+                                raw_source.unlink()
+                            except OSError as e:
+                                import logging
 
-                            logging.getLogger(__name__).error(
-                                f"Failed to delete batch raw source {raw_source}: {e}"
-                            )
+                                logging.getLogger(__name__).error(
+                                    f"Failed to delete batch raw source {raw_source}: {e}"
+                                )
             audit_service.record(
                 self.db,
                 AuditEventType.DOCUMENT_DELETED,

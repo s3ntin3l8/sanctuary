@@ -692,7 +692,7 @@ function BundleRow({
   const processing = b.status === 'processing'
   const sourceIcon = { email: 'mail', scan: 'scanner', manual: 'upload_file' }[b.source_type]
   const confidence = b.sub_groups[0]?.case_confidence ?? null
-  const confirmable = !processing && b.status !== 'stuck'
+  const confirmable = b.doc_count > 0 && !processing && b.status !== 'stuck'
   const openParts = bundleOpenParts(b)
 
   return (
