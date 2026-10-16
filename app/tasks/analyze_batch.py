@@ -225,6 +225,17 @@ def analyze_batch_task(self, batch_id: int):
 
     db = SessionLocal()
     try:
+        from app.models.database import IngestBatch
+        from app.services.ingestion.email_sources import (
+            LEGACY_REGROUP_SKIP_REASON,
+            needs_source_reimport,
+        )
+
+        skip_reason = "single-doc or empty batch"
+        if not ran:
+            batch = db.get(IngestBatch, batch_id)
+            if needs_source_reimport(batch):
+                skip_reason = LEGACY_REGROUP_SKIP_REASON
         for doc_id in doc_ids:
             if ran:
                 mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db)
@@ -233,7 +244,7 @@ def analyze_batch_task(self, batch_id: int):
                     doc_id,
                     PipelineStage.BATCH_ANALYSIS,
                     db,
-                    reason="single-doc or empty batch",
+                    reason=skip_reason,
                 )
 
         # Reset ENRICH for any doc that completed it before BATCH_ANALYSIS started.

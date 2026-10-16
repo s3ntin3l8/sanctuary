@@ -12,8 +12,6 @@ const labels: Record<string, string> = {
   ambiguous_manifest_history: 'Current and quoted transmissions give conflicting groups.',
   invalid_manifest_timestamp: 'A transmission date needs review.',
   unresolved_source_group: 'Some documents need manual grouping.',
-  legacy_source_identity:
-    'Reimport this email to recover original attachment boundaries. Existing groups are preserved.',
   attachment_empty: 'An attachment contains no readable bytes.',
   attachment_unsupported: 'An attachment uses an unsupported format.',
   attachment_failed: 'An attached email could not be read.',
@@ -73,11 +71,19 @@ export function EmailSources({ batchId }: { batchId: number }) {
                       : 'Legacy date · origin unknown'}{' '}
                 · {formatShortDate(data.received_at)}
               </p>
+              {(data.review_reasons ?? []).includes('legacy_source_identity') && (
+                <p className="text-warning">
+                  Automatic grouping is paused until this email is reimported. Existing groups are
+                  preserved; acknowledging source issues does not resume grouping.
+                </p>
+              )}
               {!data.acknowledged && (data.review_reasons ?? []).length > 0 && (
                 <div className="space-y-1 text-warning">
-                  {(data.review_reasons ?? []).map((reason) => (
-                    <p key={reason}>{labels[reason] ?? reason.replaceAll('_', ' ')}</p>
-                  ))}
+                  {(data.review_reasons ?? [])
+                    .filter((reason) => reason !== 'legacy_source_identity')
+                    .map((reason) => (
+                      <p key={reason}>{labels[reason] ?? reason.replaceAll('_', ' ')}</p>
+                    ))}
                   <Button
                     size="sm"
                     variant="secondary"

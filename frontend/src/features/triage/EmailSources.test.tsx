@@ -77,18 +77,52 @@ test('acknowledges source problems without creating a document', async () => {
   )
 })
 
-test('labels a migrated receipt without guessing its original date source', async () => {
-  stubApi({
-    'GET /api/v1/triage/bundles/42/sources': {
-      body: {
-        ...evidence,
-        received_source: 'legacy_unknown',
-        review_reasons: ['legacy_source_identity'],
+test.each([false, true])(
+  'explains legacy grouping even when acknowledged=%s',
+  async (acknowledged) => {
+    stubApi({
+      'GET /api/v1/triage/bundles/42/sources': {
+        body: {
+          ...evidence,
+          acknowledged,
+          received_source: 'legacy_unknown',
+          review_reasons: ['legacy_source_identity'],
+        },
       },
-    },
-  })
+    })
+    renderAt('/triage', <EmailSources batchId={42} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Email sources and attachments' }))
+    expect(await screen.findByText(/Legacy date · origin unknown/)).toBeVisible()
+    expect(screen.getByText(/Existing groups are preserved/)).toBeVisible()
+    expect(screen.getByText(/acknowledging source issues does not resume grouping/)).toBeVisible()
+    if (acknowledged) {
+      expect(
+        screen.queryByRole('button', { name: 'Acknowledge source issues' }),
+      ).not.toBeInTheDocument()
+    }
+  },
+)
+
+test('keeps the legacy regrouping explanation after acknowledgement and refetch', async () => {
+  const legacy = { ...evidence, review_reasons: ['legacy_source_identity'] }
+  const acknowledged = { ...legacy, acknowledged: true }
+  const replies = {
+    'GET /api/v1/triage/bundles/42/sources': { body: legacy },
+    'POST /api/v1/triage/bundles/42/sources/acknowledge': { body: acknowledged },
+  }
+  stubApi(replies)
   renderAt('/triage', <EmailSources batchId={42} />)
   await userEvent.click(screen.getByRole('button', { name: 'Email sources and attachments' }))
-  expect(await screen.findByText(/Legacy date · origin unknown/)).toBeVisible()
+  const button = await screen.findByRole('button', { name: 'Acknowledge source issues' })
+  replies['GET /api/v1/triage/bundles/42/sources'].body = acknowledged
+  await userEvent.click(button)
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'Acknowledge source issues' }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(
+    screen.getByText(/Automatic grouping is paused until this email is reimported/),
+  ).toBeVisible()
   expect(screen.getByText(/Existing groups are preserved/)).toBeVisible()
 })

@@ -287,6 +287,23 @@ const SEGMENT: Record<string, string> = {
   failed: 'bg-danger',
 }
 
+const LEGACY_REGROUP_SKIP_REASON = 'legacy_source_reimport_required'
+const SKIP_REASONS: Record<string, string> = {
+  [LEGACY_REGROUP_SKIP_REASON]: 'Reimport this email before regrouping',
+  copy_of: 'Duplicate document',
+  upstream_failed: 'An earlier processing stage failed',
+  metadata_failed: 'Metadata processing failed',
+  batch_analysis_not_completed: 'Document grouping has not finished',
+  enrich_not_completed: 'Document enrichment has not finished',
+  missing_ai_summary: 'No AI summary is available',
+  document_not_found: 'Document is no longer available',
+  batch_already_done: 'Document grouping already finished',
+}
+
+function skipReasonLabel(reason: string): string {
+  return SKIP_REASONS[reason] ?? reason.replaceAll('_', ' ')
+}
+
 /** One line: a segment per stage, then a verdict. Failures surface their retry controls inline. */
 function Pipeline({ review }: { review: Review }) {
   const retry = useStageRetry(review.id)
@@ -295,6 +312,10 @@ function Pipeline({ review }: { review: Review }) {
   const stages = review.pipeline.stages
   const done = stages.filter((s) => s.status === 'completed' || s.status === 'skipped').length
   const failed = stages.filter((s) => s.status === 'failed')
+  const skipped = stages.filter((s) => s.status === 'skipped')
+  const legacyGroupingPaused = skipped.some(
+    (s) => s.key === 'batch_analysis' && s.reason === LEGACY_REGROUP_SKIP_REASON,
+  )
   const running = stages.find((s) => s.status === 'running' || s.status === 'retrying')
   const complete = stages.length > 0 && done === stages.length
   const ocrFailures = review.pipeline.ocr_page_failures
@@ -302,11 +323,19 @@ function Pipeline({ review }: { review: Review }) {
     <section className="border-b border-line2 px-4.5 py-2.5" aria-label="Pipeline">
       <div className="flex flex-wrap items-center gap-2.5">
         <h4 className={`${SECTION_TITLE} text-muted`}>Pipeline</h4>
-        <div className="flex gap-0.5" role="img" aria-label={`${done} of ${stages.length} stages`}>
+        <div
+          className="flex gap-0.5"
+          role="img"
+          aria-label={
+            legacyGroupingPaused
+              ? `${done - skipped.length} of ${stages.length} stages complete, ${skipped.length} skipped`
+              : `${done} of ${stages.length} stages`
+          }
+        >
           {stages.map((s) => (
             <span
               key={s.key}
-              title={`${s.label}: ${s.status ?? 'queued'}${s.error ? `\n${s.error}` : ''}`}
+              title={`${s.label}: ${s.status ?? 'queued'}${s.error || (s.status === 'skipped' && s.reason) ? `\n${s.error || skipReasonLabel(s.reason ?? '')}` : ''}`}
               className={`h-[5px] w-[18px] rounded-sm ${
                 s.key === 'extract' &&
                 (ocrFailures.length > 0 || review.pipeline.ocr_unverified.length > 0) &&
@@ -318,8 +347,13 @@ function Pipeline({ review }: { review: Review }) {
           ))}
         </div>
         {complete ? (
-          <span className="flex items-center gap-1 text-[10px] text-success">
-            <Icon name="check_circle" size={13} /> All {stages.length} stages complete
+          <span
+            className={`flex items-center gap-1 text-[10px] ${legacyGroupingPaused ? 'text-muted' : 'text-success'}`}
+          >
+            <Icon name={legacyGroupingPaused ? 'info' : 'check_circle'} size={13} />{' '}
+            {legacyGroupingPaused
+              ? `${done - skipped.length} complete · ${skipped.length} skipped`
+              : `All ${stages.length} stages complete`}
           </span>
         ) : failed.length > 0 ? (
           <span className="text-[10px] text-danger">{failed.length} failed</span>
@@ -355,6 +389,11 @@ function Pipeline({ review }: { review: Review }) {
           </span>
         )}
       </div>
+      {legacyGroupingPaused && (
+        <p className="mt-1.5 text-[10px] text-muted">
+          Grouping skipped · {skipReasonLabel(LEGACY_REGROUP_SKIP_REASON)}
+        </p>
+      )}
       {review.pipeline.ocr_crosscheck_unavailable && (
         <p className="mt-1.5 text-[10px] text-muted" data-testid="ocr-crosscheck-unavailable">
           The OCR cross-check did not run, so the extracted text has not been double-checked.

@@ -9,6 +9,14 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.schemas.email_source import EmailProvenance, EmailSource
 from app.services.ingestion.email_parser import normalize_filename
 
+LEGACY_REGROUP_SKIP_REASON = "legacy_source_reimport_required"
+
+
+def needs_source_reimport(batch) -> bool:
+    return bool(
+        batch and "legacy_source_identity" in (batch.source_review_reasons or [])
+    )
+
 
 def bind_manifests(sources: list[dict]) -> list[str]:
     """Match only unique source-local parts, never an arbitrary duplicate name."""

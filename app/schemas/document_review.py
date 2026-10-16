@@ -35,6 +35,7 @@ class StageView(BaseModel):
     icon: str
     status: StageStatus | None
     error: str | None
+    reason: str | None = None
     attempt: int | None
     max_attempts: int | None
     next_at: str | None

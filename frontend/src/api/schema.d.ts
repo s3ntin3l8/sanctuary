@@ -6428,6 +6428,8 @@ export interface components {
             max_attempts: number | null;
             /** Next At */
             next_at: string | null;
+            /** Reason */
+            reason?: string | null;
             status: components["schemas"]["StageStatus"] | null;
         };
         /** SummaryAction */

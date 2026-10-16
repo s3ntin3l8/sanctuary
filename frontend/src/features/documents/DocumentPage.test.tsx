@@ -400,3 +400,120 @@ test.each([false, true])(
     expect(screen.getByRole('dialog', { name: 'Document intelligence' })).toBeVisible()
   },
 )
+
+test('explains skipped legacy grouping and distinguishes it from completed stages', async () => {
+  const reason = 'legacy_source_reimport_required'
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: {
+          ...documentReader.pipeline,
+          stages: [
+            { ...documentReader.pipeline.stages[0], status: 'completed' },
+            {
+              ...documentReader.pipeline.stages[0],
+              key: 'batch_analysis',
+              label: 'Batch analysis',
+              status: 'skipped',
+              reason,
+            },
+          ],
+        },
+      },
+    },
+  })
+  page()
+  expect(
+    await screen.findByText('Grouping skipped · Reimport this email before regrouping'),
+  ).toBeVisible()
+  expect(screen.getByText('1 complete · 1 skipped')).toBeVisible()
+  expect(screen.getByRole('img', { name: '1 of 2 stages complete, 1 skipped' })).toBeInTheDocument()
+  expect(screen.queryByText(/All 2 stages complete/)).not.toBeInTheDocument()
+  expect(
+    screen.getByTitle(/Batch analysis: skipped\s+Reimport this email before regrouping/),
+  ).toBeInTheDocument()
+})
+
+test('skipped-stage tooltips explain internal reason codes', async () => {
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: {
+          ...documentReader.pipeline,
+          stages: [
+            {
+              ...documentReader.pipeline.stages[0],
+              key: 'claims',
+              label: 'Claims',
+              status: 'skipped',
+              reason: 'copy_of',
+            },
+          ],
+        },
+      },
+    },
+  })
+  page()
+  expect(await screen.findByTitle(/Claims: skipped\s+Duplicate document/)).toBeInTheDocument()
+  expect(screen.getByRole('img', { name: '1 of 1 stages' })).toBeInTheDocument()
+})
+
+test.each(['no batch (manual upload)', 'single-doc or empty batch'])(
+  'keeps normal pipeline completion for grouping skip: %s',
+  async (reason) => {
+    stub({
+      'GET /api/v1/documents/2211/reader': {
+        body: {
+          ...documentReader,
+          pipeline: {
+            ...documentReader.pipeline,
+            stages: [
+              { ...documentReader.pipeline.stages[0], status: 'completed' },
+              {
+                ...documentReader.pipeline.stages[0],
+                key: 'batch_analysis',
+                label: 'Batch analysis',
+                status: 'skipped',
+                reason,
+              },
+            ],
+          },
+        },
+      },
+    })
+    page()
+    expect(await screen.findByText('All 2 stages complete')).toBeVisible()
+    expect(screen.queryByText(/Grouping skipped/)).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '2 of 2 stages' })).toBeInTheDocument()
+  },
+)
+
+test.each(['pending', 'completed'])(
+  'does not show a stale skip reason on a %s stage',
+  async (status) => {
+    stub({
+      'GET /api/v1/documents/2211/reader': {
+        body: {
+          ...documentReader,
+          pipeline: {
+            ...documentReader.pipeline,
+            stages: [
+              {
+                ...documentReader.pipeline.stages[0],
+                key: 'relationships',
+                label: 'Relationships',
+                status,
+                reason: 'batch_analysis_not_completed',
+              },
+            ],
+          },
+        },
+      },
+    })
+    page()
+    expect(await screen.findByTitle(`Relationships: ${status}`)).toBeInTheDocument()
+    expect(screen.queryByTitle(/Document grouping has not finished/)).not.toBeInTheDocument()
+  },
+)

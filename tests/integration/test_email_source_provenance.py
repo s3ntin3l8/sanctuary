@@ -690,7 +690,9 @@ def test_dismissed_only_source_issues_stay_visible_until_acknowledged(
     ]
 
 
-def test_legacy_migration_preserves_grouping_and_labels_unknown_receipt(db_session):
+def test_legacy_migration_preserves_grouping_and_labels_unknown_receipt(
+    db_session, app_client
+):
     import importlib.util
     from pathlib import Path
 
@@ -732,6 +734,7 @@ def test_legacy_migration_preserves_grouping_and_labels_unknown_receipt(db_sessi
             {"id": batch_id},
         )
         migration.upgrade()
+    db_session.commit()
     db_session.expire_all()
     batch = db_session.get(IngestBatch, batch_id)
     cover, child = (
@@ -741,6 +744,11 @@ def test_legacy_migration_preserves_grouping_and_labels_unknown_receipt(db_sessi
     assert cover.email_source_id == child.email_source_id == "0"
     assert provenance(batch).received_source == "legacy_unknown"
     assert batch.email_sources[0]["email_note"] == "Preserved note"
+    response = app_client.post(f"/api/v1/triage/bundles/{batch.id}/sources/acknowledge")
+    assert response.status_code == 200
+    assert response.json()["acknowledged"] is True
+    assert "legacy_source_identity" in response.json()["review_reasons"]
+    db_session.refresh(batch)
     with patch(
         "app.services.intelligence.batch_analyzer._call_batch_analyzer_sync",
         side_effect=AssertionError("Legacy boundaries must await replay"),
@@ -749,3 +757,51 @@ def test_legacy_migration_preserves_grouping_and_labels_unknown_receipt(db_sessi
     assert child.parent_id == cover.id
     assert cover.role == DocumentRole.COVER_LETTER
     assert child.role == DocumentRole.ENCLOSURE
+
+
+@pytest.mark.parametrize("change_case", [False, True])
+def test_subject_assignment_preserves_only_a_same_case_proceeding(
+    db_session, sample_case, sample_user, change_case
+):
+    from app.models.database import Case, Proceeding
+    from app.models.enums import IngestBatchSourceType, ProceedingCourtLevel
+    from app.services.ingestion.batch_orchestrator import _try_assign_case_from_subject
+
+    sample_case.id = "8372-25"
+    sample_case.owner_id = sample_user.id
+    db_session.flush()
+    proceeding = Proceeding(
+        case_id=sample_case.id,
+        court_name="Test court",
+        court_level=ProceedingCourtLevel.AG,
+    )
+    db_session.add(proceeding)
+    db_session.flush()
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        proceeding_id=proceeding.id,
+        owner_id=sample_user.id,
+    )
+    db_session.add(batch)
+    target_id = sample_case.id
+    if change_case:
+        target_id = "8373-25"
+        target_case = Case(
+            id=target_id,
+            title="Other case",
+            owner_id=sample_user.id,
+            jurisdiction=sample_case.jurisdiction,
+        )
+        db_session.add(target_case)
+    db_session.commit()
+    _try_assign_case_from_subject(
+        db_session,
+        batch,
+        f"{target_id.replace('-', '/')} Correspondence",
+        sample_user.id,
+    )
+    db_session.commit()
+    db_session.refresh(batch)
+    assert batch.case_id == target_id
+    assert batch.proceeding_id == (None if change_case else proceeding.id)
