@@ -288,10 +288,16 @@ def _derive_case_title_from_subject(
     if not subject:
         return None
     stripped = strip_reply_prefix(subject).lstrip()
-    if stripped.startswith(internal_id):
-        remainder = stripped[len(internal_id) :].lstrip(" -:/")
-    else:
-        remainder = subject
+    # Case.id is the dash form ("8372-25"); a subject carries "8372/25".
+    prefix = next(
+        (
+            p
+            for p in (internal_id, internal_id.replace("-", "/"))
+            if stripped.startswith(p)
+        ),
+        None,
+    )
+    remainder = stripped[len(prefix) :].lstrip(" -:/") if prefix else stripped
     for sep in (" vor dem ", " wg. ", " bzgl. ", " betr. "):
         idx = remainder.lower().find(sep)
         if idx != -1:

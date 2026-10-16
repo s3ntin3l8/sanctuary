@@ -427,8 +427,12 @@ def _ingest_email_docs_and_commit(
                 # The mail headers are the source of both; the body-text
                 # extractors would replace them with a guess.
                 extraction_confidence={
-                    "sender": EMAIL_HEADER_CONFIDENCE,
-                    "issued_date": EMAIL_HEADER_CONFIDENCE,
+                    field: EMAIL_HEADER_CONFIDENCE
+                    for field, value in (
+                        ("sender", source_sender),
+                        ("issued_date", source["received_date"]),
+                    )
+                    if value
                 },
                 page_count=0,
             )
@@ -462,6 +466,10 @@ def _ingest_email_docs_and_commit(
                 .filter(
                     Document.content_hash == att_hash,
                     Document.owner_id == owner_id,
+                    # The mail's own case, or still-unfiled copies. The same
+                    # Anlage can belong to two matters: a copy filed under
+                    # another case is not this mail's duplicate.
+                    Document.case_id.in_({source_case, "_TRIAGE"} - {None}),
                 )
                 .order_by(Document.id)
                 .first()

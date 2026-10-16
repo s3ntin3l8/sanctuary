@@ -286,3 +286,67 @@ def test_body_document_keeps_its_header_sender_and_date_through_extraction(db_se
     assert doc.sender == "me@example.com"
     assert doc.issued_date.date().isoformat() == "2026-03-03"
     assert doc.extraction_confidence["sender"] == "email_header"
+
+
+@pytest.mark.integration
+def test_the_same_attachment_for_a_second_case_is_not_swallowed(db_session):
+    """The same Anlage can belong to two matters: a copy filed under another
+    case is not this mail's duplicate."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+
+    for case_id in ("8372-25", "9418-26"):
+        db_session.add(
+            Case(
+                id=case_id,
+                title=case_id,
+                status=CaseStatus.INTAKE,
+                jurisdiction=Jurisdiction.DE,
+            )
+        )
+    db_session.flush()
+    pdf_bytes = b"%PDF-1.4 one Anlage, two matters"
+
+    first = ingest_raw_email(
+        db_session,
+        _build_email(
+            "<c1@example.com>", "8372/25 - Anlage", [("anlage-eins.pdf", pdf_bytes)]
+        ),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+    second = ingest_raw_email(
+        db_session,
+        _build_email(
+            "<c2@example.com>", "9418/26 - Anlage", [("anlage-eins.pdf", pdf_bytes)]
+        ),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+
+    assert first is not None and second is not None
+    doc = db_session.query(Document).filter_by(ingest_batch_id=second.id).one()
+    assert doc.case_id == "9418-26"
+
+
+@pytest.mark.unit
+def test_ai_sender_replaces_the_header_marker(db_session):
+    from app.models.database import Document as Doc
+    from app.services.ai_summary import enrich_document_with_ai
+
+    doc = Doc(
+        title="t",
+        file_path="x",
+        sender="Dr. Vogt <v@example.com>",
+        extraction_confidence={"sender": "email_header", "issued_date": "email_header"},
+    )
+    db_session.add(doc)
+    db_session.flush()
+
+    enrich_document_with_ai(
+        doc,
+        {"sender": "Kanzlei Vogt", "confidence": {"sender": "high"}},
+        db_session,
+    )
+
+    assert doc.sender == "Kanzlei Vogt"
+    assert doc.extraction_confidence["sender"] == "high"
+    assert doc.extraction_confidence["issued_date"] == "email_header"

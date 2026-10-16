@@ -26,8 +26,10 @@ def test_internal_id_still_requires_leading_position():
 
 
 @pytest.mark.unit
-def test_case_title_drops_reply_prefix():
+@pytest.mark.parametrize("internal_id", ["8372-25", "8372/25"])
+def test_case_title_drops_reply_prefix(internal_id):
+    # Callers pass Case.id (dash form); the subject carries the slash form.
     assert (
-        _derive_case_title_from_subject("AW: 8372/25 - Hansen ./. Liu", "8372/25")
+        _derive_case_title_from_subject("AW: 8372/25 - Hansen ./. Liu", internal_id)
         == "Hansen ./. Liu"
     )
