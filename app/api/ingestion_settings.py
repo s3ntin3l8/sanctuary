@@ -48,6 +48,9 @@ async def gmail_oauth_start(
     flow = get_oauth_flow(client)
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
+        # Without it Google omits the refresh token when the account already
+        # granted this client, and the reconnected grant dies within the hour.
+        prompt="consent",
         # No include_granted_scopes: it would fold scopes granted to this OAuth
         # client earlier into the new token. We want exactly gmail.readonly.
         state=state,

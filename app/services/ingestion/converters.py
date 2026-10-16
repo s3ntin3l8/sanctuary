@@ -134,15 +134,19 @@ def _strip_leading_noise_paragraphs(text: str) -> str:
     return "\n\n".join(paragraphs[head_end:])
 
 
+def magic_extension(header: bytes) -> str | None:
+    """The extension a file's first bytes imply, or None when unrecognised."""
+    for magic, ext in MAGIC_BYTES.items():
+        if header.startswith(magic):
+            return ext
+    return None
+
+
 def validate_file_magic(file_path: str) -> str | None:
     """Validate file by magic bytes. Returns expected extension or None."""
     try:
         with open(file_path, "rb") as f:
-            header = f.read(8)
-        for magic, ext in MAGIC_BYTES.items():
-            if header.startswith(magic):
-                return ext
-        return None
+            return magic_extension(f.read(8))
     except OSError:
         return None
 

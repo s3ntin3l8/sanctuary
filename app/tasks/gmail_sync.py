@@ -20,9 +20,11 @@ from app.services import (
 )
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.gmail import (
+    GmailMessageGone,
     GmailReconnectRequired,
     build_query,
     connect_gmail,
+    execute_with_retry,
     fetch_metadata,
     fetch_raw_message,
     has_filter,
@@ -173,6 +175,11 @@ def _ingest_messages(
                 **_delivery_context(db, user_id, msg_id),
             )
             succeeded += 1
+        except GmailReconnectRequired:
+            raise  # the grant died mid-run: end it, don't fail each message
+        except GmailMessageGone:
+            db.rollback()
+            logger.info("Gmail sync: message %s no longer exists, skipping", msg_id)
         except Exception:
             db.rollback()
             failed_ids.append(msg_id)
@@ -313,14 +320,15 @@ def _ingest_query(
     while first_page or page_token:
         first_page = False
         if page_token:
-            results = (
+            results = execute_with_retry(
                 service.users()
                 .messages()
                 .list(userId="me", q=query, pageToken=page_token)
-                .execute()
             )
         else:
-            results = service.users().messages().list(userId="me", q=query).execute()
+            results = execute_with_retry(
+                service.users().messages().list(userId="me", q=query)
+            )
 
         messages = results.get("messages", [])
         page_ok, page_failed = _ingest_messages(
@@ -730,6 +738,9 @@ def _import_one(
         )
     except (GmailReconnectRequired, SecretsError):
         raise  # not this message's fault: end the run and ask for a reconnect
+    except GmailMessageGone:
+        db.rollback()
+        logger.info("Gmail import: %s no longer exists, skipping", gmail_id)
     except Exception:
         db.rollback()
         work["failed"].append(gmail_id)

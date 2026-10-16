@@ -17,7 +17,12 @@ from app.core.timezone import ensure_utc, now_utc
 from app.models.database import GmailMessageIndex, IngestBatch, UserSettings
 from app.models.enums import IngestBatchSourceType
 from app.services import gmail_cache, gmail_index_service
-from app.services.ingestion.gmail import connect_gmail, fetch_metadata, parse_metadata
+from app.services.ingestion.gmail import (
+    GmailMessageGone,
+    connect_gmail,
+    fetch_metadata,
+    parse_metadata,
+)
 
 
 def manifest_path() -> Path:
@@ -89,7 +94,10 @@ def capture(db, *, online: bool = False, replace: bool = False) -> dict:
     for owner, gmail_id in sorted(selected):
         raw = gmail_cache.read(owner, gmail_id)
         if raw is None and online:
-            raw = _raw_message(owner, gmail_id, lambda owner=owner: service(owner))
+            try:
+                raw = _raw_message(owner, gmail_id, lambda owner=owner: service(owner))
+            except GmailMessageGone:
+                raw = None  # deleted in Gmail since it was listed
         row = (
             db.query(GmailMessageIndex)
             .filter(

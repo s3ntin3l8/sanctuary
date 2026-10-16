@@ -212,36 +212,38 @@ def test_refresh_that_reports_broader_scopes_is_rejected():
 
 
 def test_build_query():
-    assert build_query(["a@x.de"]) == "(from:a@x.de)"
+    assert build_query(["a@x.de"]) == "(from:a@x.de) -in:drafts"
     assert (
         build_query(["a@x.de", "b.de"], "Sanctuary", after=10, before=20)
-        == '(from:a@x.de OR from:b.de) label:"Sanctuary" after:10 before:20'
+        == '(from:a@x.de OR from:b.de) label:"Sanctuary" after:10 before:20 -in:drafts'
     )
 
 
 def test_build_query_include_sent_adds_the_users_replies():
     assert build_query(["a@x.de", "b.de"], include_sent=True) == (
         "((from:a@x.de OR from:b.de) OR "
-        "(from:me (to:a@x.de OR cc:a@x.de OR bcc:a@x.de OR to:b.de OR cc:b.de OR bcc:b.de)))"
+        "(from:me (to:a@x.de OR cc:a@x.de OR bcc:a@x.de OR to:b.de OR cc:b.de OR bcc:b.de))) -in:drafts"
     )
     assert build_query(["a@x.de"], "S", after=5, include_sent=True) == (
-        '((from:a@x.de) OR (from:me (to:a@x.de OR cc:a@x.de OR bcc:a@x.de))) label:"S" after:5'
+        '((from:a@x.de) OR (from:me (to:a@x.de OR cc:a@x.de OR bcc:a@x.de))) label:"S" after:5 -in:drafts'
     )
 
 
 def test_build_query_include_sent_is_inert_without_an_allowlist():
-    assert build_query([], "S", include_sent=True) == 'label:"S"'
+    assert build_query([], "S", include_sent=True) == 'label:"S" -in:drafts'
 
 
 def test_build_query_label_alone_is_a_filter():
-    assert build_query([], "Sanctuary") == 'label:"Sanctuary"'
-    assert build_query([], "Sanctuary", after=5) == 'label:"Sanctuary" after:5'
+    assert build_query([], "Sanctuary") == 'label:"Sanctuary" -in:drafts'
+    assert (
+        build_query([], "Sanctuary", after=5) == 'label:"Sanctuary" after:5 -in:drafts'
+    )
 
 
 def test_build_query_quotes_the_label_so_it_cannot_add_operators():
     # A label is one quoted term; the date operators still come from the caller.
     assert build_query(["a@x.de"], "x OR in:anywhere") == (
-        '(from:a@x.de) label:"x OR in:anywhere"'
+        '(from:a@x.de) label:"x OR in:anywhere" -in:drafts'
     )
 
 
@@ -256,3 +258,39 @@ def test_has_filter():
     assert has_filter(["a@x.de"], "")
     assert has_filter([], "Sanctuary")
     assert has_filter(["a@x.de"], "Sanctuary")
+
+
+def test_reconnect_without_a_refresh_token_keeps_the_stored_one(db_session):
+    import json
+
+    from app.services import auth_service, user_settings_service
+
+    user = auth_service.create_user(
+        db_session,
+        email="refresh@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    kwargs = {"connected_at": "2026-01-01"}
+    user_settings_service.set_gmail_credentials(
+        db_session,
+        user.id,
+        credentials_json=json.dumps(
+            {"token": "a", "refresh_token": "keep-me"}  # pragma: allowlist secret
+        ),
+        **kwargs,
+    )
+    user_settings_service.set_gmail_credentials(
+        db_session,
+        user.id,
+        credentials_json=json.dumps({"token": "b"}),
+        **kwargs,
+    )
+
+    stored_value = user_settings_service.get_gmail_config(db_session, user.id)[
+        "gmail_credentials_json"
+    ]
+    stored = json.loads(user_settings_service.decrypt_gmail_credentials(stored_value))
+    assert stored == {
+        "token": "b",
+        "refresh_token": "keep-me",  # pragma: allowlist secret
+    }

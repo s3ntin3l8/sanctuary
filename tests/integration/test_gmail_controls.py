@@ -583,7 +583,9 @@ def test_filter_preview_counts_matches_without_saving(db_session):
 
     assert resp.status_code == 200
     assert resp.json() == {"estimate": 214}
-    listing.assert_called_once_with(userId="me", q='label:"Sanctuary"', maxResults=1)
+    listing.assert_called_once_with(
+        userId="me", q='label:"Sanctuary" -in:drafts', maxResults=1
+    )
     assert "gmail_label_filter" not in _sj(db_session, uid) or (
         _sj(db_session, uid)["gmail_label_filter"] != "Sanctuary"
     )

@@ -381,11 +381,24 @@ def _ingest_email_docs_and_commit(
     """Body/attachment document creation and the final commit for
     ingest_raw_email — split out purely so the caller can wrap every raise
     point between here and the commit in one try/except for file cleanup."""
-    from app.services.ingestion.converters import ALLOWED_EXTENSIONS
+    from app.services.ingestion.converters import (
+        ALLOWED_EXTENSIONS,
+        MAX_FILE_SIZE,
+        magic_extension,
+    )
     from app.services.ingestion.email_sources import bind_manifests, persist_sources
     from app.services.pipeline_status import initialize as _pipeline_init
 
+    auto_replied = bool(parsed.get("auto_replied"))
+    if auto_replied:
+        batch.meta = {**(batch.meta or {}), "skipped": "auto_replied"}
     for source in parsed["sources"]:
+        if auto_replied:
+            # Out-of-office notices carry no evidence: record the message as
+            # handled (a tombstone) so it is not offered or fetched again.
+            for att in source["attachments"]:
+                att.update(outcome="removed", reason="Automatic reply")
+            continue
         source_sender = source["sender"]
         source_subject = source["subject"] or subject
         # Resolve an attached message's own reference before inheriting the
@@ -457,8 +470,31 @@ def _ingest_email_docs_and_commit(
                     outcome="empty", reason="Attachment contains no readable bytes"
                 )
                 continue
-            if Path(att["filename"]).suffix.lower() not in ALLOWED_EXTENSIONS:
+            if len(content) > MAX_FILE_SIZE:
+                att.update(outcome="unsupported", reason="File is too large")
+                continue
+            magic_ext = magic_extension(content[:8])
+            if (
+                Path(att["filename"]).suffix.lower() not in ALLOWED_EXTENSIONS
+                and magic_ext == ".pdf"
+            ):
+                # A PDF whose name lost its extension is still a PDF.
+                att["filename"] += ".pdf"
+            ext = Path(att["filename"]).suffix.lower()
+            if ext not in ALLOWED_EXTENSIONS:
                 att.update(outcome="unsupported", reason="File format is not supported")
+                continue
+            if (
+                magic_ext
+                and magic_ext != ext
+                and not (magic_ext == ".zip" and ext in {".docx", ".pptx", ".xlsx"})
+                # "From " is also how plain text can open.
+                and not (magic_ext == ".eml" and ext in {".txt", ".md"})
+            ):
+                att.update(
+                    outcome="unsupported",
+                    reason=f"File content does not match its extension ({magic_ext})",
+                )
                 continue
             att_hash = hashlib.sha256(content).hexdigest()
             existing_doc = (

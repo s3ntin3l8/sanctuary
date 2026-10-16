@@ -559,15 +559,13 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     sender_raw = summary_data.get("sender")
     cleaned_sender = _sanitize_sender(sender_raw)
     if cleaned_sender and "sender" not in user_set:
+        conf = doc.extraction_confidence or {}
         if (
             cleaned_sender != doc.sender
-            and (doc.extraction_confidence or {}).get("sender")
-            == EMAIL_HEADER_CONFIDENCE
+            and conf.get("sender") == EMAIL_HEADER_CONFIDENCE
         ):
             # The AI read a better sender than the header: the value is its own now.
-            doc.extraction_confidence = {
-                k: v for k, v in doc.extraction_confidence.items() if k != "sender"
-            }
+            doc.extraction_confidence = {k: v for k, v in conf.items() if k != "sender"}
         doc.sender = cleaned_sender
 
     parsed_ot = parse_originator_type(summary_data.get("originator_type"))
