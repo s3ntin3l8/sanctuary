@@ -117,9 +117,7 @@ def test_skipped_analysis_explains_legacy_reimport_requirement(
         stage = stages_dict(doc)["batch_analysis"]
         assert stage["status"] == "skipped"
         assert stage["reason"] == (
-            "Legacy email source: reimport required before regrouping"
-            if legacy
-            else "single-doc or empty batch"
+            "legacy_source_reimport_required" if legacy else "single-doc or empty batch"
         )
         projected = next(
             s for s in pipeline_view(doc).stages if s.key == "batch_analysis"

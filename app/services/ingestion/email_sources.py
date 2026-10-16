@@ -9,7 +9,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.schemas.email_source import EmailProvenance, EmailSource
 from app.services.ingestion.email_parser import normalize_filename
 
-LEGACY_REGROUP_SKIP_REASON = "Legacy email source: reimport required before regrouping"
+LEGACY_REGROUP_SKIP_REASON = "legacy_source_reimport_required"
 
 
 def needs_source_reimport(batch) -> bool:

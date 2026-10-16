@@ -287,7 +287,9 @@ const SEGMENT: Record<string, string> = {
   failed: 'bg-danger',
 }
 
+const LEGACY_REGROUP_SKIP_REASON = 'legacy_source_reimport_required'
 const SKIP_REASONS: Record<string, string> = {
+  [LEGACY_REGROUP_SKIP_REASON]: 'Reimport this email before regrouping',
   copy_of: 'Duplicate document',
   upstream_failed: 'An earlier processing stage failed',
   metadata_failed: 'Metadata processing failed',
@@ -311,7 +313,9 @@ function Pipeline({ review }: { review: Review }) {
   const done = stages.filter((s) => s.status === 'completed' || s.status === 'skipped').length
   const failed = stages.filter((s) => s.status === 'failed')
   const skipped = stages.filter((s) => s.status === 'skipped')
-  const skippedGroupingReason = skipped.find((s) => s.key === 'batch_analysis' && s.reason)?.reason
+  const legacyGroupingPaused = skipped.some(
+    (s) => s.key === 'batch_analysis' && s.reason === LEGACY_REGROUP_SKIP_REASON,
+  )
   const running = stages.find((s) => s.status === 'running' || s.status === 'retrying')
   const complete = stages.length > 0 && done === stages.length
   const ocrFailures = review.pipeline.ocr_page_failures
@@ -322,12 +326,16 @@ function Pipeline({ review }: { review: Review }) {
         <div
           className="flex gap-0.5"
           role="img"
-          aria-label={`${done - skipped.length} of ${stages.length} stages complete${skipped.length ? `, ${skipped.length} skipped` : ''}`}
+          aria-label={
+            legacyGroupingPaused
+              ? `${done - skipped.length} of ${stages.length} stages complete, ${skipped.length} skipped`
+              : `${done} of ${stages.length} stages`
+          }
         >
           {stages.map((s) => (
             <span
               key={s.key}
-              title={`${s.label}: ${s.status ?? 'queued'}${s.error || s.reason ? `\n${s.error || skipReasonLabel(s.reason ?? '')}` : ''}`}
+              title={`${s.label}: ${s.status ?? 'queued'}${s.error || (s.status === 'skipped' && s.reason) ? `\n${s.error || skipReasonLabel(s.reason ?? '')}` : ''}`}
               className={`h-[5px] w-[18px] rounded-sm ${
                 s.key === 'extract' &&
                 (ocrFailures.length > 0 || review.pipeline.ocr_unverified.length > 0) &&
@@ -340,10 +348,10 @@ function Pipeline({ review }: { review: Review }) {
         </div>
         {complete ? (
           <span
-            className={`flex items-center gap-1 text-[10px] ${skipped.length > 0 ? 'text-muted' : 'text-success'}`}
+            className={`flex items-center gap-1 text-[10px] ${legacyGroupingPaused ? 'text-muted' : 'text-success'}`}
           >
-            <Icon name={skipped.length > 0 ? 'info' : 'check_circle'} size={13} />{' '}
-            {skipped.length > 0
+            <Icon name={legacyGroupingPaused ? 'info' : 'check_circle'} size={13} />{' '}
+            {legacyGroupingPaused
               ? `${done - skipped.length} complete · ${skipped.length} skipped`
               : `All ${stages.length} stages complete`}
           </span>
@@ -381,9 +389,9 @@ function Pipeline({ review }: { review: Review }) {
           </span>
         )}
       </div>
-      {skippedGroupingReason && (
+      {legacyGroupingPaused && (
         <p className="mt-1.5 text-[10px] text-muted">
-          Grouping skipped · {skipReasonLabel(skippedGroupingReason)}
+          Grouping skipped · {skipReasonLabel(LEGACY_REGROUP_SKIP_REASON)}
         </p>
       )}
       {review.pipeline.ocr_crosscheck_unavailable && (
