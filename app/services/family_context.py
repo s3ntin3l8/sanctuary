@@ -37,7 +37,7 @@ _TRIAGE = "_TRIAGE"
 
 # What ingest names the stored text of a mail (batch_orchestrator): a file a
 # person uploads under a similar name is not one.
-_EMAIL_BODY_NAME = re.compile(r"email_body_\d+\.txt")
+_EMAIL_BODY_NAME = re.compile(r"email_body_\d+(?:_[\d_m]+)?\.txt")
 
 
 def is_relay(doc: Document) -> bool:

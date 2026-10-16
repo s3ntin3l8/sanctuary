@@ -301,7 +301,7 @@ class _Import:
         self.ingest = ingest or self._default_ingest
         self.locked = locked
 
-    def _default_ingest(self, _db, raw, owner_id, own_addresses=()):
+    def _default_ingest(self, _db, raw, owner_id, own_addresses=(), **delivery):
         self.ingested.append(raw)
         return SimpleNamespace(id=next(self.batch_ids))
 
@@ -393,7 +393,7 @@ def test_a_failing_message_is_tracked_for_retry_and_does_not_stop_the_run(
 ):
     _start(db_session, gmail_user.id, ["g1", "g2"])
 
-    def _ingest(_db, raw, owner_id, own_addresses=()):
+    def _ingest(_db, raw, owner_id, own_addresses=(), **delivery):
         if raw == b"g1":
             raise ValueError("malformed")
         return SimpleNamespace(id=1)
@@ -423,7 +423,7 @@ def test_cancelling_stops_after_the_current_message_and_keeps_the_cancel(
     _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
     ingested = []
 
-    def _ingest(_db, raw, owner_id, own_addresses=()):
+    def _ingest(_db, raw, owner_id, own_addresses=(), **delivery):
         ingested.append(raw)
         gmail_runs.cancel_run("import", gmail_user.id)  # user presses Stop mid-run
         return SimpleNamespace(id=1)
@@ -440,7 +440,7 @@ def test_cancelling_stops_after_the_current_message_and_keeps_the_cancel(
 def test_failures_before_a_cancel_still_reach_the_retry_list(gmail_user, db_session):
     _start(db_session, gmail_user.id, ["g1", "g2"])
 
-    def _ingest(_db, raw, owner_id, own_addresses=()):
+    def _ingest(_db, raw, owner_id, own_addresses=(), **delivery):
         gmail_runs.cancel_run("import", gmail_user.id)
         raise ValueError("malformed")
 
@@ -456,7 +456,7 @@ def test_an_old_task_finishing_cannot_clobber_a_newer_run(gmail_user, db_session
     ingesting its last message."""
     _start(db_session, gmail_user.id, ["g1"])
 
-    def _ingest(_db, raw, owner_id, own_addresses=()):
+    def _ingest(_db, raw, owner_id, own_addresses=(), **delivery):
         gmail_runs.cancel_run("import", gmail_user.id)
         new = gmail_runs.begin_run(
             "import",
@@ -520,7 +520,7 @@ def test_a_revoked_grant_ends_the_run_with_a_reconnect_message(gmail_user, db_se
 def test_fetched_mail_is_cached_before_it_is_ingested(gmail_user, db_session):
     _start(db_session, gmail_user.id, ["g1"])
 
-    def _ingest(_db, raw, owner_id, own_addresses=()):
+    def _ingest(_db, raw, owner_id, own_addresses=(), **delivery):
         # By the time ingest runs, the raw message is already safely on disk.
         assert gmail_cache.read(gmail_user.id, "g1") == b"g1"
         return SimpleNamespace(id=1)

@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-10-12.1"
+PROMPT_VERSION = "2026-10-16.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -153,7 +153,7 @@ Extract these fields:
 
   PRIMARY — Attachment Manifest (when provided above the document sections):
   - Each manifest group (same timestamp + source label) yields exactly one bundle. Never split a group into multiple bundles.
-  - Identify the sole cover letter: the document whose filename starts with `SCHR_` or contains "Schreiben" AND was issued by the court named in the source label. For "Landgericht Ingolstadt", `SCHR_ LG IN …` is the cover; for "Amtsgericht Ingolstadt", `SCHR VON AG IN …` is the cover. If multiple filenames start with `SCHR_`, the cover letter is the one from the named court (the others are party letters being forwarded). If no SCHR_ document exists, use the shortest document.
+  - Identify the sole cover letter: the document whose filename starts with `SCHR_` or contains "Schreiben" AND was issued by the court named in the source label. For "Landgericht Ingolstadt", `SCHR_ LG IN …` is the cover; for "Amtsgericht Ingolstadt", `SCHR VON AG IN …` is the cover. If multiple filenames start with `SCHR_`, the cover letter is the one from the named court (the others are party letters being forwarded). If there is no unambiguous court cover letter, return no bundle; leave the documents standalone for review. Never choose a cover just because it is shortest.
   - ALL other documents in the group are enclosed by that single cover letter — SS_ (Schriftsatz/filing), ANLAGE (exhibit), BESCHLUSS (ruling), VERMERK (note), and any SCHR_ documents not identified as the cover. Do NOT create separate bundles for SS_ or party SCHR_ documents within the same manifest group.
   - Filename prefixes identify role within the bundle, not bundle membership: `SCHR_` = Schreiben (cover or forwarded party letter), `SS_` = Schriftsatz (motion/filing), `BESCHLUSS` = ruling, `VERMERK` = court note, `ANLAGE` = exhibit.
   - A manifest group with a single document has no bundle structure — treat as standalone.

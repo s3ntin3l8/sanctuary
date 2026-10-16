@@ -6,8 +6,20 @@ Companion document to `docs/vision.md`, `docs/triage.md`, and `docs/dashboard.md
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
+**Last Updated:** October 16, 2026
 **Status:** 🟢 IMPLEMENTED (v1 complete)
+
+### Email source provenance update
+
+Gmail and `.eml` ingest preserve nested transport sources, typed attachment
+outcomes, source-scoped forwarding context, and separate sent/arrival/transmission
+dates. Gmail mailbox arrival drives received fields. Manifest source/transmission
+membership is enforced in code; ambiguous files stay ungrouped for review, and
+proceeding-based sweeps cannot cross those boundaries. See
+[`docs/gmail-setup.md`](../gmail-setup.md#email-sources-dates-and-attachment-review)
+for the current review and exact-set reset/replay workflow. Earlier illustrative
+field lists below are superseded by `IngestBatch.email_sources` and document
+source/part references.
 
 ### Feature Matrix
 
@@ -417,7 +429,7 @@ One external source = one `IngestBatch` row:
 Initial fields:
 - `sender_email` — from the email `From:` header; null for pure scans
 - `subject` — email subject; for scans, derived from the filename
-- `received_at` — email `Date:` header; for scans, file mtime
+- `received_at` — Gmail mailbox arrival; labelled email-date/ingest-time fallback for `.eml`; for scans, file mtime
 - `status` — starts `pending`, flips to `processing`, then `completed` or `failed`
 - `case_id` / `proceeding_id` — null initially; populated after AI detection (Phase 4) or by user confirmation in triage
 
@@ -700,7 +712,7 @@ If we add cloud sync or collaboration later, the privacy doc (see §0 cross-refs
 | Field | Populated by | Phase |
 |---|---|---|
 | `IngestBatch.source_type` | path (gmail / scan / manual) | 3 |
-| `IngestBatch.received_at` | email Date header or file mtime | 3 |
+| `IngestBatch.received_at` | Gmail mailbox arrival (labelled fallback for `.eml`) or file mtime | 3 |
 | `IngestBatch.sender_email` | email From header | 3 |
 | `IngestBatch.subject` | email Subject or scan filename | 3 |
 | `IngestBatch.raw_source_path` | archived original | 3 |

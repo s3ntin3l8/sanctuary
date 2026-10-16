@@ -38,7 +38,10 @@ _Idx = GmailMessageIndex
 def _is_ingested():
     return exists().where(
         IngestBatch.owner_id == _Idx.owner_id,
-        IngestBatch.message_id == _Idx.message_id,
+        or_(
+            IngestBatch.gmail_id == _Idx.gmail_id,
+            IngestBatch.message_id == _Idx.message_id,
+        ),
     )
 
 
@@ -62,7 +65,14 @@ def upsert_metadata(db: Session, owner_id: int, metas: list[dict]) -> int:
     result = db.execute(
         pg_insert(_Idx)
         .values(rows)
-        .on_conflict_do_nothing(constraint="uq_gmail_index_owner_gmail")
+        .on_conflict_do_update(
+            constraint="uq_gmail_index_owner_gmail",
+            set_={
+                "received_at": func.coalesce(
+                    _Idx.received_at, pg_insert(_Idx).excluded.received_at
+                )
+            },
+        )
     )
     return result.rowcount or 0  # type: ignore[attr-defined]
 
@@ -149,7 +159,8 @@ def _matched_cases(
         if editable is not None:
             query = query.filter(Proceeding.case_id.in_(editable))
         for az_court, case_id, title in query:
-            matched.setdefault((az_court, "az_court"), (case_id, title))
+            if az_court is not None:
+                matched.setdefault((az_court, "az_court"), (case_id, title))
     return matched
 
 
@@ -164,7 +175,7 @@ def _newest_subjects(
         .order_by(_Idx.group_key, _Idx.group_kind, _Idx.sent_at.desc(), _Idx.id.desc())
         .all()
     )
-    return {(key, kind): subject for key, kind, subject in rows}
+    return {(key, kind): subject or "" for key, kind, subject in rows}
 
 
 def list_groups(db: Session, user: User) -> list[dict[str, Any]]:
@@ -182,17 +193,19 @@ def list_groups(db: Session, user: User) -> list[dict[str, Any]]:
         .group_by(_Idx.group_key, _Idx.group_kind)
         .all()
     )
-    matched = _matched_cases(db, user, [(k, kind) for k, kind, *_ in rows if k])
+    matched = _matched_cases(
+        db, user, [(k, kind) for k, kind, *_ in rows if k and kind]
+    )
     subjects = _newest_subjects(db, user.id)
     groups = [
         {
             "key": key or UNREFERENCED,
             "kind": kind,
-            "matched_case_id": matched[(key, kind)][0]
-            if (key, kind) in matched
+            "matched_case_id": matched[(key or "", kind or "")][0]
+            if (key or "", kind or "") in matched
             else None,
-            "matched_case_title": matched[(key, kind)][1]
-            if (key, kind) in matched
+            "matched_case_title": matched[(key or "", kind or "")][1]
+            if (key or "", kind or "") in matched
             else None,
             "topic": extract_subject_topic(subjects[(key, kind)])
             if key and (key, kind) in subjects

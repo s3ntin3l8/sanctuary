@@ -32,7 +32,7 @@ re-resolves every batch that names it as an ancestor, by header or by thread.
 import logging
 from typing import NamedTuple
 
-from sqlalchemy import and_, asc, desc, literal, select, tuple_
+from sqlalchemy import and_, literal, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.database import (
@@ -101,6 +101,25 @@ def _thread_mates(
     ``earlier`` selects those received before this batch, nearest first;
     otherwise those received after it, oldest first.
     """
+    if batch.gmail_thread_id:
+        direct = db.query(IngestBatch).filter(
+            IngestBatch.owner_id == batch.owner_id,
+            IngestBatch.id != batch.id,
+            IngestBatch.gmail_thread_id == batch.gmail_thread_id,
+        )
+        arrival = tuple_(IngestBatch.received_at, IngestBatch.id)
+        here = tuple_(literal(batch.received_at), literal(batch.id))
+        if earlier:
+            return (
+                direct.filter(arrival < here)
+                .order_by(IngestBatch.received_at.desc(), IngestBatch.id.desc())
+                .all()
+            )
+        return (
+            direct.filter(arrival > here)
+            .order_by(IngestBatch.received_at.asc(), IngestBatch.id.asc())
+            .all()
+        )
     if not batch.message_id:
         return []
     idx = GmailMessageIndex
@@ -111,10 +130,10 @@ def _thread_mates(
     here = tuple_(literal(batch.received_at), literal(batch.id))
     if earlier:
         position = arrival < here
-        ordering = (desc(IngestBatch.received_at), desc(IngestBatch.id))
+        ordering = (IngestBatch.received_at.desc(), IngestBatch.id.desc())
     else:
         position = arrival > here
-        ordering = (asc(IngestBatch.received_at), asc(IngestBatch.id))
+        ordering = (IngestBatch.received_at.asc(), IngestBatch.id.asc())
     mates = (
         db.query(IngestBatch)
         .join(

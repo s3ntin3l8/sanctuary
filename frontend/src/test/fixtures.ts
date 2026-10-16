@@ -212,6 +212,7 @@ export const adminUsers: Schemas['AdminUsersView'] = {
 }
 
 export const triageBundle: Schemas['TriageBundle'] = {
+  email_source_count: 0,
   key: 'batch-42',
   batch_id: 42,
   is_synthetic: false,

@@ -27,6 +27,7 @@ import { QueryState } from '../../ui/QueryState'
 import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
 import { ReviewChecklist } from '../triage/ReviewChecklist'
+import { EmailSources } from '../triage/EmailSources'
 import { type Routing, RoutingCards } from '../triage/RoutingPickers'
 
 type Review = Schemas['DocumentReview']
@@ -93,6 +94,11 @@ export function ReviewSections({
       <Pipeline review={review} />
       <CaseAndProceeding review={review} routing={routing} />
       <Metadata review={review} singleColumn={singleColumn} />
+      {!routing && review.email_provenance && (
+        <div className="border-b border-line2 px-4.5 py-3">
+          <EmailSources batchId={review.email_provenance.batch_id} />
+        </div>
+      )}
       <Summary review={review} />
       <Passages review={review} hooks={passages} />
       <div className="border-b border-line2 px-4.5 py-3">

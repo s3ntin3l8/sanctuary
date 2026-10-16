@@ -369,6 +369,8 @@ def confirm_document_slices(
                 owner_id=doc.owner_id,
                 file_path=to_storage_path(part_path),
                 original_filename=part_path.name,
+                email_source_id=doc.email_source_id,
+                email_part_id=doc.email_part_id,
                 content_hash=hashlib.sha256(part_path.read_bytes()).hexdigest(),
                 case_id=doc.case_id,
                 proceeding_id=doc.proceeding_id,
@@ -412,6 +414,9 @@ def confirm_document_slices(
         # Cascades the source's chunks, stages, claim evidence and edges away
         # and commits the parts with it. Its folder-mates (the other
         # attachments of the email) stay.
+        from app.services.ingestion.email_sources import sync_document_parts
+
+        sync_document_parts(db, source_id, [part.id for part in new_docs])
         removed = DocumentService(db).delete_document(source_id)
     except Exception as exc:
         removed = False

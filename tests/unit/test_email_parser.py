@@ -156,7 +156,8 @@ def test_parse_rfc822_attachment_with_no_filename():
     msg.attach(part)
     result = parse_rfc822(msg.as_bytes())
     assert len(result["attachments"]) == 1
-    assert result["attachments"][0]["filename"] is None
+    assert result["attachments"][0]["original_filename"] is None
+    assert result["attachments"][0]["filename"].startswith("attachment_")
 
 
 # --- Content-ID vs. attachment disposition ---
@@ -174,7 +175,9 @@ def test_parse_rfc822_content_id_without_attachment_disposition_is_inline():
     part["Content-ID"] = "<logo123>"
     msg.attach(part)
     result = parse_rfc822(msg.as_bytes())
-    assert len(result["attachments"]) == 0
+    assert (
+        len(result["attachments"]) == 1
+    )  # An unreferenced non-image CID is not a signature
     assert "See my signature" in result["body"]
 
 
@@ -328,7 +331,7 @@ def test_parse_attachment_manifest_extracts_entries():
     entries = _parse_attachment_manifest(body)
     assert len(entries) == 1
     assert entries[0]["filename"] == "SCHR_ LG IN V_ 26_05_26.PDF"
-    assert entries[0]["timestamp"] == "2026-05-26T08:24"
+    assert entries[0]["timestamp"] == "2026-05-26T06:24:00+00:00"
     assert entries[0]["source_label"] == "Landgericht Ingolstadt"
 
 
@@ -351,10 +354,9 @@ def test_extract_email_note_strips_anlagen_and_boilerplate():
     assert _extract_email_note(body) == "anbei der Schriftsatz zur Kenntnis."
 
 
-def test_extract_email_note_truncates_long_text():
+def test_extract_email_note_preserves_long_text():
     note = _extract_email_note("wort " * 400)  # ~2000 chars, no boilerplate
-    assert len(note) <= 802
-    assert note.endswith("…")
+    assert note == ("wort " * 400).strip()
 
 
 # --- threading headers ---

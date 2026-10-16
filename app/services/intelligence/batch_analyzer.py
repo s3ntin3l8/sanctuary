@@ -116,7 +116,7 @@ def _build_manifest_block(manifest: list[dict]) -> str:
             doc_ref = f" → doc_{doc_id}" if doc_id is not None else ""
             lines.append(f"  {fname}{doc_ref}")
         label = chr(ord(label) + 1)
-    return "\n".join(lines) + "\n"
+    return fence("\n".join(lines), "batch_doc") + "\n"
 
 
 def _call_batch_analyzer_sync(
@@ -154,7 +154,11 @@ def _call_batch_analyzer_sync(
         safe_title = sanitize_oneline(d.title, max_len=120)
         # Include original_filename in header so AI sees SCHR_/SS_/ANLAGE prefixes
         orig = getattr(d, "original_filename", None)
-        filename_tag = f"[{orig}] " if orig and orig != d.title else ""
+        filename_tag = (
+            f"[{sanitize_oneline(orig, max_len=240)}] "
+            if orig and orig != d.title
+            else ""
+        )
         sections.append(
             f"=== (doc_id={d.id}) {filename_tag}{safe_title} ===\n{fence(preview, 'batch_doc')}"
         )
@@ -173,7 +177,11 @@ def _call_batch_analyzer_sync(
         else ""
     )
     note_block = (
-        f'### Lawyer\'s Forwarding Note\n"{email_note}"\n\n' if email_note else ""
+        "### Forwarding context (grouping and attribution only)\n"
+        + fence(email_note, "batch_doc")
+        + "\n\n"
+        if email_note
+        else ""
     )
     party_block = (party_context + "\n\n") if party_context else ""
     prompt = (
@@ -318,6 +326,7 @@ def _apply_batch_results(
     result: dict,
     db: Session,
     skip_role_assignment: bool = False,
+    source_membership: dict[int, str] | None = None,
 ) -> None:
     """Write batch analyzer results to the DB.
 
@@ -331,6 +340,55 @@ def _apply_batch_results(
         family_context.propagate_batch(db, batch_id)
         db.commit()
         return
+
+    if source_membership is not None:
+        # Source-aware emails have hard boundaries. Only this stage's own
+        # unconfirmed edges may be rebuilt; user-created/confirmed ones stand.
+        ids = [d.id for d in docs]
+        protected = (
+            db.query(DocumentRelationship)
+            .filter(
+                DocumentRelationship.from_document_id.in_(ids),
+                DocumentRelationship.relationship_type == RelationshipType.ENCLOSES,
+                DocumentRelationship.confidence.in_(
+                    [
+                        RelationshipConfidence.USER_CREATED,
+                        RelationshipConfidence.USER_CONFIRMED,
+                    ]
+                ),
+            )
+            .first()
+        )
+        if protected or any(
+            d.confirmed_at or (d.meta or {}).get("slice_range") for d in docs
+        ):
+            family_context.propagate_batch(db, batch_id)
+            db.commit()
+            return
+        db.query(DocumentRelationship).filter(
+            DocumentRelationship.from_document_id.in_(ids),
+            DocumentRelationship.relationship_type == RelationshipType.ENCLOSES,
+            DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
+            DocumentRelationship.notes == "batch analyzer: cover→enclosure",
+        ).delete(synchronize_session=False)
+        for doc in docs:
+            doc.parent_id = None
+            doc.role = DocumentRole.STANDALONE
+        allowed = []
+        for bundle in result.get("bundles") or []:
+            cover = bundle.get("cover_letter_doc_id")
+            group = source_membership.get(cover)
+            if group is None:
+                continue
+            enclosed = [
+                e
+                for e in bundle.get("enclosed") or []
+                if source_membership.get(e.get("enclosed_doc_id")) == group
+                and e.get("enclosed_doc_id") != cover
+            ]
+            if enclosed:
+                allowed.append({**bundle, "enclosed": enclosed})
+        result = {"bundles": allowed}
 
     bundles = result.get("bundles")
 
@@ -542,7 +600,7 @@ def _apply_batch_results(
     # an earlier run), wire the unclaimed siblings as enclosures of that
     # relay. This is the common "court letter + attachments" shape that
     # doesn't read as a Begleitschreiben to the model.
-    if not claimed_ids:
+    if source_membership is None and not claimed_ids:
         relays = [d for d in docs if d.court_relay]
         if len(relays) == 1 and len(docs) > 1:
             relay = relays[0]
@@ -574,7 +632,7 @@ def _apply_batch_results(
     # does and wire siblings sharing its proceeding_id as enclosures. This is
     # the common direct-court-letter-with-attachments shape (sender=court,
     # originator=court — not a relay).
-    if not claimed_ids and len(docs) > 1:
+    if source_membership is None and not claimed_ids and len(docs) > 1:
         candidate = _pick_cover_letter_candidate(docs)
         if candidate is not None and candidate.proceeding_id:
             siblings_in_proceeding = [
@@ -632,7 +690,7 @@ def _apply_batch_results(
     # create a cycle once the second cover's own sweep runs).
     cover_letter_ids = {c.id for c in covers}
     for cover in covers:
-        if not cover.proceeding_id:
+        if source_membership is not None or not cover.proceeding_id:
             continue
         swept = 0
         for d in docs:
@@ -709,6 +767,132 @@ def _apply_batch_results(
     db.commit()
 
 
+def _analyze_email_sources(batch, docs, db, model):
+    from collections import defaultdict
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.config import SessionLocal
+    from app.services.ingestion.email_sources import source_groups
+    from app.services.intelligence.email_context import forwarding_context
+
+    if "legacy_source_identity" in (batch.source_review_reasons or []):
+        # Legacy imports have no MIME part identities. Preserve their existing
+        # families until deliberate replay provides trustworthy boundaries.
+        return False
+
+    batch_id = batch.id
+    membership, blocked = source_groups(batch, docs)
+    partitions = defaultdict(list)
+    notes = {}
+    manifests = {}
+    from app.services.case_service import get_case_opposing_parties
+    from app.services.intelligence._party_context import format_party_context
+    from app.services.user_settings_service import get_party_identity
+
+    identity = get_party_identity(db)
+    parties = {}
+    for doc in docs:
+        if doc.id in membership and doc.content and len(doc.content.strip()) > 10:
+            key = membership[doc.id]
+            partitions[key].append(doc)
+            notes[key] = forwarding_context(db, doc)
+            source = next(
+                s for s in batch.email_sources if s["id"] == doc.email_source_id
+            )
+            manifests[key] = [
+                e
+                for e in source.get("attachment_manifest", [])
+                if e.get("doc_id") in membership
+                and membership[e["doc_id"]] == key
+                and not e.get("issue")
+            ]
+            parties[key] = format_party_context(
+                own_self=identity.get("own_self", ""),
+                own_parties=identity.get("own_parties", []),
+                opposing_parties=get_case_opposing_parties(doc.case_id, db)
+                if doc.case_id
+                else [],
+            )
+    # Long-note reductions can commit and expire sibling columns.
+    for doc in docs:
+        db.refresh(doc)
+    # JSON scalar snapshots and loaded document columns survive session close.
+    db.close()
+    combined = []
+    unresolved = bool(blocked)
+    called = False
+    for key, partition in partitions.items():
+        if len(partition) < 2:
+            continue
+        result = {}
+        for attempt in range(2):
+            try:
+                result = _call_batch_analyzer_sync(
+                    partition,
+                    batch_id,
+                    model=model,
+                    attachment_manifest=manifests[key],
+                    email_note=notes[key],
+                    party_context=parties[key],
+                    suppress_thinking=bool(attempt),
+                )
+                called = True
+                break
+            except ValueError:
+                if attempt:
+                    unresolved = True
+        bundles = result.get("bundles") or []
+        # The write path validates again against fresh rows and memberships.
+        combined.extend(bundles)
+        if not bundles:
+            unresolved = True
+    write_db = SessionLocal()
+    try:
+        fresh = write_db.get(IngestBatch, batch_id)
+        if not fresh:
+            return False
+        fresh_docs = (
+            write_db.query(Document)
+            .filter(
+                Document.ingest_batch_id == batch_id,
+                Document.status != DocumentStatus.DISMISSED,
+            )
+            .all()
+        )
+        fresh_membership, fresh_blocked = source_groups(fresh, fresh_docs)
+        _apply_batch_results(
+            batch_id,
+            fresh_docs,
+            {"bundles": combined},
+            write_db,
+            skip_role_assignment=_has_manual_groups(batch_id, write_db),
+            source_membership=fresh_membership,
+        )
+        from collections import Counter
+
+        counts = Counter(fresh_membership.values())
+        accepted_children = {d.id for d in fresh_docs if d.parent_id is not None}
+        accepted_covers = {d.parent_id for d in fresh_docs if d.parent_id is not None}
+        if any(
+            counts[group] > 1 and doc_id not in accepted_children | accepted_covers
+            for doc_id, group in fresh_membership.items()
+        ):
+            unresolved = True
+        reasons = set(fresh.source_review_reasons or [])
+        reasons.discard("unresolved_source_group")
+        if unresolved or fresh_blocked:
+            reasons.add("unresolved_source_group")
+        if reasons - set(fresh.source_review_reasons or []):
+            fresh.source_review_acknowledged = False
+        fresh.source_review_reasons = sorted(reasons)
+        flag_modified(fresh, "source_review_reasons")
+        write_db.commit()
+        return called
+    finally:
+        write_db.close()
+
+
 def analyze(batch_id: int) -> bool:
     """Run the batch-level AI pass for the given IngestBatch.
 
@@ -746,6 +930,9 @@ def analyze(batch_id: int) -> bool:
             logger.info(f"Batch {batch_id} has no documents to analyze")
             return False
 
+        if batch.email_sources:
+            return _analyze_email_sources(batch, docs, db, cfg.summary_model)
+
         healthy_docs = [d for d in docs if d.content and len(d.content.strip()) > 10]
 
         if not healthy_docs or len(healthy_docs) == 1:
@@ -776,8 +963,8 @@ def analyze(batch_id: int) -> bool:
         )
         # Load manifest / note now while the session is open; they are plain
         # values and remain accessible after db.close().
-        attachment_manifest: list[dict] | None = batch.attachment_manifest or None
-        email_note: str | None = batch.email_note or None
+        attachment_manifest: list[dict] | None = None
+        email_note: str | None = None
         # docs objects detach from the session on close but column-level data
         # (content, title, id, …) stays accessible in memory for the AI call.
     finally:

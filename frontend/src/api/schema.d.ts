@@ -2988,6 +2988,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/triage/bundles/{batch_id}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Email Sources */
+        get: operations["v1_email_sources_api_v1_triage_bundles__batch_id__sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/sources/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Acknowledge Sources */
+        post: operations["v1_acknowledge_sources_api_v1_triage_bundles__batch_id__sources_acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/sources/{source_id}/parts/{part_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Download Email Part */
+        get: operations["v1_download_email_part_api_v1_triage_bundles__batch_id__sources__source_id__parts__part_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/triage/confirm": {
         parameters: {
             query?: never;
@@ -4468,6 +4519,11 @@ export interface components {
             /** Court Relay */
             court_relay: boolean;
             document_type: components["schemas"]["DocumentType"] | null;
+            /** Email Part Id */
+            email_part_id?: string | null;
+            email_provenance?: components["schemas"]["EmailProvenance"] | null;
+            /** Email Source Id */
+            email_source_id?: string | null;
             /** Evidence Proposals */
             evidence_proposals: components["schemas"]["EvidenceProposalView"][];
             /** Grounds */
@@ -4554,6 +4610,11 @@ export interface components {
             /** Court Relay */
             court_relay: boolean;
             document_type: components["schemas"]["DocumentType"] | null;
+            /** Email Part Id */
+            email_part_id?: string | null;
+            email_provenance?: components["schemas"]["EmailProvenance"] | null;
+            /** Email Source Id */
+            email_source_id?: string | null;
             /** Evidence Proposals */
             evidence_proposals: components["schemas"]["EvidenceProposalView"][];
             /** Grounds */
@@ -4636,6 +4697,136 @@ export interface components {
             current_password: string;
             /** New Email */
             new_email: string;
+        };
+        /** EmailManifestEntry */
+        EmailManifestEntry: {
+            /** Doc Id */
+            doc_id?: number | null;
+            /** Filename */
+            filename: string;
+            /** Group Id */
+            group_id?: string | null;
+            /**
+             * Historical
+             * @default false
+             */
+            historical: boolean;
+            /** Issue */
+            issue?: string | null;
+            /** Part Id */
+            part_id?: string | null;
+            /** Raw Timestamp */
+            raw_timestamp?: string | null;
+            /** Source Label */
+            source_label: string;
+            /** Timestamp */
+            timestamp?: string | null;
+        };
+        /** EmailPart */
+        EmailPart: {
+            /** Disposition */
+            disposition?: string | null;
+            /** Document Ids */
+            document_ids?: number[];
+            /** Filename */
+            filename?: string | null;
+            /** Id */
+            id: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Original Filename */
+            original_filename?: string | null;
+            /**
+             * Outcome
+             * @default pending
+             * @enum {string}
+             */
+            outcome: "pending" | "ingested" | "duplicate" | "ignored_inline" | "empty" | "unsupported" | "failed" | "nested_source" | "body_context" | "removed";
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Size
+             * @default 0
+             */
+            size: number;
+        };
+        /** EmailProvenance */
+        EmailProvenance: {
+            /**
+             * Acknowledged
+             * @default false
+             */
+            acknowledged: boolean;
+            /** Batch Id */
+            batch_id: number;
+            /** Gmail Id */
+            gmail_id?: string | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Received Source
+             * @enum {string}
+             */
+            received_source: "gmail" | "email_date" | "ingest_time" | "legacy_unknown";
+            /** Review Reasons */
+            review_reasons?: string[];
+            /** Sources */
+            sources?: components["schemas"]["EmailSource"][];
+        };
+        /** EmailSource */
+        EmailSource: {
+            /** Attachment Manifest */
+            attachment_manifest?: components["schemas"]["EmailManifestEntry"][];
+            /** Bcc */
+            bcc?: string[];
+            /** Cc */
+            cc?: string[];
+            /**
+             * Date
+             * @default
+             */
+            date: string;
+            /**
+             * Email Note
+             * @default
+             */
+            email_note: string;
+            /** Id */
+            id: string;
+            /** In Reply To */
+            in_reply_to?: string | null;
+            /**
+             * Message Id
+             * @default
+             */
+            message_id: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Parts */
+            parts?: components["schemas"]["EmailPart"][];
+            /** Reply To */
+            reply_to?: string[];
+            /** Routing Hints */
+            routing_hints?: string[] | null;
+            /**
+             * Sender
+             * @default
+             */
+            sender: string;
+            /** Sent At */
+            sent_at?: string | null;
+            /**
+             * Subject
+             * @default
+             */
+            subject: string;
+            /** Thread Refs */
+            thread_refs?: string[];
+            /** To */
+            to?: string[];
         };
         /** EmbedIndex */
         EmbedIndex: {
@@ -4883,6 +5074,8 @@ export interface components {
             ingested: boolean;
             /** Outgoing */
             outgoing: boolean;
+            /** Received At */
+            received_at?: string | null;
             /** Sender */
             sender: string | null;
             /**
@@ -4890,6 +5083,8 @@ export interface components {
              * Format: date-time
              */
             sent_at: string;
+            /** Source Review Reasons */
+            source_review_reasons?: string[];
             /** Subject */
             subject: string | null;
             /** Thread Id */
@@ -6396,6 +6591,11 @@ export interface components {
             doc_count: number;
             /** Documents */
             documents: components["schemas"]["TriageDocument"][];
+            /**
+             * Email Source Count
+             * @default 0
+             */
+            email_source_count: number;
             /** Has Manual Groups */
             has_manual_groups: boolean;
             /** Has Unconfirmed Metadata */
@@ -6422,8 +6622,12 @@ export interface components {
              * Format: date-time
              */
             received_at: string;
+            /** Received Source */
+            received_source?: string | null;
             /** Sender Email */
             sender_email: string | null;
+            /** Source Review Reasons */
+            source_review_reasons?: string[];
             source_type: components["schemas"]["IngestBatchSourceType"];
             /**
              * Status
@@ -12235,6 +12439,99 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TriageBundle"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_email_sources_api_v1_triage_bundles__batch_id__sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailProvenance"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_acknowledge_sources_api_v1_triage_bundles__batch_id__sources_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailProvenance"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_download_email_part_api_v1_triage_bundles__batch_id__sources__source_id__parts__part_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+                part_id: string;
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

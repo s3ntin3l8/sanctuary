@@ -84,6 +84,9 @@ class TriageBundle(BaseModel):
     # (whose subject is only a file name) the lead document's title.
     title: str
     sender_email: str | None
+    received_source: str | None = None
+    source_review_reasons: list[str] = Field(default_factory=list)
+    email_source_count: int = 0
     received_at: datetime
     status: BundleStatus
     pipeline_filter: PipelineFilter

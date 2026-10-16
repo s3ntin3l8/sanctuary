@@ -1344,6 +1344,24 @@ class CaseService:
         if not case:
             return None
 
+        from app.core.paths import resolve_storage_path
+        from app.services.ingestion.email_sources import sync_document_parts
+
+        purged_batches = (
+            self.db.query(IngestBatch)
+            .filter(
+                IngestBatch.case_id == case_id,
+                ~IngestBatch.documents.any(Document.case_id != case_id),
+            )
+            .all()
+        )
+        purged_batch_ids = [batch.id for batch in purged_batches]
+        raw_sources = [
+            resolve_storage_path(batch.raw_source_path)
+            for batch in purged_batches
+            if batch.raw_source_path
+        ]
+
         # Snapshot document IDs for FK-dependent deletes
         docs = self.db.query(Document).filter(Document.case_id == case_id).all()
         doc_ids = [d.id for d in docs]
@@ -1410,6 +1428,11 @@ class CaseService:
                 Conversation.scope_id.in_(doc_id_strs),
             ).delete(synchronize_session=False)
 
+        for doc_id in doc_ids:
+            sync_document_parts(self.db, doc_id, [])
+        # Flush JSON inventory changes before bulk-deleting affected batches.
+        self.db.flush()
+
         # 7. Documents (hard delete)
         if doc_ids:
             self.db.query(Document).filter(Document.case_id == case_id).delete(
@@ -1417,7 +1440,7 @@ class CaseService:
             )
 
         # 8. IngestBatch rows that belonged to this case
-        self.db.query(IngestBatch).filter(IngestBatch.case_id == case_id).delete(
+        self.db.query(IngestBatch).filter(IngestBatch.id.in_(purged_batch_ids)).delete(
             synchronize_session=False
         )
 
@@ -1431,6 +1454,10 @@ class CaseService:
         case_dir = (DATA_DIR / case_id).resolve()
         if not case_dir.is_relative_to(DATA_DIR.resolve()):
             raise ValueError(f"purge: unsafe path {case_id!r}")
+        for raw_path in raw_sources:
+            if not raw_path.resolve().is_relative_to(DATA_DIR.resolve()):
+                raise ValueError("purge: unsafe raw source path")
+            raw_path.unlink(missing_ok=True)
         dir_existed = case_dir.exists()
         if dir_existed:
             shutil.rmtree(case_dir)

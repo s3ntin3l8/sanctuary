@@ -171,16 +171,47 @@ def connect_gmail(db: Any, user_id: int, settings: dict) -> Any:
     return connection.service
 
 
+class GmailRaw(bytes):
+    """RFC822 bytes carrying the transport metadata returned by the same GET."""
+
+    metadata: dict
+
+
 def fetch_raw_message(service: Any, message_id: str) -> bytes:
     import base64
+    from email import message_from_bytes
+    from email.parser import BytesHeaderParser
+    from email.policy import default
 
-    msg = (
+    message = (
         service.users()
         .messages()
         .get(userId="me", id=message_id, format="raw")
         .execute()
     )
-    return base64.urlsafe_b64decode(msg["raw"])
+    raw = GmailRaw(base64.urlsafe_b64decode(message["raw"]))
+    headers = BytesHeaderParser(policy=default).parsebytes(raw)
+    metadata = parse_metadata(
+        {
+            **message,
+            "id": message.get("id", message_id),
+            "payload": {
+                "mimeType": headers.get_content_type(),
+                "headers": [{"name": k, "value": str(v)} for k, v in headers.items()],
+            },
+        }
+    )
+    mime = message_from_bytes(raw, policy=default)
+    metadata["has_attachments"] = any(
+        part.get_content_disposition() == "attachment"
+        or bool(part.get_filename())
+        and not (part.get_content_maintype() == "image" and part.get("Content-ID"))
+        for part in mime.walk()
+    )
+    raw.metadata = {
+        k: v.isoformat() if isinstance(v, datetime) else v for k, v in metadata.items()
+    }
+    return raw
 
 
 # Characters that would end the quoted label term (ASCII and typographic quotes)
@@ -223,7 +254,7 @@ def build_query(
     if allowlist:
         incoming = " OR ".join(f"from:{e}" for e in allowlist)
         if include_sent:
-            recipients = " OR ".join(f"to:{e} OR cc:{e}" for e in allowlist)
+            recipients = " OR ".join(f"to:{e} OR cc:{e} OR bcc:{e}" for e in allowlist)
             parts.append(f"(({incoming}) OR (from:me ({recipients})))")
         else:
             parts.append(f"({incoming})")

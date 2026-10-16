@@ -118,7 +118,13 @@ def clear_all_data(db: Session) -> tuple[int, int]:
     # gmail_raw is the local copy of fetched Gmail mail: kept so a wipe can be
     # followed by an offline re-import; the Import page's "Clear cache" is the
     # deliberate way to delete it.
-    _SYSTEM_DIRS = {"_TRIAGE", "scans", "ai_debug", gmail_cache.CACHE_DIRNAME}
+    _SYSTEM_DIRS = {
+        "_TRIAGE",
+        "scans",
+        "ai_debug",
+        "gmail_replay",
+        gmail_cache.CACHE_DIRNAME,
+    }
     disk_items = 0
 
     def _clear_dir_contents(path: Path) -> int:

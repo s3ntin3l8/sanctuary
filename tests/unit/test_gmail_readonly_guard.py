@@ -222,10 +222,10 @@ def test_build_query():
 def test_build_query_include_sent_adds_the_users_replies():
     assert build_query(["a@x.de", "b.de"], include_sent=True) == (
         "((from:a@x.de OR from:b.de) OR "
-        "(from:me (to:a@x.de OR cc:a@x.de OR to:b.de OR cc:b.de)))"
+        "(from:me (to:a@x.de OR cc:a@x.de OR bcc:a@x.de OR to:b.de OR cc:b.de OR bcc:b.de)))"
     )
     assert build_query(["a@x.de"], "S", after=5, include_sent=True) == (
-        '((from:a@x.de) OR (from:me (to:a@x.de OR cc:a@x.de))) label:"S" after:5'
+        '((from:a@x.de) OR (from:me (to:a@x.de OR cc:a@x.de OR bcc:a@x.de))) label:"S" after:5'
     )
 
 

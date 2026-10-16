@@ -73,6 +73,9 @@ class BundleView:
     sender_email: str | None
     received_at: datetime
     # Case chip state (§5a display rules)
+    received_source: str | None = None
+    source_review_reasons: list[str] = field(default_factory=list)
+    email_source_count: int = 0
     confirmed_case_id: str | None = None
     suggested_case_id: str | None = None
     suggested_case_title: str | None = None
@@ -101,6 +104,7 @@ class BundleView:
         """
         return actionable_review_reasons(
             [r for d in self.documents for r in (d.review_reasons or [])]
+            + self.source_review_reasons
         )
 
     @property
@@ -238,7 +242,7 @@ def _bundle_pipeline_label(bundle: BundleView) -> str:
         return "failed"
     if summary.get("running", 0) + summary.get("pending", 0) > 0:
         return "processing"
-    if bundle.has_unconfirmed_metadata:
+    if bundle.has_unconfirmed_metadata or bundle.source_review_reasons:
         return "review_metadata"
     return "ready"
 
@@ -315,6 +319,11 @@ def _build_bundles(
                     subject=batch.subject,
                     sender_email=batch.sender_email,
                     received_at=batch.received_at,
+                    received_source=batch.received_source,
+                    source_review_reasons=[]
+                    if batch.source_review_acknowledged
+                    else list(batch.source_review_reasons or []),
+                    email_source_count=len(batch.email_sources or []),
                     confirmed_case_id=confirmed,
                     proceeding=batch.proceeding,
                     sub_groups=list(batch.sub_groups or [])
@@ -345,6 +354,28 @@ def _build_bundles(
                 proceeding=doc.proceeding,
                 documents=[doc],
             )
+
+    source_only = db.query(IngestBatch).filter(
+        IngestBatch.status == IngestBatchStatus.OPEN,
+        IngestBatch.email_sources.isnot(None),
+        IngestBatch.source_review_acknowledged.is_(False),
+        ~IngestBatch.documents.any(Document.status != DocumentStatus.DISMISSED),
+    )
+    if owner_id is not None:
+        source_only = source_only.filter(IngestBatch.owner_id == owner_id)
+    for batch in source_only.all():
+        key = f"batch-{batch.id}"
+        bundles[key] = BundleView(
+            key=key,
+            batch_id=batch.id,
+            source_type=batch.source_type,
+            subject=batch.subject,
+            sender_email=batch.sender_email,
+            received_at=batch.received_at,
+            received_source=batch.received_source,
+            source_review_reasons=list(batch.source_review_reasons or []),
+            email_source_count=len(batch.email_sources or []),
+        )
 
     return bundles
 
@@ -666,6 +697,11 @@ def get_bundle_by_batch_id(db: Session, batch_id: int) -> BundleView | None:
         subject=batch.subject,
         sender_email=batch.sender_email,
         received_at=batch.received_at,
+        received_source=batch.received_source,
+        source_review_reasons=[]
+        if batch.source_review_acknowledged
+        else list(batch.source_review_reasons or []),
+        email_source_count=len(batch.email_sources or []),
         confirmed_case_id=confirmed,
         proceeding=batch.proceeding,
         documents=docs,

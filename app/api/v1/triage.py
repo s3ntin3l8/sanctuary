@@ -19,12 +19,14 @@ from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, Document, IngestBatch, Proceeding, User
 from app.models.enums import (
+    DocumentStatus,
     IngestBatchSourceType,
     IngestBatchStatus,
     PipelineState,
     StageStatus,
 )
 from app.repositories.case import CaseRepository
+from app.schemas.email_source import EmailProvenance
 from app.schemas.triage import (
     BatchAssign,
     BatchKeys,
@@ -174,6 +176,9 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
         subject=bundle.subject,
         title=_bundle_title(bundle),
         sender_email=bundle.sender_email,
+        received_source=bundle.received_source,
+        source_review_reasons=bundle.source_review_reasons,
+        email_source_count=bundle.email_source_count,
         received_at=bundle.received_at,
         status=bundle.mock_status,  # type: ignore[arg-type]
         pipeline_filter=_bundle_pipeline_label(bundle),  # type: ignore[arg-type]
@@ -836,3 +841,68 @@ def reset_groups(
 
     _groups_call(db, reset_sub_groups, db, batch.id)
     return _after_groups(db, user, batch)
+
+
+@router.get("/bundles/{batch_id}/sources", response_model=EmailProvenance)
+def email_sources(batch: IngestBatch = Depends(owned_batch)):
+    from app.services.ingestion.email_sources import provenance
+
+    value = provenance(batch)
+    if value is None:
+        raise ApiError(404, "not_found", "This bundle has no email sources.")
+    return value
+
+
+@router.post("/bundles/{batch_id}/sources/acknowledge", response_model=EmailProvenance)
+def acknowledge_sources(
+    batch: IngestBatch = Depends(owned_batch), db: Session = Depends(get_db)
+):
+    from app.repositories.ingest_batch import NO_NEW_DOCUMENTS
+    from app.services.ingestion.email_sources import provenance
+
+    if not batch.email_sources:
+        raise ApiError(404, "not_found", "This bundle has no email sources.")
+    batch.source_review_acknowledged = True
+    if not any(d.status != DocumentStatus.DISMISSED for d in batch.documents):
+        batch.status = IngestBatchStatus.CONFIRMED
+        batch.meta = {**(batch.meta or {}), "reason": NO_NEW_DOCUMENTS}
+    db.commit()
+    return provenance(batch)
+
+
+@router.get(
+    "/bundles/{batch_id}/sources/{source_id}/parts/{part_id}", response_class=Response
+)
+def download_email_part(
+    source_id: str, part_id: str, batch: IngestBatch = Depends(owned_batch)
+):
+    from pathlib import Path
+    from urllib.parse import quote
+
+    from app.services.ingestion.email_parser import parse_rfc822
+    from app.services.ingestion.email_sources import raw_source
+
+    source = next((s for s in batch.email_sources or [] if s["id"] == source_id), None)
+    if source is None or not any(p["id"] == part_id for p in source.get("parts", [])):
+        raise ApiError(404, "not_found", "Email part not found.")
+    raw = raw_source(batch)
+    if raw is None:
+        raise ApiError(
+            404, "source_unavailable", "The original email is no longer available."
+        )
+    parsed = parse_rfc822(raw)
+    source = next((s for s in parsed["sources"] if s["id"] == source_id), None)
+    part = next(
+        (p for p in (source or {}).get("parts", []) if p["id"] == part_id), None
+    )
+    if part is None or "content" not in part:
+        raise ApiError(404, "not_found", "Email part not found.")
+    name = quote(Path(part["filename"]).name, safe="")
+    return Response(
+        part["content"],
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''" + name,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

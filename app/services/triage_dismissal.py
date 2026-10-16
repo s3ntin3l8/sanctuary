@@ -152,7 +152,7 @@ def delete_bundle(
 
         # Defensive: if the batch had zero docs, the per-doc loop never ran
         # and the batch row is still present. Drop it explicitly.
-        if not doc_id_list:
+        if db.get(IngestBatch, batch_id) is not None:
             db.query(IngestBatch).filter(IngestBatch.id == batch_id).delete(
                 synchronize_session=False
             )

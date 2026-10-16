@@ -4353,6 +4353,38 @@
               }
             ]
           },
+          "email_part_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Part Id"
+          },
+          "email_provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email_source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Source Id"
+          },
           "evidence_proposals": {
             "items": {
               "$ref": "#/components/schemas/EvidenceProposalView"
@@ -4732,6 +4764,38 @@
               }
             ]
           },
+          "email_part_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Part Id"
+          },
+          "email_provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email_source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Source Id"
+          },
           "evidence_proposals": {
             "items": {
               "$ref": "#/components/schemas/EvidenceProposalView"
@@ -5034,6 +5098,381 @@
           "new_email"
         ],
         "title": "EmailChange",
+        "type": "object"
+      },
+      "EmailManifestEntry": {
+        "properties": {
+          "doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Id"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "historical": {
+            "default": false,
+            "title": "Historical",
+            "type": "boolean"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue"
+          },
+          "part_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Id"
+          },
+          "raw_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Timestamp"
+          },
+          "source_label": {
+            "title": "Source Label",
+            "type": "string"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "required": [
+          "filename",
+          "source_label"
+        ],
+        "title": "EmailManifestEntry",
+        "type": "object"
+      },
+      "EmailPart": {
+        "properties": {
+          "disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disposition"
+          },
+          "document_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Document Ids",
+            "type": "array"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "outcome": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "ingested",
+              "duplicate",
+              "ignored_inline",
+              "empty",
+              "unsupported",
+              "failed",
+              "nested_source",
+              "body_context",
+              "removed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "mime_type"
+        ],
+        "title": "EmailPart",
+        "type": "object"
+      },
+      "EmailProvenance": {
+        "properties": {
+          "acknowledged": {
+            "default": false,
+            "title": "Acknowledged",
+            "type": "boolean"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "integer"
+          },
+          "gmail_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gmail Id"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "received_source": {
+            "enum": [
+              "gmail",
+              "email_date",
+              "ingest_time",
+              "legacy_unknown"
+            ],
+            "title": "Received Source",
+            "type": "string"
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Review Reasons",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/EmailSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch_id",
+          "received_at",
+          "received_source"
+        ],
+        "title": "EmailProvenance",
+        "type": "object"
+      },
+      "EmailSource": {
+        "properties": {
+          "attachment_manifest": {
+            "items": {
+              "$ref": "#/components/schemas/EmailManifestEntry"
+            },
+            "title": "Attachment Manifest",
+            "type": "array"
+          },
+          "bcc": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bcc",
+            "type": "array"
+          },
+          "cc": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cc",
+            "type": "array"
+          },
+          "date": {
+            "default": "",
+            "title": "Date",
+            "type": "string"
+          },
+          "email_note": {
+            "default": "",
+            "title": "Email Note",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "in_reply_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Reply To"
+          },
+          "message_id": {
+            "default": "",
+            "title": "Message Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/EmailPart"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "reply_to": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reply To",
+            "type": "array"
+          },
+          "routing_hints": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Hints"
+          },
+          "sender": {
+            "default": "",
+            "title": "Sender",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "subject": {
+            "default": "",
+            "title": "Subject",
+            "type": "string"
+          },
+          "thread_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thread Refs",
+            "type": "array"
+          },
+          "to": {
+            "items": {
+              "type": "string"
+            },
+            "title": "To",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "EmailSource",
         "type": "object"
       },
       "EmbedIndex": {
@@ -5793,6 +6232,18 @@
             "title": "Outgoing",
             "type": "boolean"
           },
+          "received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
           "sender": {
             "anyOf": [
               {
@@ -5808,6 +6259,13 @@
             "format": "date-time",
             "title": "Sent At",
             "type": "string"
+          },
+          "source_review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Review Reasons",
+            "type": "array"
           },
           "subject": {
             "anyOf": [
@@ -10607,6 +11065,11 @@
             "title": "Documents",
             "type": "array"
           },
+          "email_source_count": {
+            "default": 0,
+            "title": "Email Source Count",
+            "type": "integer"
+          },
           "has_manual_groups": {
             "title": "Has Manual Groups",
             "type": "boolean"
@@ -10676,6 +11139,17 @@
             "title": "Received At",
             "type": "string"
           },
+          "received_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Source"
+          },
           "sender_email": {
             "anyOf": [
               {
@@ -10686,6 +11160,13 @@
               }
             ],
             "title": "Sender Email"
+          },
+          "source_review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Review Reasons",
+            "type": "array"
           },
           "source_type": {
             "$ref": "#/components/schemas/IngestBatchSourceType"
@@ -19082,6 +19563,143 @@
           }
         },
         "summary": "V1 Retry Bundle",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
+    "/api/v1/triage/bundles/{batch_id}/sources": {
+      "get": {
+        "operationId": "v1_email_sources_api_v1_triage_bundles__batch_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailProvenance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Email Sources",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
+    "/api/v1/triage/bundles/{batch_id}/sources/acknowledge": {
+      "post": {
+        "operationId": "v1_acknowledge_sources_api_v1_triage_bundles__batch_id__sources_acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailProvenance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Acknowledge Sources",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
+    "/api/v1/triage/bundles/{batch_id}/sources/{source_id}/parts/{part_id}": {
+      "get": {
+        "operationId": "v1_download_email_part_api_v1_triage_bundles__batch_id__sources__source_id__parts__part_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "part_id",
+            "required": true,
+            "schema": {
+              "title": "Part Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Download Email Part",
         "tags": [
           "triage"
         ]

@@ -1,12 +1,19 @@
+import base64
+import binascii
 import email
 import email.utils
 import logging
+import mimetypes
+import quopri
 import re
-from datetime import datetime
+import unicodedata
+from datetime import UTC, datetime
 from email.policy import default
+from zoneinfo import ZoneInfo
 
 from markdownify import markdownify
 
+from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
 
 logger = logging.getLogger(__name__)
@@ -14,7 +21,9 @@ logger = logging.getLogger(__name__)
 # Matches beA/court-email attachment manifest lines:
 # "SCHR_ LG IN V_ 26_05_26.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt""
 _MANIFEST_LINE_RE = re.compile(
-    r"^(.+?\.\w{2,5}):\s*(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2})\s*-\s*\"([^\"]+)\"",
+    r"^\s*(?:>\s*)*(?:[-*]\s+)?(.+?\.\w{2,5}):\s*"
+    r"(\d{1,2}\.\d{1,2}\.\d{4}\s+\d{2}:\d{2}(?::\d{2})?(?:\s*[+-]\d{2}:?\d{2}|\s*Z)?)"
+    r'\s*[-–—]\s*["“„«]([^"”»]+)["”»]',
     re.MULTILINE,
 )
 # Boilerplate salutation/sign-off lines to strip from the note
@@ -97,22 +106,54 @@ def _parse_attachment_manifest(body: str) -> list[dict]:
     Returns a list of dicts with keys: filename, timestamp (ISO), source_label.
     Returns [] when no manifest entries are found.
     """
+    # Join a wrapped timestamp/source, preserving separate filename lines.
+    text = re.sub(r"(?m)(\.\w{2,5}:)\s*\n[>\s]*", r"\1 ", body)
+    text = re.sub(r"(?m)(\d{2}:\d{2}(?::\d{2})?)\s*\n[>\s]*([-–—])", r"\1 \2", text)
     entries = []
-    for m in _MANIFEST_LINE_RE.finditer(body):
-        filename, raw_ts, source_label = (
-            m.group(1).strip(),
-            m.group(2).strip(),
-            m.group(3).strip(),
-        )
-        # Convert "26.05.2026 08:24" → "2026-05-26T08:24"
+    for m in _MANIFEST_LINE_RE.finditer(text):
+        filename, raw_ts, source_label = (v.strip() for v in m.groups())
+        timestamp = None
+        issue = None
         try:
-            day, month, year = raw_ts[:10].split(".")
-            time_part = raw_ts[11:].strip()
-            iso_ts = f"{year}-{month}-{day}T{time_part}"
-        except Exception:
-            iso_ts = raw_ts
+            raw_ts = re.sub(r"\s+", " ", raw_ts)
+            fmt = (
+                "%d.%m.%Y %H:%M:%S"
+                if re.search(r"\d{2}:\d{2}:\d{2}", raw_ts)
+                else "%d.%m.%Y %H:%M"
+            )
+            offset = re.search(r"\s*([+-]\d{2}:?\d{2}|Z)$", raw_ts)
+            if offset:
+                value = datetime.strptime(
+                    raw_ts[: offset.start()].strip() + offset[1], fmt + "%z"
+                )
+            else:
+                naive = datetime.strptime(raw_ts, fmt)
+                zone = ZoneInfo(TIMEZONE)
+                value = naive.replace(tzinfo=zone)
+                other = naive.replace(tzinfo=zone, fold=1)
+                if (
+                    value.utcoffset() != other.utcoffset()
+                    or value.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
+                    != naive
+                ):
+                    raise ValueError("Ambiguous/nonexistent local time")
+            timestamp = value.astimezone(UTC).isoformat()
+        except ValueError:
+            issue = "invalid_manifest_timestamp"
+        # Entries below quoted reply headers can describe older deliveries.
+        before = text[: m.start()]
+        historical = strip_quoted_history(before) != before.strip() and bool(
+            before.strip()
+        )
         entries.append(
-            {"filename": filename, "timestamp": iso_ts, "source_label": source_label}
+            {
+                "filename": filename,
+                "timestamp": timestamp,
+                "source_label": source_label,
+                "raw_timestamp": raw_ts,
+                "historical": historical,
+                "issue": issue,
+            }
         )
     return entries
 
@@ -121,11 +162,11 @@ def _extract_email_note(body: str) -> str:
     """Extract the substantive forwarding note from an email body.
 
     Strips the Anlagen: manifest block, boilerplate salutations/sign-offs,
-    and blank lines. Truncates to 800 chars. Returns "" when nothing substantive
+    and blank lines. Preserves the complete current note. Returns "" when nothing substantive
     remains.
     """
     # Remove Anlagen: block — find the header and skip all following manifest lines
-    lines = body.splitlines()
+    lines = current_text(body).splitlines()
     filtered: list[str] = []
     in_anlagen = False
     for line in lines:
@@ -145,10 +186,7 @@ def _extract_email_note(body: str) -> str:
             continue
         filtered.append(stripped)
 
-    note = " ".join(filtered).strip()
-    if len(note) > 800:
-        note = note[:800].rsplit(" ", 1)[0] + " …"
-    return note
+    return " ".join(filtered).strip()
 
 
 def _decode_text(part) -> str:
@@ -185,7 +223,7 @@ _OUTLOOK_HEADER_RE = re.compile(r"^\s*(?:von|from)\s*:", re.IGNORECASE)
 _OUTLOOK_FOLLOW_RE = re.compile(r"^\s*(?:gesendet|sent|datum|date)\s*:", re.IGNORECASE)
 
 
-def strip_quoted_history(body: str) -> str:
+def current_text(body: str) -> str:
     """The new text of a reply, without the quoted thread below it.
 
     Cuts at the first reply-header line (or Outlook From/Sent block) and drops
@@ -205,98 +243,236 @@ def strip_quoted_history(body: str) -> str:
             continue
         kept.append(line)
     stripped = "\n".join(kept).strip()
-    return stripped or body
+    return stripped
+
+
+def strip_quoted_history(body: str) -> str:
+    return current_text(body) or body
+
+
+def normalize_filename(value: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFC", value)).strip().casefold()
+
+
+def _raw_body(raw: bytes) -> bytes:
+    pieces = re.split(rb"\r?\n\r?\n", raw, maxsplit=1)
+    return pieces[1] if len(pieces) == 2 else b""
+
+
+def _raw_mime_children(raw: bytes, boundary: str) -> list[bytes]:
+    """Keep exact encoded inner bytes; stdlib's RFC822 payload is already parsed.
+
+    Re-serializing that payload can corrupt soft-wrapped quoted-printable
+    headers before decoding them. Slice using the container's actual boundary.
+    """
+    payload = _raw_body(raw)
+    markers = list(
+        re.finditer(
+            rb"(?m)^--"
+            + re.escape(boundary.encode("ascii", errors="surrogateescape"))
+            + rb"(--)?[ \t]*\r?$",
+            payload,
+        )
+    )
+    children = []
+    for marker, following in zip(markers, markers[1:], strict=False):
+        if marker[1]:
+            break
+        start = marker.end()
+        if payload[start : start + 1] == b"\n":
+            start += 1
+        end = following.start()
+        if payload[end - 2 : end] == b"\r\n":
+            end -= 2
+        elif payload[end - 1 : end] == b"\n":
+            end -= 1
+        children.append(payload[start:end])
+    return children
 
 
 def parse_rfc822(raw_bytes: bytes) -> dict:
-    msg = email.message_from_bytes(raw_bytes, policy=default)
+    """Read each attached RFC822 message as a separate transport source.
 
-    body = ""
-    html_body = ""
-    attachments = []
+    The root fields remain convenient for upload/conversion callers. Sources
+    contain only their own MIME parts; descendants never leak into their body.
+    Binary payloads are transient and excluded from persisted EmailSource data.
+    """
+    sources: list[dict] = []
 
-    if msg.is_multipart():
-        for part in msg.walk():
+    def read_source(
+        msg,
+        source_id: str,
+        parent_id: str | None,
+        depth: int = 0,
+        source_bytes: bytes = b"",
+    ):
+        if depth > 30:
+            raise ValueError("Email nesting exceeds 30 messages")
+        reply_ids = parse_message_ids(msg.get("In-Reply-To", ""))
+        date = str(msg.get("Date", ""))
+        sent_at = parse_email_date(date)
+        source: dict = {
+            "id": source_id,
+            "parent_id": parent_id,
+            "sender": str(msg.get("From", "")),
+            **{
+                key: [
+                    address
+                    for _, address in email.utils.getaddresses(msg.get_all(header, []))
+                    if address
+                ]
+                for key, header in (
+                    ("to", "To"),
+                    ("cc", "Cc"),
+                    ("bcc", "Bcc"),
+                    ("reply_to", "Reply-To"),
+                )
+            },
+            "subject": str(msg.get("Subject", "")),
+            "message_id": str(msg.get("Message-ID", "")).strip(),
+            "date": date,
+            "sent_at": sent_at.isoformat() if sent_at else None,
+            "received_date": sent_at,
+            "in_reply_to": reply_ids[0] if reply_ids else None,
+            "thread_refs": list(
+                dict.fromkeys(parse_message_ids(msg.get("References", "")) + reply_ids)
+            ),
+            "parts": [],
+            "attachments": [],
+        }
+        sources.append(source)
+        plain, html = [], []
+        leaves = []
+
+        def walk(part, path, part_raw):
+            if (part.get_filename() or "").lower().endswith(
+                ".eml"
+            ) and part.get_content_type() != "message/rfc822":
+                data = part.get_payload(decode=True) or b""
+                child = email.message_from_bytes(data, policy=default)
+                if not any(
+                    child.get(header)
+                    for header in ("From", "Subject", "Date", "Message-ID")
+                ):
+                    record(part, path, data, "failed").update(
+                        reason="Unreadable attached email"
+                    )
+                else:
+                    nested_part = record(part, path, data, "nested_source")
+                    try:
+                        read_source(child, f"{path}.m0", source_id, depth + 1, data)
+                    except ValueError:
+                        nested_part.update(
+                            outcome="failed",
+                            reason="Attached email nesting limit reached",
+                        )
+                return
+            if part.get_content_type() == "message/rfc822":
+                transfer = str(part.get("Content-Transfer-Encoding", "")).lower()
+                nested_part = None
+                try:
+                    data = _raw_body(part_raw)
+                    if transfer == "base64":
+                        data = base64.b64decode(
+                            re.sub(rb"\s+", b"", data), validate=True
+                        )
+                    elif transfer == "quoted-printable":
+                        data = quopri.decodestring(data)
+                    if not data:
+                        raise ValueError("Empty attached email")
+                    child = email.message_from_bytes(data, policy=default)
+                    nested_part = record(part, path, data, "nested_source")
+                    read_source(child, f"{path}.m0", source_id, depth + 1, data)
+                except (ValueError, binascii.Error):
+                    if nested_part is None:
+                        nested_part = record(part, path, part_raw, "failed")
+                    nested_part.update(
+                        outcome="failed",
+                        reason="Invalid attached email encoding or nesting",
+                    )
+                return
             if part.is_multipart():
-                continue
-            content_disposition = str(part.get("Content-Disposition", ""))
-            disposition_type = content_disposition.split(";", 1)[0].strip().lower()
-            filename = part.get_filename()
-            content_id = part.get("Content-ID", "")
-            # A Content-ID usually means inline-embedded (logos, signatures
-            # referenced by the HTML body via cid:) — but only when the part
-            # doesn't *also* explicitly declare itself an attachment. Some
-            # mail clients (e.g. Apple Mail) set a Content-ID on ordinary
-            # attachments too; treating every Content-ID as inline silently
-            # drops those.
-            is_explicit_attachment = disposition_type == "attachment"
-            is_inline_by_content_id = bool(content_id) and not is_explicit_attachment
-            is_attachment = not is_inline_by_content_id and (
-                is_explicit_attachment
-                or (
-                    filename
-                    and part.get_content_maintype() not in ("text", "multipart")
-                )
+                raw_children = _raw_mime_children(part_raw, part.get_boundary() or "")
+                for i, child in enumerate(part.iter_parts()):
+                    child_raw = (
+                        raw_children[i]
+                        if i < len(raw_children)
+                        else child.as_bytes(policy=default)
+                    )
+                    walk(child, f"{path}.{i}", child_raw)
+                return
+            leaves.append((part, path))
+            if (
+                not part.get_filename()
+                and part.get_content_disposition() != "attachment"
+            ):
+                if part.get_content_type() == "text/html":
+                    html.append(_decode_text(part))
+                elif part.get_content_type() == "text/plain":
+                    plain.append(_decode_text(part))
+
+        def record(part, path, data, outcome="pending"):
+            original = part.get_filename()
+            suffix = (
+                ".pdf"
+                if data.startswith(b"%PDF")
+                else (mimetypes.guess_extension(part.get_content_type()) or ".bin")
             )
-            if is_attachment:
-                attachments.append(
-                    {
-                        "filename": filename,
-                        "content": part.get_payload(decode=True),
-                    }
+            name = original or f"attachment_{path.replace('.', '_')}{suffix}"
+            entry = {
+                "id": path,
+                "filename": name,
+                "original_filename": original,
+                "mime_type": part.get_content_type(),
+                "disposition": part.get_content_disposition(),
+                "size": len(data),
+                "outcome": outcome,
+                "reason": None,
+                "document_ids": [],
+                "content": data,
+            }
+            source["parts"].append(entry)
+            if outcome == "pending":
+                source["attachments"].append(entry)
+            return entry
+
+        walk(msg, source_id, source_bytes)
+        html_body = "\n".join(html)
+        for part, path in leaves:
+            cid = str(part.get("Content-ID", "")).strip("<>")
+            explicit = part.get_content_disposition() == "attachment"
+            embedded = (
+                not explicit
+                and bool(cid)
+                and part.get_content_maintype() == "image"
+                and f"cid:{cid}" in html_body
+            )
+            if embedded:
+                record(
+                    part, path, part.get_payload(decode=True) or b"", "ignored_inline"
                 )
-            elif part.get_content_type() == "text/plain" and not is_explicit_attachment:
-                body += _decode_text(part)
-            elif part.get_content_type() == "text/html" and not is_explicit_attachment:
-                html_body += _decode_text(part)
-    else:
-        decoded = _decode_text(msg)
-        if decoded:
-            if msg.get_content_type() == "text/html":
-                html_body = decoded
-            else:
-                body = decoded
-
-    # No text/plain part anywhere (HTML-only email) — fall back to the HTML
-    # body converted to text instead of discarding it. Without this, an
-    # HTML-only email with no attachments produces a 0-document batch that
-    # never surfaces in triage (email_parser.py's body branch in
-    # batch_orchestrator.py only fires when body.strip() is truthy).
-    if not body.strip() and html_body.strip():
-        # escape_underscores=False: this text feeds plain-text regexes
-        # (_MANIFEST_LINE_RE, _BOILERPLATE_RE below) and is stored as the
-        # document body — it is never rendered as markdown, so markdownify's
-        # default backslash-escaping of underscores would corrupt attachment
-        # filenames (e.g. "SCHR_ LG_26.PDF" -> "SCHR\_ LG\_26.PDF") and break
-        # the manifest-to-document filename correlation in batch_orchestrator.
-        body = markdownify(
-            html_body, heading_style="ATX", strip=["div"], escape_underscores=False
+            elif (
+                explicit or part.get_filename() or part.get_content_maintype() != "text"
+            ):
+                record(part, path, part.get_payload(decode=True) or b"")
+        body = "\n".join(plain)
+        if not body.strip() and html_body.strip():
+            body = markdownify(
+                html_body, heading_style="ATX", strip=["div"], escape_underscores=False
+            )
+        source["attachment_manifest"] = _parse_attachment_manifest(body)
+        source["email_note"] = _extract_email_note(body)
+        source["body"] = strip_quoted_history(body) if body else ""
+        # An attached message counts as an attachment of this source as well.
+        source["has_attachments"] = any(
+            p["outcome"] != "ignored_inline" for p in source["parts"]
         )
+        return source
 
-    attachment_manifest = _parse_attachment_manifest(body) if body else []
-    email_note = _extract_email_note(body) if body else ""
-
-    # In-Reply-To names the direct parent; References lists the whole ancestry
-    # oldest-first. thread_refs is the union in that order (parent last).
-    reply_ids = parse_message_ids(msg.get("In-Reply-To", ""))
-    in_reply_to = reply_ids[0] if reply_ids else None
-    thread_refs = list(
-        dict.fromkeys(parse_message_ids(msg.get("References", "")) + reply_ids)
+    root = read_source(
+        email.message_from_bytes(raw_bytes, policy=default),
+        "0",
+        None,
+        source_bytes=raw_bytes,
     )
-
-    return {
-        "sender": msg.get("From", ""),
-        "to": msg.get("To", ""),
-        "subject": msg.get("Subject", ""),
-        "message_id": msg.get("Message-ID", ""),
-        "date": msg.get("Date", ""),
-        "received_date": parse_email_date(msg.get("Date", "")),
-        # New text only; the manifest and note above were read from the full body.
-        "body": strip_quoted_history(body) if body else "",
-        "attachments": attachments,
-        "reply_to": msg.get("Reply-To", ""),
-        "in_reply_to": in_reply_to,
-        "thread_refs": thread_refs,
-        "attachment_manifest": attachment_manifest,
-        "email_note": email_note,
-    }
+    return {**root, "sources": sources}

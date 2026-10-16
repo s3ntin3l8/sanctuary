@@ -108,3 +108,71 @@ Fetched mail is cached *before* it is ingested, so a message that failed to inge
 | "Connect Gmail first" / "Set a sender allowlist or a label first" | Complete step 4. |
 | Index finishes but a few messages are "couldn't be read" | Gmail rate-limited the batch; *Refresh index* again to retry them. |
 | An import seems stuck on "waiting for …" | Sequential mode is waiting for that email's documents to finish processing (AI queue). It moves on by itself after 30 minutes, or press *Stop*. |
+
+## Email sources, dates, and attachment review
+
+One outer message is one bundle. Attached `.eml` messages remain nested transport
+sources with their own headers and attachment lists; this source tree is separate
+from the legal cover-letter/enclosure tree. Expand **Email sources and
+attachments** in a bundle to inspect senders, recipients (including Bcc when
+present), forwarding context, transmission dates, and original parts.
+
+**Received** uses Gmail's mailbox-arrival timestamp. Email sent time, court
+manifest time, and ingest time stay separate. Cached imports reuse receipt
+metadata from the index or an owner-only metadata sidecar next to the `.eml`.
+For uploaded mail or incomplete old caches, the UI explicitly labels the email
+sent/ingest date as a fallback with mailbox arrival unknown.
+
+Incoming mail with attachments does not create a body document. Its complete
+cleaned current note supplies grouping, attribution, and case-reference context,
+including for a single attachment. Long notes are read in windows and reduced to
+routing hints. These notes are not evidence for claims, actions, or deadlines.
+Body-only messages and the user's own writing remain documents, per source.
+
+Manifest matching requires unique normalized filenames. Transmission membership
+is constrained by source, timestamp, and source label; proceeding identity alone
+cannot attach a document to a cover letter. Ambiguous matches remain standalone
+for review. Manual groups and confirmed structure survive reruns.
+
+Every part has an outcome: ingested, duplicate (linked to the existing document),
+ignored embedded asset, empty, unsupported, failed, attached email, or removed.
+Unnamed files get generated names; empty/unsupported parts remain visible even
+when a message produces no documents. Original bytes can be downloaded from the
+source panel. Acknowledge source issues or archive the bundle after review.
+
+## Exact-set replay after a test workspace reset
+
+The provenance migration preserves existing email groups and marks their source
+identity for reimport. It cannot recover exact MIME part boundaries from the old
+rows, so automatic regrouping waits for replay. Legacy receipt dates are labelled
+as having unknown provenance rather than being inferred from the old value.
+
+Run these commands in the application's configured environment (inside the web
+container for a Docker deployment). Capture contains only IDs, receipt metadata,
+and hashes, and lives in `data/gmail_replay/`, which survives workspace clearing.
+
+1. Quiesce imports, sync/beat, and all document workers; wait for active jobs to
+   finish and keep the web UI unavailable during the reset/replay maintenance.
+2. Capture the exact previously imported set, including completed no-document
+   messages: `python scripts/gmail_replay.py capture --online`. Online mode only
+   reads missing raw mail/receipt metadata. Resolve any reported missing or
+   ambiguous identities before clearing. Existing ready captures are protected;
+   `--replace-capture` is an explicit replacement, never a resume operation.
+3. Run `python scripts/gmail_replay.py verify-capture`. It refuses to proceed if
+   any selected cached message is missing or its hash changed.
+4. Use the existing **Clear workspace / Clear all data** operation. It clears
+   case data for every user, preserving accounts, settings, audit history,
+   Gmail index, raw cache, and the replay manifest.
+5. Run `python scripts/gmail_replay.py replay`. It imports only the captured IDs
+   and uses cached raw bytes and recorded mailbox dates; it is idempotent and
+   needs no Gmail traffic. Start document workers with beat still paused.
+6. Run `python scripts/gmail_replay.py verify` until processing finishes. Counts
+   distinguish completed, processing, duplicate-only, source-review-required,
+   failed stages, and missing messages. `import_errors` separately lists immediate
+   ingest failures. Exit 0 means reconciled, 1 means missing/failed imports or
+   pipeline stages, and 2 means processing or review is still pending.
+7. Review source ambiguities and inspect representative receipt dates and
+   transmission groups before restoring normal sync/beat and web access.
+
+The replay script itself never clears data. Do not capture again after clearing;
+use the protected original manifest to resume or verify the same selection.

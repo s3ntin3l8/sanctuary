@@ -162,7 +162,7 @@ def _eml_to_text(file_path: str) -> str:
         parsed = parse_rfc822(f.read())
 
     parts = [
-        f"{label}: {parsed[key]}"
+        f"{label}: {', '.join(parsed[key]) if isinstance(parsed[key], list) else parsed[key]}"
         for label, key in (
             ("Subject", "subject"),
             ("From", "sender"),
