@@ -199,7 +199,9 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
             ? 'sent · arrival unknown'
             : bundle.received_source === 'ingest_time'
               ? 'ingested · arrival unknown'
-              : 'received'}{' '}
+              : bundle.received_source === 'legacy_unknown'
+                ? 'legacy date · origin unknown'
+                : 'received'}{' '}
           · {formatShortDate(bundle.received_at)}
         </div>
       </div>

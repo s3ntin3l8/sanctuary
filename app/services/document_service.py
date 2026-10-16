@@ -176,10 +176,13 @@ class DocumentService:
                     unresolved_parts = bool(
                         batch
                         and not batch.source_review_acknowledged
-                        and any(
-                            p.get("outcome") in ("empty", "unsupported", "failed")
-                            for source in batch.email_sources or []
-                            for p in source.get("parts", [])
+                        and (
+                            batch.source_review_reasons
+                            or any(
+                                p.get("outcome") in ("empty", "unsupported", "failed")
+                                for source in batch.email_sources or []
+                                for p in source.get("parts", [])
+                            )
                         )
                     )
                     if not unresolved_parts:

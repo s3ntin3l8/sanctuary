@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ReceiptSource = Literal["gmail", "email_date", "ingest_time"]
+ReceiptSource = Literal["gmail", "email_date", "ingest_time", "legacy_unknown"]
 PartOutcome = Literal[
     "pending",
     "ingested",

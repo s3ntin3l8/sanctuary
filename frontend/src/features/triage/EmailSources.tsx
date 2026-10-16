@@ -12,6 +12,8 @@ const labels: Record<string, string> = {
   ambiguous_manifest_history: 'Current and quoted transmissions give conflicting groups.',
   invalid_manifest_timestamp: 'A transmission date needs review.',
   unresolved_source_group: 'Some documents need manual grouping.',
+  legacy_source_identity:
+    'Reimport this email to recover original attachment boundaries. Existing groups are preserved.',
   attachment_empty: 'An attachment contains no readable bytes.',
   attachment_unsupported: 'An attachment uses an unsupported format.',
   attachment_failed: 'An attached email could not be read.',
@@ -66,7 +68,9 @@ export function EmailSources({ batchId }: { batchId: number }) {
                   ? 'Mailbox arrival'
                   : data.received_source === 'email_date'
                     ? 'Email sent date · arrival unknown'
-                    : 'Ingest date · arrival unknown'}{' '}
+                    : data.received_source === 'ingest_time'
+                      ? 'Ingest date · arrival unknown'
+                      : 'Legacy date · origin unknown'}{' '}
                 · {formatShortDate(data.received_at)}
               </p>
               {!data.acknowledged && (data.review_reasons ?? []).length > 0 && (

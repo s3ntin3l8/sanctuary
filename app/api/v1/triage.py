@@ -19,6 +19,7 @@ from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, Document, IngestBatch, Proceeding, User
 from app.models.enums import (
+    DocumentStatus,
     IngestBatchSourceType,
     IngestBatchStatus,
     PipelineState,
@@ -862,7 +863,7 @@ def acknowledge_sources(
     if not batch.email_sources:
         raise ApiError(404, "not_found", "This bundle has no email sources.")
     batch.source_review_acknowledged = True
-    if not batch.documents:
+    if not any(d.status != DocumentStatus.DISMISSED for d in batch.documents):
         batch.status = IngestBatchStatus.CONFIRMED
         batch.meta = {**(batch.meta or {}), "reason": NO_NEW_DOCUMENTS}
     db.commit()

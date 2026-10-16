@@ -418,8 +418,19 @@ def test_analysis_partitions_transmissions_and_flags_omitted_members(
     assert not batch.source_review_acknowledged
 
 
+@pytest.mark.parametrize(
+    "issue",
+    [
+        "attachment_unsupported",
+        "unmatched_manifest_entry",
+        "ambiguous_manifest_history",
+        "invalid_manifest_timestamp",
+        "unresolved_source_group",
+    ],
+)
 def test_source_cleanup_preserves_unresolved_parts_and_bundle_delete_removes_raw(
     db_session,
+    issue,
 ):
     from app.core.paths import resolve_storage_path
     from app.services.document_service import DocumentService
@@ -429,10 +440,13 @@ def test_source_cleanup_preserves_unresolved_parts_and_bundle_delete_removes_raw
     msg.add_attachment(
         b"%PDF one", maintype="application", subtype="pdf", filename="one.pdf"
     )
-    msg.add_attachment(
-        b"zip", maintype="application", subtype="zip", filename="unsupported.zip"
-    )
+    if issue == "attachment_unsupported":
+        msg.add_attachment(
+            b"zip", maintype="application", subtype="zip", filename="unsupported.zip"
+        )
     batch = ingest(db_session, msg)
+    batch.source_review_reasons = [issue]
+    db_session.commit()
     doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
     raw_path = resolve_storage_path(batch.raw_source_path)
     assert raw_path.exists()
@@ -487,6 +501,8 @@ def test_raw_gmail_fetch_keeps_metadata_from_same_response():
         ("SCHR_26_05_26.pdf", "2026-05-26"),
         ("Court_26.05.2026.pdf", "2026-05-26"),
         ("Court_31_02_2026.pdf", None),
+        ("Anlage_3_4_25.pdf", None),
+        ("Court_3_4_2025.pdf", "2025-04-03"),
     ],
 )
 def test_german_filename_dates_are_validated_low_confidence_hints(filename, expected):
@@ -649,3 +665,87 @@ def test_replay_capture_preserves_oldest_first_order(db_session, sample_user):
     manifest = gmail_replay.capture(db_session, replace=True)
     assert manifest["ready"]
     assert [entry["gmail_id"] for entry in manifest["messages"]] == ["zzz", "aaa"]
+
+
+def test_dismissed_only_source_issues_stay_visible_until_acknowledged(
+    db_session, app_client
+):
+    from app.models.enums import DocumentStatus, IngestBatchStatus
+
+    owner = db_session.query(User).filter_by(email="admin@localhost").one()
+    batch = ingest(db_session, message(), owner_id=owner.id)
+    batch.documents[0].status = DocumentStatus.DISMISSED
+    batch.source_review_reasons = ["unresolved_source_group"]
+    db_session.commit()
+    bundles = get_triage_bundles(db_session, enrich=False, owner_id=owner.id)
+    source_only = next(b for b in bundles if b.batch_id == batch.id)
+    assert not source_only.documents
+    response = app_client.post(f"/api/v1/triage/bundles/{batch.id}/sources/acknowledge")
+    assert response.status_code == 200
+    db_session.refresh(batch)
+    assert batch.status == IngestBatchStatus.CONFIRMED
+    assert batch.id not in [
+        b.batch_id
+        for b in get_triage_bundles(db_session, enrich=False, owner_id=owner.id)
+    ]
+
+
+def test_legacy_migration_preserves_grouping_and_labels_unknown_receipt(db_session):
+    import importlib.util
+    from pathlib import Path
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import text
+
+    from app.services.ingestion.email_sources import provenance
+    from app.services.intelligence.batch_analyzer import _analyze_email_sources
+
+    batch = ingest(db_session, message())
+    cover = batch.documents[0]
+    cover.role = DocumentRole.COVER_LETTER
+    child = Document(
+        title="Enclosure",
+        owner_id=batch.owner_id,
+        case_id="_TRIAGE",
+        ingest_batch_id=batch.id,
+        parent_id=cover.id,
+        role=DocumentRole.ENCLOSURE,
+    )
+    db_session.add(child)
+    db_session.commit()
+    batch_id, cover_id, child_id = batch.id, cover.id, child.id
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic/versions/c2e6a4b8d013_email_source_provenance.py"
+    )
+    spec = importlib.util.spec_from_file_location("source_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with Operations.context(MigrationContext.configure(db_session.connection())):
+        migration.downgrade()
+        # Old data can contain a manifest but no exact MIME part identities.
+        db_session.execute(
+            text(
+                'UPDATE ingest_batches SET email_note = \'Preserved note\', attachment_manifest = \'[{"filename":"A.pdf","source_label":"Court"}]\'::jsonb WHERE id = :id'
+            ),
+            {"id": batch_id},
+        )
+        migration.upgrade()
+    db_session.expire_all()
+    batch = db_session.get(IngestBatch, batch_id)
+    cover, child = (
+        db_session.get(Document, cover_id),
+        db_session.get(Document, child_id),
+    )
+    assert cover.email_source_id == child.email_source_id == "0"
+    assert provenance(batch).received_source == "legacy_unknown"
+    assert batch.email_sources[0]["email_note"] == "Preserved note"
+    with patch(
+        "app.services.intelligence.batch_analyzer._call_batch_analyzer_sync",
+        side_effect=AssertionError("Legacy boundaries must await replay"),
+    ):
+        assert not _analyze_email_sources(batch, [cover, child], db_session, "unused")
+    assert child.parent_id == cover.id
+    assert cover.role == DocumentRole.COVER_LETTER
+    assert child.role == DocumentRole.ENCLOSURE

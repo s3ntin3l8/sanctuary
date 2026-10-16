@@ -359,7 +359,7 @@ def _build_bundles(
         IngestBatch.status == IngestBatchStatus.OPEN,
         IngestBatch.email_sources.isnot(None),
         IngestBatch.source_review_acknowledged.is_(False),
-        ~IngestBatch.documents.any(),
+        ~IngestBatch.documents.any(Document.status != DocumentStatus.DISMISSED),
     )
     if owner_id is not None:
         source_only = source_only.filter(IngestBatch.owner_id == owner_id)

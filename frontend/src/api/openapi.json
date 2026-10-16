@@ -5311,7 +5311,8 @@
             "enum": [
               "gmail",
               "email_date",
-              "ingest_time"
+              "ingest_time",
+              "legacy_unknown"
             ],
             "title": "Received Source",
             "type": "string"

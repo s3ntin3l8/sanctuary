@@ -4770,7 +4770,7 @@ export interface components {
              * Received Source
              * @enum {string}
              */
-            received_source: "gmail" | "email_date" | "ingest_time";
+            received_source: "gmail" | "email_date" | "ingest_time" | "legacy_unknown";
             /** Review Reasons */
             review_reasons?: string[];
             /** Sources */

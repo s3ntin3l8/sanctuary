@@ -32,12 +32,16 @@ def upgrade():
         'id', '0', 'parent_id', NULL, 'sender', coalesce(sender_email, ''),
         'subject', coalesce(subject, ''), 'message_id', coalesce(message_id, ''),
         'email_note', coalesce(email_note, ''), 'attachment_manifest', coalesce(attachment_manifest, '[]'::jsonb),
-        'parts', '[]'::jsonb)), received_source = 'email_date'
+        'parts', '[]'::jsonb)), received_source = 'legacy_unknown',
+        source_review_reasons = '["legacy_source_identity"]'::jsonb
         WHERE source_type = 'EMAIL'""")
     op.drop_column("ingest_batches", "email_note")
     op.drop_column("ingest_batches", "attachment_manifest")
     for name in ("email_source_id", "email_part_id"):
         op.add_column("documents", sa.Column(name, sa.String(), nullable=True))
+    op.execute("""UPDATE documents SET email_source_id = '0'
+        FROM ingest_batches b WHERE documents.ingest_batch_id = b.id
+        AND b.source_type = 'EMAIL'""")
 
 
 def downgrade():

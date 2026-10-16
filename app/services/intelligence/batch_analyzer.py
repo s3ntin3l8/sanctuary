@@ -776,6 +776,11 @@ def _analyze_email_sources(batch, docs, db, model):
     from app.services.ingestion.email_sources import source_groups
     from app.services.intelligence.email_context import forwarding_context
 
+    if "legacy_source_identity" in (batch.source_review_reasons or []):
+        # Legacy imports have no MIME part identities. Preserve their existing
+        # families until deliberate replay provides trustworthy boundaries.
+        return False
+
     batch_id = batch.id
     membership, blocked = source_groups(batch, docs)
     partitions = defaultdict(list)

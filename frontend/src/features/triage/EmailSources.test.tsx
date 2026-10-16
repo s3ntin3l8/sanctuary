@@ -76,3 +76,19 @@ test('acknowledges source problems without creating a document', async () => {
     expect(fetch.mock.calls.some(([request]) => request.method === 'POST')).toBe(true),
   )
 })
+
+test('labels a migrated receipt without guessing its original date source', async () => {
+  stubApi({
+    'GET /api/v1/triage/bundles/42/sources': {
+      body: {
+        ...evidence,
+        received_source: 'legacy_unknown',
+        review_reasons: ['legacy_source_identity'],
+      },
+    },
+  })
+  renderAt('/triage', <EmailSources batchId={42} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Email sources and attachments' }))
+  expect(await screen.findByText(/Legacy date · origin unknown/)).toBeVisible()
+  expect(screen.getByText(/Existing groups are preserved/)).toBeVisible()
+})

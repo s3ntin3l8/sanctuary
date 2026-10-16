@@ -58,11 +58,22 @@ def _sanitize_filename(name: str) -> str:
 def _try_assign_case_from_subject(
     db: Session, batch: IngestBatch, subject: str, owner_id: int | None
 ) -> None:
-    """Set batch.case_id / batch.proceeding_id from the email subject line if possible.
+    case_id, proceeding_id = _resolve_subject_case(db, subject, owner_id)
+    if case_id:
+        batch.case_id, batch.proceeding_id = case_id, proceeding_id
+        logger.info(
+            "Batch #%s: auto-assigned to case %s via subject", batch.id, case_id
+        )
+
+
+def _resolve_subject_case(
+    db: Session, subject: str, owner_id: int | None
+) -> tuple[str | None, int | None]:
+    """Resolve the case and proceeding from the email subject when possible.
 
     Tries internal_id (lawyer's file number, e.g. '8372/25') first — it maps 1:1 to
     Case.id per CLAUDE.md.  Falls back to az_court (court Aktenzeichen) if present.
-    Only sets fields when a matching DB row is found; never creates records here.
+    Only returns matching DB rows; never creates records here.
 
     Auto-filing a batch into a case is a write to that case, so both paths
     are restricted to the owner's *editable* cases (owned ∪ EDITOR shares).
@@ -84,7 +95,7 @@ def _try_assign_case_from_subject(
     if internal_id:
         case = db.query(Case).filter(Case.id == internal_id).first()
         if case and (editable is None or case.id in editable):
-            batch.case_id = case.id
+            proceeding_id = None
             if az_court:
                 proc = (
                     db.query(Proceeding)
@@ -95,13 +106,8 @@ def _try_assign_case_from_subject(
                     .first()
                 )
                 if proc:
-                    batch.proceeding_id = proc.id
-            logger.info(
-                "Batch #%d: auto-assigned to case %s via subject internal_id",
-                batch.id,
-                case.id,
-            )
-            return
+                    proceeding_id = proc.id
+            return case.id, proceeding_id
 
     if az_court:
         proc_query = db.query(Proceeding).filter(Proceeding.az_court == az_court)
@@ -109,13 +115,8 @@ def _try_assign_case_from_subject(
             proc_query = proc_query.filter(Proceeding.case_id.in_(editable))
         proc = proc_query.first()
         if proc:
-            batch.case_id = proc.case_id
-            batch.proceeding_id = proc.id
-            logger.info(
-                "Batch #%d: auto-assigned to case %s via subject az_court",
-                batch.id,
-                proc.case_id,
-            )
+            return proc.case_id, proc.id
+    return None, None
 
 
 def _is_outgoing(sender: str, own_addresses: Iterable[str]) -> bool:
@@ -386,10 +387,11 @@ def _ingest_email_docs_and_commit(
         # outer forwarding subject. Never overwrite the outer batch's identity.
         source_case, source_proceeding = batch.case_id, batch.proceeding_id
         if source["parent_id"] is not None:
-            inner = IngestBatch(owner_id=owner_id)
-            _try_assign_case_from_subject(db, inner, source_subject, owner_id)
-            if inner.case_id:
-                source_case, source_proceeding = inner.case_id, inner.proceeding_id
+            inner_case, inner_proceeding = _resolve_subject_case(
+                db, source_subject, owner_id
+            )
+            if inner_case:
+                source_case, source_proceeding = inner_case, inner_proceeding
         if source["body"].strip() and (
             not source["has_attachments"] or _is_outgoing(source_sender, own_addresses)
         ):

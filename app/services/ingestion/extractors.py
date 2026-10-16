@@ -247,10 +247,13 @@ def extract_issued_date(content: str, filename: str) -> DateExtractionResult:
 
     if not value:
         match = re.search(
-            r"(?<!\d)(\d{1,2})[_.-](\d{1,2})[_.-](\d{4}|\d{2})(?!\d)", filename
+            r"(?<!\d)(?:(\d{1,2})[_.-](\d{1,2})[_.-](\d{4})|(\d{2})[_.-](\d{2})[_.-](\d{2}))(?!\d)",
+            filename,
         )
         if match:
-            day, month, year = map(int, match.groups())
+            day, month, year = map(
+                int, match.groups()[:3] if match[3] else match.groups()[3:]
+            )
             if year < 100:
                 year += 2000 if year < 50 else 1900
             try:

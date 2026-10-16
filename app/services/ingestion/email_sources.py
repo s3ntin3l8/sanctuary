@@ -120,7 +120,7 @@ def provenance(batch) -> EmailProvenance | None:
     return EmailProvenance(
         batch_id=batch.id,
         received_at=batch.received_at,
-        received_source=batch.received_source or "email_date",
+        received_source=batch.received_source or "legacy_unknown",
         gmail_id=batch.gmail_id,
         sources=[EmailSource.model_validate(s) for s in batch.email_sources],
         review_reasons=batch.source_review_reasons or [],
@@ -131,6 +131,8 @@ def provenance(batch) -> EmailProvenance | None:
 def sync_document_parts(db, old_doc_id: int, new_doc_ids: list[int]) -> None:
     """Slicing/deletion must not leave source inventories pointing at dead rows."""
     # Duplicate deliveries may reference a document belonging to another batch.
+    from sqlalchemy import or_
+
     from app.models.database import Document, IngestBatch
 
     document = db.get(Document, old_doc_id)
@@ -141,6 +143,14 @@ def sync_document_parts(db, old_doc_id: int, new_doc_ids: list[int]) -> None:
         .filter(
             IngestBatch.email_sources.isnot(None),
             IngestBatch.owner_id == document.owner_id,
+            or_(
+                IngestBatch.email_sources.op("@>")(
+                    [{"parts": [{"document_ids": [old_doc_id]}]}]
+                ),
+                IngestBatch.email_sources.op("@>")(
+                    [{"attachment_manifest": [{"doc_id": old_doc_id}]}]
+                ),
+            ),
         )
         .all()
     )
