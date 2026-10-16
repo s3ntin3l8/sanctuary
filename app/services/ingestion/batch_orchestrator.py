@@ -60,6 +60,8 @@ def _try_assign_case_from_subject(
 ) -> None:
     case_id, proceeding_id = _resolve_subject_case(db, subject, owner_id)
     if case_id:
+        # Ingest currently passes a fresh batch; also preserve an existing
+        # proceeding when this helper is reused for the same case.
         if case_id != batch.case_id or proceeding_id is not None:
             batch.proceeding_id = proceeding_id
         batch.case_id = case_id

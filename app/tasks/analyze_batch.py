@@ -226,14 +226,16 @@ def analyze_batch_task(self, batch_id: int):
     db = SessionLocal()
     try:
         from app.models.database import IngestBatch
+        from app.services.ingestion.email_sources import (
+            LEGACY_REGROUP_SKIP_REASON,
+            needs_source_reimport,
+        )
 
         skip_reason = "single-doc or empty batch"
         if not ran:
             batch = db.get(IngestBatch, batch_id)
-            if batch and "legacy_source_identity" in (
-                batch.source_review_reasons or []
-            ):
-                skip_reason = "Legacy email source: reimport required before regrouping"
+            if needs_source_reimport(batch):
+                skip_reason = LEGACY_REGROUP_SKIP_REASON
         for doc_id in doc_ids:
             if ran:
                 mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db)

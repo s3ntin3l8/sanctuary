@@ -148,6 +148,8 @@ rows, so automatic regrouping waits for replay. Legacy receipt dates are labelle
 as having unknown provenance rather than being inferred from the old value.
 Acknowledging source issues does not recover attachment boundaries or resume
 automatic grouping; the source panel continues to show that reimport is required.
+Acknowledgement clears review prompts in import/triage; it does not certify that
+original attachment identities have been recovered.
 
 Run these commands in the application's configured environment (inside the web
 container for a Docker deployment). Capture contains only IDs, receipt metadata,

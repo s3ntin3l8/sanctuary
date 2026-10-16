@@ -773,10 +773,13 @@ def _analyze_email_sources(batch, docs, db, model):
     from sqlalchemy.orm.attributes import flag_modified
 
     from app.config import SessionLocal
-    from app.services.ingestion.email_sources import source_groups
+    from app.services.ingestion.email_sources import (
+        needs_source_reimport,
+        source_groups,
+    )
     from app.services.intelligence.email_context import forwarding_context
 
-    if "legacy_source_identity" in (batch.source_review_reasons or []):
+    if needs_source_reimport(batch):
         # Legacy imports have no MIME part identities. Preserve their existing
         # families until deliberate replay provides trustworthy boundaries.
         return False

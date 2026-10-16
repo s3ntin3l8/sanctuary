@@ -426,6 +426,32 @@ test('explains skipped legacy grouping and distinguishes it from completed stage
   page()
   expect(await screen.findByText(`Grouping skipped · ${reason}`)).toBeVisible()
   expect(screen.getByText('1 complete · 1 skipped')).toBeVisible()
+  expect(screen.getByRole('img', { name: '1 of 2 stages complete, 1 skipped' })).toBeInTheDocument()
   expect(screen.queryByText(/All 2 stages complete/)).not.toBeInTheDocument()
   expect(screen.getByTitle(/Batch analysis: skipped\s+Legacy email source:/)).toBeInTheDocument()
+})
+
+test('skipped-stage tooltips explain internal reason codes', async () => {
+  stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: {
+          ...documentReader.pipeline,
+          stages: [
+            {
+              ...documentReader.pipeline.stages[0],
+              key: 'claims',
+              label: 'Claims',
+              status: 'skipped',
+              reason: 'copy_of',
+            },
+          ],
+        },
+      },
+    },
+  })
+  page()
+  expect(await screen.findByTitle(/Claims: skipped\s+Duplicate document/)).toBeInTheDocument()
+  expect(screen.getByRole('img', { name: '0 of 1 stages complete, 1 skipped' })).toBeInTheDocument()
 })
