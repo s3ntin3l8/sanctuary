@@ -13,7 +13,7 @@ from email.policy import default
 from pathlib import Path
 
 from app import config
-from app.core.timezone import now_utc
+from app.core.timezone import ensure_utc, now_utc
 from app.models.database import GmailMessageIndex, IngestBatch, UserSettings
 from app.models.enums import IngestBatchSourceType
 from app.services import gmail_cache, gmail_index_service
@@ -138,10 +138,12 @@ def capture(db, *, online: bool = False, replace: bool = False) -> dict:
     entries.sort(
         key=lambda entry: (
             entry["owner_id"],
-            datetime.fromisoformat(
-                entry.get("sent_at")
-                or entry.get("received_at")
-                or "0001-01-01T00:00:00+00:00"
+            ensure_utc(
+                datetime.fromisoformat(
+                    entry.get("sent_at")
+                    or entry.get("received_at")
+                    or "0001-01-01T00:00:00+00:00"
+                )
             ),
             entry["gmail_id"],
         )

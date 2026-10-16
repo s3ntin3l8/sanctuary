@@ -628,3 +628,24 @@ def test_replay_capture_preserves_oldest_first_order(db_session, sample_user):
     manifest = gmail_replay.capture(db_session)
     assert manifest["ready"]
     assert [entry["gmail_id"] for entry in manifest["messages"]] == ["zzz", "aaa"]
+
+    # Cached transport metadata is timezone-aware, while legacy index dates
+    # come back from Postgres without tzinfo. Both must sort together offline.
+    from app.models.database import GmailMessageIndex
+
+    gmail_cache.write_metadata(
+        sample_user.id,
+        "zzz",
+        {
+            "sent_at": "2026-05-26T00:00:00+00:00",
+            "received_at": "2026-05-26T00:00:00+00:00",
+            "thread_id": "thread",
+        },
+    )
+    db_session.query(GmailMessageIndex).filter_by(
+        owner_id=sample_user.id, gmail_id="zzz"
+    ).delete()
+    db_session.commit()
+    manifest = gmail_replay.capture(db_session, replace=True)
+    assert manifest["ready"]
+    assert [entry["gmail_id"] for entry in manifest["messages"]] == ["zzz", "aaa"]
