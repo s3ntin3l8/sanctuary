@@ -42,6 +42,7 @@ from app.services.fees.calculator import (
     default_allocation,
     lawyer_fees,
 )
+from app.services.ingestion.extractors import strip_reply_prefix
 from app.services.ingestion.service import apply_review_reasons
 
 logger = logging.getLogger(__name__)
@@ -286,11 +287,17 @@ def _derive_case_title_from_subject(
     """Derive a short case title from an email subject line."""
     if not subject:
         return None
-    stripped = subject.lstrip()
-    if stripped.startswith(internal_id):
-        remainder = stripped[len(internal_id) :].lstrip(" -:/")
-    else:
-        remainder = subject
+    stripped = strip_reply_prefix(subject).lstrip()
+    # Case.id is the dash form ("8372-25"); a subject carries "8372/25".
+    prefix = next(
+        (
+            p
+            for p in (internal_id, internal_id.replace("-", "/"))
+            if stripped.startswith(p)
+        ),
+        None,
+    )
+    remainder = stripped[len(prefix) :].lstrip(" -:/") if prefix else stripped
     for sep in (" vor dem ", " wg. ", " bzgl. ", " betr. "):
         idx = remainder.lower().find(sep)
         if idx != -1:

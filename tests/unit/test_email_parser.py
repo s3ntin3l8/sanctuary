@@ -354,6 +354,18 @@ def test_extract_email_note_strips_anlagen_and_boilerplate():
     assert _extract_email_note(body) == "anbei der Schriftsatz zur Kenntnis."
 
 
+def test_extract_email_note_keeps_inline_anlagen_text():
+    body = (
+        "anbei der Schriftsatz.\n"
+        "Anlagen: Schriftsatz vom 3.3.2026, Beschluss vom 1.3.2026\n"
+        "Mit freundlichen Grüßen\n"
+    )
+    assert _extract_email_note(body) == (
+        "anbei der Schriftsatz. "
+        "Anlagen: Schriftsatz vom 3.3.2026, Beschluss vom 1.3.2026"
+    )
+
+
 def test_extract_email_note_preserves_long_text():
     note = _extract_email_note("wort " * 400)  # ~2000 chars, no boilerplate
     assert note == ("wort " * 400).strip()
