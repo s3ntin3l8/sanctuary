@@ -22,6 +22,7 @@ from app.repositories.ingest_batch import (
 )
 from app.services.ingestion.email_parser import parse_rfc822
 from app.services.ingestion.extractors import (
+    EMAIL_HEADER_CONFIDENCE,
     extract_az_court_from_subject,
     extract_internal_id_from_subject,
 )
@@ -423,6 +424,12 @@ def _ingest_email_docs_and_commit(
                 sender=source_sender or None,
                 received_date=received_date,
                 issued_date=source["received_date"],
+                # The mail headers are the source of both; the body-text
+                # extractors would replace them with a guess.
+                extraction_confidence={
+                    "sender": EMAIL_HEADER_CONFIDENCE,
+                    "issued_date": EMAIL_HEADER_CONFIDENCE,
+                },
                 page_count=0,
             )
             db.add(doc)
@@ -454,9 +461,9 @@ def _ingest_email_docs_and_commit(
                 db.query(Document)
                 .filter(
                     Document.content_hash == att_hash,
-                    Document.case_id == "_TRIAGE",
                     Document.owner_id == owner_id,
                 )
+                .order_by(Document.id)
                 .first()
             )
             if existing_doc:

@@ -14,6 +14,7 @@ from app.services import family_context
 from app.services.ai_config import get_chat_config
 from app.services.content_text import condense_image_descriptions
 from app.services.ingestion.extractors import (
+    EMAIL_HEADER_CONFIDENCE,
     date_in_text,
     extract_internal_id,
     infer_court_level,
@@ -522,6 +523,16 @@ def _apply_proceeding_extraction(
     return None
 
 
+_GENERIC_FILENAME_RE = re.compile(r"^(email_body_|attachment_)", re.IGNORECASE)
+
+
+def _filename_hint(filename: str | None) -> str | None:
+    """The file's name, unless it is one the ingest made up."""
+    if not filename or _GENERIC_FILENAME_RE.match(filename):
+        return None
+    return filename
+
+
 def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> None:
     """Refine document properties based on deep AI extraction."""
     from app.models.database import Case
@@ -554,7 +565,16 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     if parsed_ot is not None and "originator_type" not in user_set:
         doc.originator_type = parsed_ot
 
-    if summary_data.get("issued_date") and "issued_date" not in user_set:
+    header_set = {
+        key
+        for key, val in (doc.extraction_confidence or {}).items()
+        if val == EMAIL_HEADER_CONFIDENCE
+    }
+    if (
+        summary_data.get("issued_date")
+        and "issued_date" not in user_set
+        and "issued_date" not in header_set
+    ):
         raw_date = str(summary_data["issued_date"]).strip()
         parsed_date = None
         for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
@@ -600,7 +620,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             v = val.strip().lower()
             if v not in ("high", "medium", "low"):
                 continue
-            if key not in _KNOWN_CONF_KEYS or key in user_set:
+            if key not in _KNOWN_CONF_KEYS or key in user_set or key in header_set:
                 continue
             if key in empty_keys:
                 new_conf.pop(key, None)
@@ -845,6 +865,7 @@ def generate_summary_sync(
         # the AI toward emitting that value instead of reading the letterhead.
         # Mirrors the rationale for omitting `originator` and `issued_date`.
         "email_subject": batch_subject if batch_sender_email else None,
+        "filename": _filename_hint(doc.original_filename),
     }
     hints = {k: v for k, v in hints.items() if v is not None}
 

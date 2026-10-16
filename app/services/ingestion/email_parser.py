@@ -31,7 +31,7 @@ _BOILERPLATE_RE = re.compile(
     r"^\s*(sehr geehrte[rs]?|mit freundlichen|mfg|hochachtungsvoll|"
     r"mit freundlichem|mit kollegialem|beste gr[uü][sß]e|"
     r"viele gr[uü][sß]e|liebe gr[uü][sß]e|"
-    r"anlagen?:|bitte.{0,60}nicht.{0,30}antworten|"
+    r"bitte.{0,60}nicht.{0,30}antworten|"
     r"diese e-?mail|diese nachricht|automatisch|"
     r"confidential|vertraulich|disclaimer)\b",
     re.IGNORECASE,
@@ -171,8 +171,12 @@ def _extract_email_note(body: str) -> str:
     in_anlagen = False
     for line in lines:
         stripped = line.strip()
-        if re.match(r"^anlagen?\s*:", stripped, re.IGNORECASE):
+        header = re.match(r"^anlagen?\s*:\s*(.*)$", stripped, re.IGNORECASE)
+        if header:
             in_anlagen = True
+            # A one-line "Anlagen: Schriftsatz vom …" is content, not a manifest.
+            if header.group(1) and not _MANIFEST_LINE_RE.match(header.group(1)):
+                filtered.append(stripped)
             continue
         if in_anlagen:
             # Manifest lines match the pattern or are blank continuation lines

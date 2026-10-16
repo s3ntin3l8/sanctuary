@@ -237,6 +237,7 @@ The provided text may come from a single PDF that bundles multiple distinct docu
 Hints:
 - Hints are machine-generated and may be inaccurate. Use them as a starting point — prefer document text whenever there is any conflict.
 - Email subject is a primary source for `internal_id`.
+- The filename is a weak hint for the document type, its date and an Anlage label (e.g. "Anlage K3"). It never overrides the text.
 
 Be concise. Use null if information is unavailable.
 

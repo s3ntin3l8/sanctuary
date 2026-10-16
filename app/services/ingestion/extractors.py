@@ -340,6 +340,10 @@ def _parse_candidate_date(raw_value: str) -> datetime | None:
     return _parse_date_string(raw_value)
 
 
+# Provenance for a field read from the mail headers (an email-body document's
+# From and Date). Like "user_set" it is not the body-text extractors' to redo.
+EMAIL_HEADER_CONFIDENCE = "email_header"
+
 # Compiled once — used for subject-line case matching at email ingest time.
 _SUBJECT_AZ_COURT_RE = re.compile(
     r"\b(\d{1,3}\s?[A-Z]{1,2}\s?\d{1,5}/\d{2,4})\b", re.IGNORECASE
@@ -356,7 +360,7 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
     conventional German law-firm file number format.  Returns None when no
     leading token is found.
     """
-    m = _SUBJECT_INTERNAL_ID_RE.match(subject)
+    m = _SUBJECT_INTERNAL_ID_RE.match(strip_reply_prefix(subject))
     if not m:
         return None
     return m.group(1).replace("/", "-")
@@ -367,14 +371,18 @@ _SUBJECT_REPLY_PREFIX_RE = re.compile(
 )
 
 
+def strip_reply_prefix(subject: str) -> str:
+    """The subject without its leading AW:/WG:/RE:/FW: chain."""
+    return _SUBJECT_REPLY_PREFIX_RE.sub("", subject)
+
+
 def extract_subject_topic(subject: str) -> str | None:
     """The descriptive part of a subject once its case references are removed.
 
     "AW: 9418/26 - Hansen ./. Liu - wg. Sorge - 003 F 1221/26" -> "Hansen ./. Liu - wg. Sorge".
     Returns None when only references remain.
     """
-    text = _SUBJECT_REPLY_PREFIX_RE.sub("", subject)
-    text = _SUBJECT_INTERNAL_ID_RE.sub("", text)
+    text = _SUBJECT_INTERNAL_ID_RE.sub("", strip_reply_prefix(subject))
     text = _SUBJECT_AZ_COURT_RE.sub("", text)
     text = re.sub(r"\s+", " ", text).strip(" -–—:,;")
     return text or None

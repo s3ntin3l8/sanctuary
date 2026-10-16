@@ -209,3 +209,80 @@ def test_attachment_dedup_is_scoped_per_owner(db_session):
     )
     assert len(b_docs) == 1
     assert b_docs[0].owner_id == b.id
+
+
+@pytest.mark.integration
+def test_resent_attachment_already_filed_in_a_case_is_not_duplicated(db_session):
+    """The first copy sits in a case (the subject names it), so the dedup
+    must look past triage: a re-sent PDF links to it instead of becoming a
+    second document."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+
+    db_session.add(
+        Case(
+            id="8372-25",
+            title="Vogt",
+            status=CaseStatus.INTAKE,
+            jurisdiction=Jurisdiction.DE,
+        )
+    )
+    db_session.flush()
+    pdf_bytes = b"%PDF-1.4 filed in a case"
+
+    first = ingest_raw_email(
+        db_session,
+        _build_email(
+            "<f1@example.com>", "8372/25 - Schriftsatz", [("s.pdf", pdf_bytes)]
+        ),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+    assert first is not None
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == first.id).one()
+    assert doc.case_id == "8372-25"
+
+    again = ingest_raw_email(
+        db_session,
+        _build_email(
+            "<f2@example.com>", "AW: 8372/25 - Schriftsatz", [("s.pdf", pdf_bytes)]
+        ),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+    assert again is None
+    assert (
+        db_session.query(Document)
+        .filter(Document.content_hash == doc.content_hash)
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.integration
+def test_body_document_keeps_its_header_sender_and_date_through_extraction(db_session):
+    """An own mail keeps its body as a document; the regex extractors must not
+    replace the From and Date headers with whatever the text mentions."""
+    from app.services.ingestion.service import _apply_script_extractors
+
+    msg = email.message.EmailMessage()
+    msg["From"] = "me@example.com"
+    msg["To"] = "lawyer@example.com"
+    msg["Subject"] = "Frage"
+    msg["Message-ID"] = "<own@example.com>"
+    msg["Date"] = "Tue, 03 Mar 2026 10:00:00 +0000"
+    msg.set_content("Siehe unser Schreiben vom 01.01.2020 an info@gegner.de.")
+    batch = ingest_raw_email(
+        db_session,
+        msg.as_bytes(),
+        source_type=IngestBatchSourceType.EMAIL,
+        own_addresses={"me@example.com"},
+    )
+    assert batch is not None
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+
+    _apply_script_extractors(
+        doc, doc.content or "Siehe 01.01.2020 info@gegner.de", db_session
+    )
+
+    assert doc.sender == "me@example.com"
+    assert doc.issued_date.date().isoformat() == "2026-03-03"
+    assert doc.extraction_confidence["sender"] == "email_header"

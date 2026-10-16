@@ -33,6 +33,7 @@ from app.services.ingestion.converters import (
     validate_file_magic,
 )
 from app.services.ingestion.extractors import (
+    EMAIL_HEADER_CONFIDENCE,
     extract_case_id,
     extract_internal_id,
     extract_issued_date,
@@ -525,6 +526,11 @@ def _flag_packet(doc: Document) -> None:
         doc.meta = {k: v for k, v in current.items() if k != "packet_starts"}
 
 
+# Confidence values that mark a field as not the extractors' to redo: the user
+# set it in triage, or it was read from the mail headers.
+_FIXED_CONFIDENCE = {"user_set", EMAIL_HEADER_CONFIDENCE}
+
+
 def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     """Run the 4 regex extractors and apply their results to doc in-place.
 
@@ -553,9 +559,10 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
 
     # Fields the user set in triage ("user_set") are not the extractor's to redo.
     conf = dict(doc.extraction_confidence or {})
-    if conf.get("sender") != "user_set":
+    fixed = {k for k, v in conf.items() if v in _FIXED_CONFIDENCE}
+    if "sender" not in fixed:
         doc.sender = result_sender["value"]
-    if conf.get("issued_date") != "user_set":
+    if "issued_date" not in fixed:
         doc.issued_date = result_date["value"]
     if not doc.received_date:
         doc.received_date = datetime.now(UTC)
@@ -568,7 +575,7 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     ).model_dump()
     doc.extraction_confidence = {
         **conf,
-        **{k: v for k, v in extracted.items() if conf.get(k) != "user_set"},
+        **{k: v for k, v in extracted.items() if k not in fixed},
     }
 
     apply_review_reasons(doc)

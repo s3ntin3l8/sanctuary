@@ -42,6 +42,7 @@ from app.services.fees.calculator import (
     default_allocation,
     lawyer_fees,
 )
+from app.services.ingestion.extractors import strip_reply_prefix
 from app.services.ingestion.service import apply_review_reasons
 
 logger = logging.getLogger(__name__)
@@ -286,7 +287,7 @@ def _derive_case_title_from_subject(
     """Derive a short case title from an email subject line."""
     if not subject:
         return None
-    stripped = subject.lstrip()
+    stripped = strip_reply_prefix(subject).lstrip()
     if stripped.startswith(internal_id):
         remainder = stripped[len(internal_id) :].lstrip(" -:/")
     else:
