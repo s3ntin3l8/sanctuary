@@ -517,3 +517,123 @@ def test_an_armored_pgp_signature_named_asc_is_a_signature(db_session):
     )
     assert _part_outcomes(batch)["mail.asc"] == ("signature", None)
     assert "attachment_unsupported" not in batch.source_review_reasons
+
+
+def _tnef_bytes(files):
+    import struct
+
+    def obj(level, attribute, data):
+        return (
+            struct.pack("<BIl", level, attribute, len(data))
+            + data
+            + struct.pack("<H", sum(data) & 0xFFFF)
+        )
+
+    out = struct.pack("<IH", 0x223E9F78, 1)
+    for name, data in files.items():
+        out += obj(2, 0x00069002, b"\0" * 14)
+        out += obj(2, 0x00018010, name.encode() + b"\0")
+        out += obj(2, 0x0006800F, data)
+    return out
+
+
+@pytest.mark.integration
+def test_a_winmail_dat_is_unpacked_into_documents(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                _tnef_bytes({"Schriftsatz.pdf": PDF, "notiz.txt": b"Eine Notiz"}),
+                maintype="application",
+                subtype="ms-tnef",
+                filename="winmail.dat",
+            ),
+            message_id="<tnef@example.com>",
+        ),
+    )
+    outcomes = _part_outcomes(batch)
+    assert outcomes["winmail.dat"] == ("archive", None)
+    assert outcomes["Schriftsatz.pdf"][0] == "ingested"
+    assert outcomes["notiz.txt"][0] == "ingested"
+    assert "attachment_unsupported" not in batch.source_review_reasons
+
+
+@pytest.mark.integration
+def test_a_rich_text_only_winmail_dat_is_not_a_review_item(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                _tnef_bytes({}),
+                maintype="application",
+                subtype="ms-tnef",
+                filename="winmail.dat",
+            ),
+            body="Eigener Text ohne Anlagen.",
+            message_id="<tnef-empty@example.com>",
+        ),
+    )
+    assert batch.source_review_reasons == ["mailbox_arrival_unavailable"]
+    docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
+    assert [d.original_filename for d in docs] == [f"email_body_{batch.id}.txt"]
+
+
+@pytest.mark.integration
+def test_an_attached_outlook_message_and_its_files_become_documents(db_session):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    fake = SimpleNamespace(
+        sender="Gericht <poststelle@lg.example>",
+        to="mandant@example.com",
+        cc="",
+        subject="Ladung",
+        messageId="<inner-msg@lg.example>",
+        date=None,
+        body="Sie werden geladen.",
+        htmlBody=None,
+        attachments=[SimpleNamespace(data=PDF, longFilename="Ladung.pdf")],
+        close=lambda: None,
+    )
+    with patch("extract_msg.openMsg", return_value=fake):
+        batch = _ingest(
+            db_session,
+            _typed_mail(
+                lambda m: m.add_attachment(
+                    b"\xd0\xcf\x11\xe0" + b"\0" * 64,
+                    maintype="application",
+                    subtype="vnd.ms-outlook",
+                    filename="Ladung.msg",
+                ),
+                message_id="<msg-outer@example.com>",
+            ),
+        )
+    outcomes = _part_outcomes(batch)
+    assert outcomes["Ladung.msg"] == ("nested_source", None)
+    assert outcomes["Ladung.pdf"][0] == "ingested"
+    assert "attachment_failed" not in batch.source_review_reasons
+
+
+@pytest.mark.integration
+def test_a_heic_attachment_is_ingested(db_session):
+    import io
+
+    import pillow_heif
+    from PIL import Image
+
+    pillow_heif.register_heif_opener()
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 16), (10, 120, 10)).save(buffer, format="HEIF")
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                buffer.getvalue(),
+                maintype="image",
+                subtype="heic",
+                filename="IMG_0042.HEIC",
+            ),
+            message_id="<heic@example.com>",
+        ),
+    )
+    assert _part_outcomes(batch)["IMG_0042.HEIC"][0] == "ingested"

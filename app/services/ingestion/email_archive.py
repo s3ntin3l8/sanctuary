@@ -96,3 +96,65 @@ def archive_members(
                         outcome="unsupported", reason="Archive contains no files"
                     )
     return members
+
+
+def is_tnef(filename: str | None, mime_type: str, data: bytes) -> bool:
+    named = (
+        (filename or "").lower() in ("winmail.dat", "win.dat")
+        or (filename or "").lower().endswith(".tnef")
+        or mime_type in ("application/ms-tnef", "application/vnd.ms-tnef")
+    )
+    return named and data[:4] == b"\x78\x9f\x3e\x22"
+
+
+class TnefUnreadable(ValueError):
+    """The bytes are not a readable TNEF stream (winmail.dat)."""
+
+
+def tnef_members(data: bytes, budget: list[int] | None = None) -> list[dict]:
+    """The files inside a winmail.dat, as ``archive_members`` returns them.
+
+    A winmail.dat with no attachment is only Outlook's rich-text copy of the
+    body: it yields no members. Raises ``TnefUnreadable``.
+    """
+    import tnefparse
+
+    limit = config.MAX_FILE_SIZE_MB * 1024 * 1024
+    if budget is None:
+        budget = [config.MAX_EMAIL_SIZE_MB * 1024 * 1024]
+    try:
+        tnef = tnefparse.TNEF(data, do_checksum=False)
+        attachments = list(tnef.attachments)
+    except Exception as exc:  # tnefparse raises many types for bad input
+        raise TnefUnreadable(str(exc)) from exc
+    members: list[dict] = []
+    for index, attachment in enumerate(attachments):
+        content = bytes(attachment.data or b"")
+        name = (
+            PurePosixPath(
+                (attachment.name or f"attachment_{index}").replace("\\", "/")
+            ).name
+            or f"attachment_{index}"
+        )
+        if not content:
+            continue
+        member = {
+            "name": name,
+            "size": len(content),
+            "data": b"",
+            "outcome": "pending",
+            "reason": None,
+            "members": [],
+        }
+        members.append(member)
+        if len(content) > limit:
+            member.update(outcome="unsupported", reason="File is too large")
+        elif len(content) > budget[0]:
+            member.update(
+                outcome="unsupported",
+                reason="Archives in this mail expand beyond the size limit",
+            )
+        else:
+            member["data"] = content
+            budget[0] -= len(content)
+    return members

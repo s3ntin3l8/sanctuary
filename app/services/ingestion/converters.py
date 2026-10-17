@@ -1,7 +1,9 @@
+import contextlib
 import html
 import logging
 import os
 import re
+import tempfile
 import threading
 from typing import overload
 
@@ -32,7 +34,7 @@ def _layout_model_spec():
     return DOCLING_LAYOUT_EGRET_LARGE
 
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".heic", ".heif"}
 _allowed_extensions = {
     ".pdf",
     ".docx",
@@ -61,7 +63,12 @@ MAGIC_BYTES = {
 }
 
 # Extensions that name the same format; a magic match accepts either spelling.
-_EXTENSION_ALIASES = {".jpeg": ".jpg", ".tiff": ".tif", ".htm": ".html"}
+_EXTENSION_ALIASES = {
+    ".jpeg": ".jpg",
+    ".tiff": ".tif",
+    ".htm": ".html",
+    ".heif": ".heic",
+}
 
 
 def same_format(magic_ext: str, ext: str) -> bool:
@@ -163,6 +170,9 @@ def _strip_leading_noise_paragraphs(text: str) -> str:
     return "\n\n".join(paragraphs[head_end:])
 
 
+_HEIF_BRANDS = {b"heic", b"heix", b"hevc", b"heim", b"heis", b"mif1", b"msf1"}
+
+
 def magic_extension(header: bytes) -> str | None:
     """The extension a file's first bytes imply, or None when unrecognised."""
     for magic, ext in MAGIC_BYTES.items():
@@ -171,6 +181,9 @@ def magic_extension(header: bytes) -> str | None:
     # WEBP is a RIFF container: the format name sits at bytes 8-12.
     if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
         return ".webp"
+    # HEIC/HEIF is an ISO-BMFF container: "ftyp" then the brand at bytes 4-12.
+    if header[4:8] == b"ftyp" and header[8:12] in _HEIF_BRANDS:
+        return ".heic"
     return None
 
 
@@ -184,6 +197,24 @@ def validate_file_magic(file_path: str) -> str | None:
 
 
 ALLOWED_EXTENSIONS = _allowed_extensions
+
+
+@contextlib.contextmanager
+def _ocr_readable_image(file_path: str):
+    """The path of an image Docling can read: HEIC/HEIF is converted to a PNG
+    (in a temporary directory that is removed afterwards); others pass through."""
+    if os.path.splitext(file_path)[1].lower() not in {".heic", ".heif"}:
+        yield file_path
+        return
+    import pillow_heif
+    from PIL import Image
+
+    pillow_heif.register_heif_opener()
+    with tempfile.TemporaryDirectory() as tmp:
+        png = os.path.join(tmp, "image.png")
+        with Image.open(file_path) as image:
+            image.convert("RGB").save(png)
+        yield png
 
 
 def _ics_to_text(file_path: str) -> str:
@@ -847,9 +878,10 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
         }
 
     if ext in IMAGE_EXTENSIONS:
-        markdown, chunks, metadata = _run_conversion(
-            _get_image_ocr_converter(), file_path
-        )
+        with _ocr_readable_image(file_path) as readable:
+            markdown, chunks, metadata = _run_conversion(
+                _get_image_ocr_converter(), readable
+            )
         metadata["format"] = "image"
         return {"content": markdown, "metadata": metadata, "chunks": chunks}
 

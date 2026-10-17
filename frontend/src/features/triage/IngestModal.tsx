@@ -10,7 +10,7 @@ import { Icon } from '../../ui/Icon'
 import { Modal } from '../../ui/Modal'
 
 const ACCEPT =
-  '.pdf,.docx,.txt,.md,.pptx,.xlsx,.eml,.html,.htm,.ics,.png,.jpg,.jpeg,.tif,.tiff,.webp'
+  '.pdf,.docx,.txt,.md,.pptx,.xlsx,.eml,.html,.htm,.ics,.png,.jpg,.jpeg,.tif,.tiff,.webp,.heic,.heif'
 
 type Props = { open: boolean; onClose: () => void; caseId: string | null }
 
