@@ -32,6 +32,7 @@ from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_document
 from app.services.intelligence.schemas import DocumentEnrichment
 from app.services.text_offsets import find_text_offsets
+from app.services.timezone_service import local_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,7 @@ def _call_enricher_sync(
 
     dates_context = ""
     if doc.received_date:
-        dates_context += f"\nReceived date: {doc.received_date.strftime('%Y-%m-%d')}"
+        dates_context += f"\nReceived date: {local_date_str(doc.received_date)}"
 
     # What the METADATA stage settled (read from the doc now, so BATCH_ANALYSIS
     # overrides are included). Handing these over keeps ENRICH from re-deriving
@@ -114,7 +115,7 @@ def _call_enricher_sync(
     if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN:
         settled_lines.append(f"Originator type: {doc.originator_type.value}")
     if doc.issued_date:
-        settled_lines.append(f"Issued date: {doc.issued_date.strftime('%Y-%m-%d')}")
+        settled_lines.append(f"Issued date: {local_date_str(doc.issued_date)}")
     settled_context = (
         "\n\nSettled by metadata stage (authoritative — do not re-derive):\n"
         + "\n".join(settled_lines)

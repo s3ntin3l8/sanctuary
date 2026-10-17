@@ -294,3 +294,41 @@ def test_reconnect_without_a_refresh_token_keeps_the_stored_one(db_session):
         "token": "b",
         "refresh_token": "keep-me",  # pragma: allowlist secret
     }
+
+
+def test_a_lost_stored_refresh_token_is_logged_with_the_user(db_session, caplog):
+    import json
+    import logging
+
+    from app.services import auth_service, user_settings_service
+
+    user = auth_service.create_user(
+        db_session,
+        email="lost-token@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    kwargs = {"connected_at": "2026-01-01"}
+    user_settings_service.set_gmail_credentials(
+        db_session,
+        user.id,
+        credentials_json=json.dumps(
+            {"token": "a", "refresh_token": "keep-me"}  # pragma: allowlist secret
+        ),
+        **kwargs,
+    )
+    settings = user_settings_service._get_or_create_user(db_session, user.id)
+    settings.settings_json = {
+        **settings.settings_json,
+        "gmail_credentials_json": "enc:v1:not-decryptable",
+    }
+    db_session.commit()
+
+    with caplog.at_level(logging.WARNING):
+        user_settings_service.set_gmail_credentials(
+            db_session,
+            user.id,
+            credentials_json=json.dumps({"token": "b"}),
+            **kwargs,
+        )
+
+    assert f"refresh token for user {user.id}" in caplog.text

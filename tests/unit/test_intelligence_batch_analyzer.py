@@ -1163,3 +1163,47 @@ def test_hand_made_groups_still_share_the_case(db_session, sample_case):
 
     db_session.expire_all()
     assert db_session.get(Document, enclosure.id).case_id == sample_case.id
+
+
+@pytest.mark.unit
+def test_prompt_dates_are_in_the_configured_timezone(batch_with_two_docs, monkeypatch):
+    from unittest.mock import patch
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+    from app.services.intelligence.batch_analyzer import (
+        _build_manifest_block,
+        _call_batch_analyzer_sync,
+    )
+    from app.services.intelligence.schemas import BatchAnalysis
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Europe/Berlin"))
+    batch, cover, enclosure = batch_with_two_docs
+    cover.issued_date = datetime(2026, 6, 1, 22, 30)
+
+    block = _build_manifest_block(
+        [
+            {
+                "filename": "a.pdf",
+                "doc_id": enclosure.id,
+                "timestamp": "2026-05-26T06:24:30+00:00",
+                "source_label": "AG Hamburg",
+            }
+        ]
+    )
+    assert '26.05.2026 08:24 "AG Hamburg"' in block
+    assert "+00:00" not in block
+
+    captured = {}
+
+    def fake_call_json_ai(*args, **kwargs):
+        captured["user_prompt"] = kwargs["user_prompt"]
+        return BatchAnalysis.model_validate({})
+
+    with patch(
+        "app.services.intelligence.batch_analyzer.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_batch_analyzer_sync([cover, enclosure], batch.id)
+
+    assert f"doc_{cover.id}: 2026-06-02" in captured["user_prompt"]

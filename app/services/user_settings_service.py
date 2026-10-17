@@ -253,7 +253,7 @@ def set_gmail_own_addresses(
     )
 
 
-def _keep_refresh_token(new_json: str, stored: str | None) -> str:
+def _keep_refresh_token(user_id: int, new_json: str, stored: str | None) -> str:
     """A reconnect that returns no refresh token must not drop the stored one."""
     try:
         new = json.loads(new_json)
@@ -262,7 +262,9 @@ def _keep_refresh_token(new_json: str, stored: str | None) -> str:
         old = json.loads(secrets.decrypt(stored))
         refresh_token = old.get("refresh_token")
     except (ValueError, AttributeError, secrets.SecretsError):
-        logger.warning("Could not carry over the stored Gmail refresh token")
+        logger.warning(
+            "Could not carry over the stored Gmail refresh token for user %s", user_id
+        )
         return new_json
     if not refresh_token:
         return new_json
@@ -280,7 +282,7 @@ def set_gmail_credentials(
     settings = _get_or_create_user(db, user_id)
     data = dict(settings.settings_json or {})
     credentials_json = _keep_refresh_token(
-        credentials_json, data.get("gmail_credentials_json")
+        user_id, credentials_json, data.get("gmail_credentials_json")
     )
     data["gmail_credentials_json"] = secrets.encrypt(credentials_json)
     data["gmail_connected_at"] = connected_at

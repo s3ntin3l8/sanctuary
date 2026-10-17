@@ -8,7 +8,10 @@ in-process; call invalidate() after any UI write to reset it.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from zoneinfo import ZoneInfo, available_timezones
+
+from app.core.timezone import ensure_utc
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +80,23 @@ def get_user_tz() -> ZoneInfo:
     finally:
         _loading = False
     return _cached_tz
+
+
+def to_local(dt: datetime) -> datetime:
+    """A stored datetime in the display timezone. The database holds naive UTC,
+    so a naive value is read as UTC (``core.timezone.ensure_tz`` would read it
+    as Berlin time)."""
+    return ensure_utc(dt).astimezone(get_user_tz())
+
+
+def local_date_str(dt: datetime) -> str:
+    """``YYYY-MM-DD`` of ``dt`` on the reader's calendar, not UTC's.
+
+    A value at exactly 00:00 is a printed calendar date (a letter's date), not
+    an instant, so it is not shifted."""
+    if dt.hour == dt.minute == dt.second == dt.microsecond == 0:
+        return dt.strftime("%Y-%m-%d")
+    return to_local(dt).strftime("%Y-%m-%d")
 
 
 def invalidate() -> None:

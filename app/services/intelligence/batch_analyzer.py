@@ -10,6 +10,7 @@ Legacy format (backward compat):
 
 import logging
 import re
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -36,8 +37,18 @@ from app.services.intelligence.prompts import (
     sanitize_oneline,
 )
 from app.services.intelligence.schemas import BatchAnalysis
+from app.services.timezone_service import local_date_str, to_local
 
 logger = logging.getLogger(__name__)
+
+
+def _local_stamp(iso: str) -> str:
+    """A manifest's ISO UTC timestamp as the reader's ``dd.mm.yyyy HH:MM``;
+    anything unparseable is shown as stored."""
+    try:
+        return to_local(datetime.fromisoformat(iso)).strftime("%d.%m.%Y %H:%M")
+    except ValueError:
+        return iso
 
 
 def _has_manual_groups(batch_id: int, db) -> bool:
@@ -109,7 +120,7 @@ def _build_manifest_block(manifest: list[dict]) -> str:
         sorted_entries,
         key=lambda e: (e.get("timestamp", "?"), e.get("source_label", "?")),
     ):
-        lines.append(f'Group {label} — {ts} "{court}":')
+        lines.append(f'Group {label} — {_local_stamp(ts)} "{court}":')
         for entry in group_iter:
             fname = entry.get("filename", "?")
             doc_id = entry.get("doc_id")
@@ -163,7 +174,7 @@ def _call_batch_analyzer_sync(
             f"=== (doc_id={d.id}) {filename_tag}{safe_title} ===\n{fence(preview, 'batch_doc')}"
         )
         if d.issued_date:
-            temporal_map.append(f"doc_{d.id}: {d.issued_date.strftime('%Y-%m-%d')}")
+            temporal_map.append(f"doc_{d.id}: {local_date_str(d.issued_date)}")
 
     temporal_block = (
         ("### Batch Temporal Map (Known Dates):\n" + ", ".join(temporal_map) + "\n\n")

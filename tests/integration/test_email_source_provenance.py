@@ -667,6 +667,48 @@ def test_replay_capture_preserves_oldest_first_order(db_session, sample_user):
     assert [entry["gmail_id"] for entry in manifest["messages"]] == ["zzz", "aaa"]
 
 
+def test_online_replay_capture_skips_a_message_deleted_in_gmail(
+    db_session, sample_user
+):
+    from app.services import user_settings_service
+    from app.services.ingestion.gmail import GmailMessageGone
+
+    user_settings_service._get_or_create_user(db_session, sample_user.id)
+    db_session.commit()
+    msg = message("<deleted@example.com>")
+    sent_at = datetime(2026, 5, 26, tzinfo=UTC)
+    ingest(
+        db_session,
+        msg,
+        owner_id=sample_user.id,
+        gmail_id="gone",
+        mailbox_received_at=sent_at,
+    )
+    # Index and transport metadata survive; only the raw message is gone.
+    gmail_cache.write_metadata(
+        sample_user.id,
+        "gone",
+        {
+            "sent_at": sent_at.isoformat(),
+            "received_at": sent_at.isoformat(),
+            "thread_id": "thread",
+        },
+    )
+
+    with (
+        patch.object(gmail_replay, "connect_gmail"),
+        patch.object(gmail_replay, "fetch_metadata", return_value=[]),
+        patch(
+            "app.tasks.gmail_sync._raw_message", side_effect=GmailMessageGone("gone")
+        ),
+    ):
+        manifest = gmail_replay.capture(db_session, online=True)
+
+    assert manifest["unavailable"] == [{"owner_id": sample_user.id, "gmail_id": "gone"}]
+    assert [entry["sha256"] for entry in manifest["messages"]] == [None]
+    assert manifest["ready"] is False
+
+
 def test_dismissed_only_source_issues_stay_visible_until_acknowledged(
     db_session, app_client
 ):
