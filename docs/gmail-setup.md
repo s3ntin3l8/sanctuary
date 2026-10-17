@@ -6,7 +6,7 @@ Sanctuary can read your lawyer's emails from Gmail, group them by the case refer
 
 - **Read-only.** Sanctuary requests only `gmail.readonly`. It cannot change, label, move, send or delete anything in your mailbox, and it refuses any grant broader than that. A test fails the build if any code path ever calls a Gmail write method.
 - **Local.** Mail is processed on your machine. If an active AI endpoint is on the public internet, Settings → Gmail and the Import page warn you before you import — point Sanctuary at a local endpoint first (Settings → AI & Models).
-- **Encrypted credentials.** The Google token (and AI API keys) are stored encrypted with `SECRETS_ENCRYPTION_KEY`.
+- **Encrypted credentials.** The Google token (and AI API keys) are stored encrypted with `SECRETS_ENCRYPTION_KEY`; the cached raw mail is encrypted with the same key.
 - **A local copy of fetched mail** is kept in `data/gmail_raw/` (gitignored, owner-only) so you can re-import without asking Gmail again. You can clear it from the Import page.
 
 ## 1. Before you start
@@ -19,7 +19,7 @@ Sanctuary can read your lawyer's emails from Gmail, group them by the case refer
    #       python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
    ```
 
-   **Back it up.** Losing it makes stored Gmail/AI credentials unreadable (you would reconnect Gmail and re-enter AI keys). Sanctuary refuses to start if encrypted credentials are stored and the key is missing; with nothing stored it starts, but connecting Gmail or saving an AI key fails with a 503 until the key is set.
+   **Back it up.** Losing it makes stored Gmail/AI credentials unreadable (you would reconnect Gmail and re-enter AI keys). Sanctuary refuses to start without the key. See [security.md](security.md) for what it protects and how to rotate it.
 2. **Know your public URL.** Google only accepts an `https://` redirect URI (or `http://localhost`). Behind a reverse proxy use that URL, e.g. `https://sanctuary.example.org`.
 3. **Redis must be running** (imports are background jobs). It is part of `docker compose` and `make run`.
 

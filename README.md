@@ -62,6 +62,8 @@ docker compose up -d
 
 For a self-contained deployment that terminates HTTPS itself (Traefik + Let's Encrypt, no separate reverse proxy needed), use `docker-compose.traefik.yml` instead — see the header comment in that file and the "Traefik" section at the bottom of `.env.example`.
 
+Security notes — what is encrypted at rest, key handling and rotation, and the recommended encrypted volume: [docs/security.md](docs/security.md).
+
 ## Configuration
 
 | Environment Variable | Default | Description |
