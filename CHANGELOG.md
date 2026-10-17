@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.4.0...v0.5.0) (2026-10-17)
+
+
+### Features
+
+* **cases:** rename a case ID and create cases in one step from the triage picker ([#362](https://github.com/s3ntin3l8/sanctuary/issues/362)) ([b5a2531](https://github.com/s3ntin3l8/sanctuary/commit/b5a2531a47df89612a91da02e029e996afaef1ef))
+* **import:** redesign the Gmail import history overview ([#361](https://github.com/s3ntin3l8/sanctuary/issues/361)) ([2a368c4](https://github.com/s3ntin3l8/sanctuary/commit/2a368c459b69eef907ffafcb07379bbbc1799af3))
+* preserve Gmail ingest provenance and enforce grouping boundaries ([#365](https://github.com/s3ntin3l8/sanctuary/issues/365)) ([ef17534](https://github.com/s3ntin3l8/sanctuary/commit/ef17534cc072cc6333d5b7ea319fe96e233e19f9))
+
+
+### Bug Fixes
+
+* explain legacy email grouping after acknowledgement ([#368](https://github.com/s3ntin3l8/sanctuary/issues/368)) ([c7d46d6](https://github.com/s3ntin3l8/sanctuary/commit/c7d46d6d7599f69798cc026167670d385b7fec3b))
+* **frontend:** clear pending toast timers on unmount ([#381](https://github.com/s3ntin3l8/sanctuary/issues/381)) ([c35f9f4](https://github.com/s3ntin3l8/sanctuary/commit/c35f9f4ec4b6f429c90ea806ae3ace5a03a9c600))
+* **gmail:** robust sync (retry, deleted mail, revoked access, drafts) and skip autoresponders ([#379](https://github.com/s3ntin3l8/sanctuary/issues/379)) ([e663ad7](https://github.com/s3ntin3l8/sanctuary/commit/e663ad70bd209ebab27a906c40ddc1df95fb2868))
+* **ingest:** lawyer-mail correctness (duplicates across cases, AW:/WG:, header date/sender, Anlagen note) ([#378](https://github.com/s3ntin3l8/sanctuary/issues/378)) ([6f25a74](https://github.com/s3ntin3l8/sanctuary/commit/6f25a74899999400378ac5581fa8d02e5a2b7598))
+
 ## [0.4.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.3.0...v0.4.0) (2026-10-15)
 
 
