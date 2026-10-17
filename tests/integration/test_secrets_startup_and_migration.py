@@ -148,9 +148,12 @@ def _seed_credentials(db_session, value):
 
 
 def test_the_sweep_encrypts_plaintext_credentials_and_leaves_the_placeholder(
-    db_session,
+    db_session, monkeypatch
 ):
     from app.services import reseal
+
+    # The probe also samples stored mail; keep other tests' files out of this one.
+    monkeypatch.setattr(reseal, "_mail_files", lambda: [])
 
     _seed_credentials(db_session, CREDS)
     assert reseal.probe(db_session)  # plaintext sample: a sweep is wanted
