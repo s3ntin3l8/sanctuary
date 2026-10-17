@@ -39,6 +39,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | `PUT /api/v1/settings/gmail/sync-mode`, `POST .../sync`, `POST .../reset-sync`, `DELETE /api/v1/settings/gmail` — choose off / notify (default) / auto for the 5-minute background run, sync now, move the sync watermark, disconnect + revoke (`useSetGmailSyncMode`, `useGmailSyncNow`, `useResetGmailSync`, `useDisconnectGmail`) | ✅ |
 | Gmail access is read-only: only the `gmail.readonly` scope is accepted (callback and token refresh reject broader grants) and `tests/unit/test_gmail_readonly_guard.py` fails the build on any Gmail mutating call | ✅ |
 | Credentials encrypted at rest — `gmail_credentials_json` and AI endpoint `api_key` are Fernet-encrypted (`enc:v1:` prefix, `app/core/secrets.py`) with `SECRETS_ENCRYPTION_KEY`; startup fails closed if encrypted values exist without the key | ✅ |
+| Raw mail encrypted at rest — the Gmail cache (`data/gmail_raw`, messages and metadata sidecars) and the stored `.eml` (`data/email_sources`) are Fernet-encrypted (`SNCENC1` prefix, `app/core/secrets.py`) with `SECRETS_ENCRYPTION_KEY`; an undecryptable cache file is re-fetched, an undecryptable stored `.eml` is a 503; the admin workspace export decrypts them. Stored documents/attachments are not yet encrypted | ✅ |
 | Database vacuum via settings UI | ❌ not implemented — non-goal for v1 |
 | Per-user settings (multi-user) | ✅ `UserSettings` is keyed by `user_id`; AI/identity/data/export/timezone are global admin settings, account/gmail/appearance are per user |
 

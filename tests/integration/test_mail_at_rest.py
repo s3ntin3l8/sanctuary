@@ -93,3 +93,66 @@ def test_replay_capture_reads_an_encrypted_cache(db_session, sample_user):
     manifest = gmail_replay.capture(db_session)
     assert [m["gmail_id"] for m in manifest["messages"]] == ["enc1"]
     assert manifest["messages"][0]["sha256"] is not None
+
+
+def test_the_workspace_export_carries_stored_mail_as_plaintext(db_session, monkeypatch):
+    import io
+    import zipfile
+
+    from app.services import export_service
+    from app.services.export_service import build_export_zip
+
+    monkeypatch.setattr(export_service, "DATA_DIR", config.DATA_DIR)
+
+    msg = _mail("<export@example.com>")
+    batch = _ingest(db_session, msg)
+    gmail_cache.write(424242, "exp1", msg.as_bytes())
+    try:
+        data, _ = build_export_zip(db_session)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            names = archive.namelist()
+            eml = next(
+                n
+                for n in names
+                if n.endswith(f"email_sources/{batch.owner_id}/{batch.id}.eml")
+            )
+            assert b"Mustermann" in archive.read(eml)
+            cached = next(n for n in names if n.endswith("gmail_raw/424242/exp1.eml"))
+            assert b"Mustermann" in archive.read(cached)
+            assert "could not be decrypted" not in archive.read("README.md").decode()
+    finally:
+        gmail_cache.clear(424242)
+
+
+def test_the_export_says_so_when_mail_cannot_be_decrypted(db_session, monkeypatch):
+    import io
+    import zipfile
+
+    from app.services import export_service
+    from app.services.export_service import build_export_zip
+
+    monkeypatch.setattr(export_service, "DATA_DIR", config.DATA_DIR)
+    gmail_cache.write(424243, "exp2", _mail("<exp2@example.com>").as_bytes())
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    try:
+        data, _ = build_export_zip(db_session)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            assert "could not be decrypted" in archive.read("README.md").decode()
+    finally:
+        gmail_cache.clear(424243)
+
+
+def test_replay_capture_skips_a_leftover_temp_file(db_session, sample_user):
+    msg = _mail("<tmpfile@example.com>")
+    sent_at = datetime(2026, 5, 26, tzinfo=UTC)
+    gmail_cache.write(sample_user.id, "good1", msg.as_bytes())
+    (gmail_cache.cache_dir(sample_user.id) / ".tmp-abc123.eml").write_bytes(b"partial")
+    batch = _ingest(
+        db_session, msg, owner_id=sample_user.id, mailbox_received_at=sent_at
+    )
+    batch.gmail_id = None
+    db_session.commit()
+    manifest = gmail_replay.capture(db_session)
+    assert [m["gmail_id"] for m in manifest["messages"]] == ["good1"]

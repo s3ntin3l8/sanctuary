@@ -13,6 +13,10 @@ def write_private(path: Path, data: bytes) -> None:
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
+            handle.flush()
+            # Stored mail cannot always be re-fetched: a crash after the rename
+            # must not leave a zero-length file in place of the message.
+            os.fsync(handle.fileno())
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
     except BaseException:

@@ -33,10 +33,11 @@ def encrypt_existing() -> int:
     rewritten = 0
     for path in _mail_files():
         try:
-            data = path.read_bytes()
-            if not data or secrets.is_encrypted_bytes(data):
-                continue
-            write_private(path, secrets.encrypt_bytes(data))
+            with path.open("rb") as handle:
+                head = handle.read(len(secrets.FILE_MAGIC))
+            if not head or secrets.is_encrypted_bytes(head):
+                continue  # only the prefix is read: this runs at every start
+            write_private(path, secrets.encrypt_bytes(path.read_bytes()))
             rewritten += 1
         except secrets.SecretsError:
             # An unusable key fails every file the same way: say so once and

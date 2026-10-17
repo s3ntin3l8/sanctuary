@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -353,7 +354,8 @@ async def _app_lifespan(app: FastAPI):
 
     from app.services.mail_encryption import encrypt_existing
 
-    encrypt_existing()
+    # Off the event loop: the first run rewrites every stored mail file.
+    await asyncio.to_thread(encrypt_existing)
 
     # Pin the primary admin (by id) for the worker/dev-mode code paths. Idempotent
     # and safe to call always: it pins an existing admin, optionally seeds one from
