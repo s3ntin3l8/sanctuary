@@ -71,6 +71,7 @@ def export(request: Request, db: Session = Depends(get_db)):
             "table_counts": manifest["table_counts"],
             "bytes": len(zip_bytes),
             "files_included": manifest["files_included"],
+            "undecryptable": manifest["undecryptable"],
         },
     )
     db.commit()

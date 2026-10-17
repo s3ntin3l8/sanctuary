@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import shutil
+import threading
 from pathlib import Path
 
 from app import config as cfg
@@ -45,9 +46,38 @@ def _path(user_id: int, gmail_id: str) -> Path:
     return cache_dir(user_id) / f"{gmail_id}.eml"
 
 
+_undecryptable = 0
+_undecryptable_lock = threading.Lock()
+
+
+def take_undecryptable() -> int:
+    """How many cached files could not be decrypted since the last call.
+
+    With a rotated key that is every cached message, so a run logs this count
+    once (``_read_plain`` itself stays at DEBUG) instead of one warning each."""
+    global _undecryptable
+    with _undecryptable_lock:
+        count, _undecryptable = _undecryptable, 0
+    return count
+
+
+def log_undecryptable_summary(scope: str) -> None:
+    """One WARNING per run for the cached mail that could not be decrypted (a
+    rotated or wrong SECRETS_ENCRYPTION_KEY); those messages count as misses."""
+    count = take_undecryptable()
+    if count:
+        logger.warning(
+            "%s: %d cached message(s) could not be decrypted with the current "
+            "SECRETS_ENCRYPTION_KEY and were treated as missing",
+            scope,
+            count,
+        )
+
+
 def _read_plain(path: Path) -> bytes | None:
     """The file's decrypted bytes. A file that cannot be read or decrypted
     (wrong or missing key) is a miss: the message is simply fetched again."""
+    global _undecryptable
     try:
         data = path.read_bytes()
     except OSError:
@@ -55,7 +85,9 @@ def _read_plain(path: Path) -> bytes | None:
     try:
         return secrets.decrypt_bytes(data) or None
     except secrets.SecretsError:
-        logger.warning(
+        with _undecryptable_lock:
+            _undecryptable += 1
+        logger.debug(
             "Cached mail %s cannot be decrypted; treating as a miss", path.name
         )
         return None

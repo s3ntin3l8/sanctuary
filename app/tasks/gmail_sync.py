@@ -246,6 +246,22 @@ def _maybe_warn(exc: Exception) -> None:
 
 @contextlib.contextmanager
 def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
+    """The mailbox mutex (see ``_acquire_user_lock``) around one whole run: cached
+    mail the key cannot open is summarised in a single warning when it ends, not
+    once per Gmail page. A prefork worker runs one task at a time, so the
+    per-process counter belongs to this run."""
+    with _acquire_user_lock(user_id) as acquired:
+        if acquired:
+            gmail_cache.take_undecryptable()
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                gmail_cache.log_undecryptable_summary(f"Gmail sync (user {user_id})")
+
+
+@contextlib.contextmanager
+def _acquire_user_lock(user_id: int) -> Generator[bool, None, None]:
     """Best-effort mutex so only one sync (incremental, index refresh or import) runs per
     mailbox at a time.
 

@@ -135,3 +135,23 @@ def test_a_wrong_key_is_a_cache_miss_not_an_error(monkeypatch):
     assert gmail_cache.read(UID, "m1") is None
     assert gmail_cache.read_metadata(UID, "m1") is None
     assert gmail_cache.cached_ids(UID, ["m1"]) == {"m1"}  # present, just unreadable
+
+
+def test_a_sync_run_summarises_undecryptable_cache_files_once(monkeypatch, caplog):
+    import contextlib
+    import logging
+
+    from app.tasks import gmail_sync
+
+    @contextlib.contextmanager
+    def held(_user_id):
+        yield True
+
+    monkeypatch.setattr(gmail_sync, "_acquire_user_lock", held)
+    with caplog.at_level(logging.WARNING, logger="app.services.gmail_cache"):
+        with gmail_sync._user_sync_lock(7):
+            for _ in range(3):  # three pages, each hitting an unreadable file
+                gmail_cache._undecryptable += 1
+            assert not caplog.records
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "3 cached message(s)" in warnings[0].getMessage()

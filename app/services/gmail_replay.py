@@ -177,6 +177,7 @@ def capture(db, *, online: bool = False, replace: bool = False) -> dict:
     with os.fdopen(fd, "w") as handle:
         json.dump(manifest, handle, indent=2)
     os.replace(tmp, path)
+    gmail_cache.log_undecryptable_summary("Gmail replay capture")
     return manifest
 
 
@@ -222,6 +223,7 @@ def replay(db) -> dict:
         except Exception:
             db.rollback()
             failed.append({"owner_id": owner, "gmail_id": entry["gmail_id"]})
+    gmail_cache.log_undecryptable_summary("Gmail replay")
     return {**verify(db), "import_errors": failed}
 
 
