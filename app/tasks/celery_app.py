@@ -7,6 +7,7 @@ from celery import Celery
 from celery.signals import (
     after_setup_logger,
     after_setup_task_logger,
+    worker_init,
     worker_process_init,
 )
 
@@ -91,6 +92,7 @@ MAINTENANCE_QUEUE = "maintenance"
 MAINTENANCE_TASKS = (
     "app.tasks.maintenance.recover_pipeline_task",
     "app.tasks.maintenance.prune_ai_debug_logs_task",
+    "app.tasks.maintenance.reseal_stored_secrets_task",
     "app.tasks.thread_open_scan.thread_open_scan_task",
 )
 
@@ -110,6 +112,10 @@ celery_app.conf.beat_schedule = {
     "prune-ai-debug-logs-daily": {
         "task": "app.tasks.maintenance.prune_ai_debug_logs_task",
         "schedule": 86400.0,  # daily
+    },
+    "reseal-stored-secrets-daily": {
+        "task": "app.tasks.maintenance.reseal_stored_secrets_task",
+        "schedule": 86400.0,  # daily; a no-op once everything is on the current key
     },
     "recover-pipeline": {
         "task": "app.tasks.maintenance.recover_pipeline_task",
@@ -171,6 +177,15 @@ celery_app.conf.update(
         **{name: {"queue": MAINTENANCE_QUEUE} for name in MAINTENANCE_TASKS},
     },
 )
+
+
+@worker_init.connect
+def _require_encryption_key(**_kwargs) -> None:
+    """A worker without a usable SECRETS_ENCRYPTION_KEY would write mail in the
+    clear (or fail on every credential), so it refuses to start."""
+    from app.core.secrets import require_key
+
+    require_key()
 
 
 @worker_process_init.connect

@@ -317,6 +317,12 @@ async def _app_lifespan(app: FastAPI):
             _HOST,
         )
 
+    # Mail and credentials are only ever stored encrypted: no usable key, no start
+    # (the workers refuse the same way, see tasks/celery_app.py).
+    from app.core.secrets import require_key
+
+    require_key()
+
     # Run migrations so the schema exists even on a fresh/deleted DB.
     from alembic import command
     from alembic.config import Config as AlembicConfig
@@ -347,15 +353,18 @@ async def _app_lifespan(app: FastAPI):
     with SessionLocal() as seed_db:
         seed_triage_case(seed_db)
 
-    from app.core.secrets import require_key_if_secrets_stored
+    from app.services import reseal
 
-    with SessionLocal() as secrets_db:
-        require_key_if_secrets_stored(secrets_db)
+    def _probe_stored_secrets() -> bool:
+        with SessionLocal() as secrets_db:
+            return reseal.probe(secrets_db)
 
-    from app.services.mail_encryption import encrypt_existing
+    # Cheap sample check off the event loop; a full sweep (plaintext left from
+    # before encryption, or a rotated key) runs on the maintenance worker.
+    if await asyncio.to_thread(_probe_stored_secrets):
+        from app.tasks.dispatch import dispatch_task
 
-    # Off the event loop: the first run rewrites every stored mail file.
-    await asyncio.to_thread(encrypt_existing)
+        dispatch_task("app.tasks.maintenance.reseal_stored_secrets_task")
 
     # Pin the primary admin (by id) for the worker/dev-mode code paths. Idempotent
     # and safe to call always: it pins an existing admin, optionally seeds one from

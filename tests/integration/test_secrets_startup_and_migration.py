@@ -115,25 +115,111 @@ def test_migration_with_plaintext_but_no_key_fails_with_instructions(
         _load_migration().upgrade()
 
 
-def test_startup_fails_closed_when_encrypted_secrets_exist_without_a_key(
-    db_session, monkeypatch
-):
-    _admin_settings(db_session).settings_json = {
-        "gmail_credentials_json": secrets.encrypt(CREDS)
-    }
-    db_session.commit()
-
-    secrets.require_key_if_secrets_stored(db_session)  # key present: fine
+def test_startup_fails_closed_without_a_key(monkeypatch):
+    secrets.require_key()  # key present: fine
     monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY", "")
     with pytest.raises(secrets.SecretsError, match="SECRETS_ENCRYPTION_KEY"):
-        secrets.require_key_if_secrets_stored(db_session)
+        secrets.require_key()
 
 
-def test_startup_without_key_is_fine_when_nothing_is_encrypted(db_session, monkeypatch):
-    _admin_settings(db_session).settings_json = {"theme": "dark"}
+def test_the_celery_worker_refuses_to_start_without_a_key(monkeypatch):
+    from app.tasks.celery_app import _require_encryption_key
+
+    _require_encryption_key()
+    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY", "")
+    with pytest.raises(secrets.SecretsError):
+        _require_encryption_key()
+
+
+def _seed_credentials(db_session, value):
+    _admin_settings(db_session).settings_json = {"gmail_credentials_json": value}
     _app_settings(db_session).settings_json = {
-        "ai": {"instances": [{"id": "b", "api_key": NO_KEY}]}
+        "ai": {
+            "instances": [
+                {"id": "a", "api_key": value and LIVE_KEY},
+                {"id": "b", "api_key": NO_KEY},
+            ]
+        },
+        "gmail_oauth": {
+            "client_secret": value and "csecret"
+        },  # pragma: allowlist secret
     }
     db_session.commit()
-    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY", "")
-    secrets.require_key_if_secrets_stored(db_session)
+
+
+def test_the_sweep_encrypts_plaintext_credentials_and_leaves_the_placeholder(
+    db_session,
+):
+    from app.services import reseal
+
+    _seed_credentials(db_session, CREDS)
+    assert reseal.probe(db_session)  # plaintext sample: a sweep is wanted
+    report = reseal.reseal_db_secrets(db_session)
+    assert report.encrypted == 3 and report.rotated == 0
+    db_session.expire_all()
+    user = _admin_settings(db_session).settings_json
+    app = _app_settings(db_session).settings_json
+    assert secrets.is_encrypted(user["gmail_credentials_json"])
+    assert secrets.decrypt(user["gmail_credentials_json"]) == CREDS
+    assert secrets.decrypt(app["ai"]["instances"][0]["api_key"]) == LIVE_KEY
+    assert app["ai"]["instances"][1]["api_key"] == NO_KEY
+    assert (
+        secrets.decrypt(app["gmail_oauth"]["client_secret"]) == "csecret"
+    )  # pragma: allowlist secret
+    assert not reseal.reseal_db_secrets(db_session).changed
+    assert not reseal.probe(db_session)  # settled: nothing to do at the next start
+
+
+def test_the_sweep_rotates_credentials_off_a_retired_key(db_session, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.services import reseal
+
+    _seed_credentials(db_session, secrets.encrypt(CREDS))
+    _app_settings(db_session).settings_json = {
+        "ai": {"instances": [{"id": "a", "api_key": secrets.encrypt(LIVE_KEY)}]}
+    }
+    db_session.commit()
+    old = config.SECRETS_ENCRYPTION_KEY
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY_PREVIOUS", old)
+    assert reseal.probe(db_session)  # a retired key is configured
+    report = reseal.reseal_db_secrets(db_session)
+    assert report.rotated == 2 and report.undecryptable == 0
+    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY_PREVIOUS", "")
+    db_session.expire_all()
+    user = _admin_settings(db_session).settings_json
+    assert secrets.decrypt(user["gmail_credentials_json"]) == CREDS
+
+
+def test_the_probe_names_the_missing_previous_key(db_session, monkeypatch, caplog):
+    from cryptography.fernet import Fernet
+
+    from app.services import reseal
+
+    _seed_credentials(db_session, secrets.encrypt(CREDS))
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    with caplog.at_level("ERROR", logger="app.services.reseal"):
+        reseal.probe(db_session)
+    assert any(
+        "SECRETS_ENCRYPTION_KEY_PREVIOUS" in r.getMessage() for r in caplog.records
+    )
+    # Also when a sweep is already due because a retired key is configured.
+    caplog.clear()
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY_PREVIOUS", Fernet.generate_key().decode()
+    )
+    with caplog.at_level("ERROR", logger="app.services.reseal"):
+        assert reseal.probe(db_session)
+    assert any("not configured" in r.getMessage() for r in caplog.records)
+    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY_PREVIOUS", "")
+    sealed = _admin_settings(db_session).settings_json["gmail_credentials_json"]
+    report = reseal.reseal_db_secrets(db_session)
+    # The credential nobody can open is counted and left exactly as it was.
+    assert report.undecryptable == 1 and report.rotated == 0
+    db_session.expire_all()
+    assert _admin_settings(db_session).settings_json["gmail_credentials_json"] == sealed

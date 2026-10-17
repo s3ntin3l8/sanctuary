@@ -154,6 +154,9 @@ def oidc_enabled() -> bool:
 # keys). Dedicated — not derived from SESSION_SECRET — so rotating the session
 # secret can't strand stored tokens. Generated into .env by `make setup`.
 SECRETS_ENCRYPTION_KEY = os.getenv("SECRETS_ENCRYPTION_KEY", "")
+# Retired keys (comma-separated) that may still open old values after a rotation;
+# the startup/daily reseal sweep moves them onto SECRETS_ENCRYPTION_KEY.
+SECRETS_ENCRYPTION_KEY_PREVIOUS = os.getenv("SECRETS_ENCRYPTION_KEY_PREVIOUS", "")
 
 # Gmail OAuth client — env fallback; Settings → Gmail overrides it (gmail_oauth_config).
 GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
