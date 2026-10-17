@@ -4741,7 +4741,7 @@ export interface components {
              * @default pending
              * @enum {string}
              */
-            outcome: "pending" | "ingested" | "duplicate" | "ignored_inline" | "empty" | "unsupported" | "failed" | "nested_source" | "body_context" | "removed";
+            outcome: "pending" | "ingested" | "duplicate" | "ignored_inline" | "empty" | "unsupported" | "failed" | "nested_source" | "body_context" | "removed" | "archive" | "signature" | "encrypted";
             /** Reason */
             reason?: string | null;
             /**

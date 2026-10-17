@@ -15,6 +15,7 @@ const labels: Record<string, string> = {
   attachment_empty: 'An attachment contains no readable bytes.',
   attachment_unsupported: 'An attachment uses an unsupported format.',
   attachment_failed: 'An attached email could not be read.',
+  attachment_encrypted: 'An encrypted or opaque message part cannot be read.',
 }
 
 export function EmailSources({ batchId }: { batchId: number }) {

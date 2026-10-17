@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from sqlalchemy.orm.attributes import flag_modified
@@ -32,7 +33,12 @@ def bind_manifests(sources: list[dict]) -> list[str]:
                 p
                 for p in parts
                 if p.get("outcome")
-                not in ("ignored_inline", "nested_source", "body_context")
+                not in (
+                    "ignored_inline",
+                    "nested_source",
+                    "body_context",
+                    "signature",
+                )
                 and normalize_filename(p.get("filename") or "")
                 == normalize_filename(entry["filename"])
             ]
@@ -69,13 +75,27 @@ def bind_manifests(sources: list[dict]) -> list[str]:
                 e["issue"] = "ambiguous_manifest_history"
                 reasons.add(e["issue"])
         for part in parts:
-            if part["outcome"] in ("empty", "unsupported", "failed"):
+            if part["outcome"] in ("empty", "unsupported", "failed", "encrypted"):
                 reasons.add("attachment_" + part["outcome"])
     return sorted(reasons)
 
 
 def persist_sources(sources: list[dict]) -> list[dict]:
     return [EmailSource.model_validate(s).model_dump(mode="json") for s in sources]
+
+
+_ARCHIVE_SUFFIX = re.compile(r"\.z\d+$")
+
+
+def _entries_for(manifest: list[dict], part_id: str | None) -> list[dict]:
+    """Manifest entries delivering a part: its own, else those of the zip it
+    came out of (a manifest lists the archive, or the files in it, by name)."""
+    while part_id:
+        entries = [e for e in manifest if e.get("part_id") == part_id]
+        if entries or not _ARCHIVE_SUFFIX.search(part_id):
+            return entries
+        part_id = _ARCHIVE_SUFFIX.sub("", part_id)
+    return []
 
 
 def source_groups(batch, docs) -> tuple[dict[int, str], set[int]]:
@@ -88,8 +108,8 @@ def source_groups(batch, docs) -> tuple[dict[int, str], set[int]]:
         for part in source.get("parts", []):
             matches = [
                 entry
-                for entry in manifest
-                if entry.get("part_id") == part["id"] and not entry.get("issue")
+                for entry in _entries_for(manifest, part["id"])
+                if not entry.get("issue")
             ]
             keys = {entry["group_id"] for entry in matches if entry.get("group_id")}
             if not manifest:
@@ -109,7 +129,7 @@ def source_groups(batch, docs) -> tuple[dict[int, str], set[int]]:
         manifest = source.get("attachment_manifest", [])
         if manifest and (doc.email_part_id or "").endswith(".body"):
             continue  # The author's own body is independently substantive.
-        entries = [e for e in manifest if e.get("part_id") == doc.email_part_id]
+        entries = _entries_for(manifest, doc.email_part_id)
         # A source with a manifest has positive membership evidence. Missing,
         # conflicting or malformed links cannot be repaired by guessing.
         if manifest and (not entries or any(e.get("issue") for e in entries)):

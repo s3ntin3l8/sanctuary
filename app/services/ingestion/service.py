@@ -30,6 +30,7 @@ from app.services.ingestion.converters import (
     MAX_FILE_SIZE,
     convert_file,
     is_valid_docling_output,
+    same_format,
     validate_file_magic,
 )
 from app.services.ingestion.extractors import (
@@ -782,7 +783,7 @@ async def _ingest_stream(
         _zip_based = {".docx", ".pptx", ".xlsx"}
         if (
             magic_ext
-            and magic_ext != ext
+            and not same_format(magic_ext, ext)
             and not (magic_ext == ".zip" and ext in _zip_based)
         ):
             os.remove(file_path)
