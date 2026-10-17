@@ -5,35 +5,33 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from app.services import ai_debug_store
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-_MAX_AGE_DAYS = 30
-_SEPARATOR = "═" * 64
+# The metadata index is cheap and holds no document text; the full prompt dumps
+# do, so they are kept shorter.
+_INDEX_MAX_AGE_DAYS = 30
+_DUMP_MAX_AGE_DAYS = 7
 
 
 def _prune_log_file(log_file: Path, cutoff: datetime) -> tuple[int, int]:
-    """Prune blocks older than cutoff from a single .log or .md file.
+    """Prune calls older than cutoff from a single encrypted .md dump.
 
-    Returns (blocks_kept, blocks_pruned). Removes the file if all blocks pruned.
-    Blocks without a parsable ts= header (legacy format) are always pruned.
+    Returns (blocks_kept, blocks_pruned). Removes the file if all calls pruned.
+    Calls without a parsable ts= header (or that no longer decrypt) are always
+    pruned. Kept calls are rewritten exactly as stored (still encrypted).
     """
     with open(log_file, "r+", encoding="utf-8", errors="replace") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
-            content = f.read()
-            raw_blocks = content.split(_SEPARATOR)
-
             kept = []
             pruned = 0
-            for block in raw_blocks:
-                block = block.strip()
-                if not block:
-                    continue
-                ts = _parse_block_ts(block)
+            for line, block in ai_debug_store.read_blocks(f.read()):
+                ts = _parse_block_ts(block.strip())
                 if ts is not None and ts >= cutoff:
-                    kept.append(block)
+                    kept.append(line)
                 else:
                     pruned += 1
 
@@ -42,9 +40,9 @@ def _prune_log_file(log_file: Path, cutoff: datetime) -> tuple[int, int]:
                 log_file.unlink(missing_ok=True)
                 return 0, pruned
 
-            new_content = f"\n{_SEPARATOR}\n".join(kept) + "\n"
             tmp = log_file.with_suffix(".tmp")
-            tmp.write_text(new_content, encoding="utf-8")
+            tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
+            os.chmod(tmp, 0o600)
             os.replace(tmp, log_file)
             return len(kept), pruned
         finally:
@@ -136,14 +134,16 @@ def reseal_stored_secrets_task():
 
 @celery_app.task(name="app.tasks.maintenance.prune_ai_debug_logs_task")
 def prune_ai_debug_logs_task():
-    """Prune ai_debug log blocks and index entries older than 30 days."""
+    """Prune ai_debug dumps older than 7 days and index entries older than 30."""
     from app.config import DATA_DIR
 
     debug_dir = DATA_DIR / "ai_debug"
     if not debug_dir.exists():
         return {"status": "skipped", "reason": "ai_debug directory does not exist"}
 
-    cutoff = datetime.now(UTC) - timedelta(days=_MAX_AGE_DAYS)
+    now = datetime.now(UTC)
+    index_cutoff = now - timedelta(days=_INDEX_MAX_AGE_DAYS)
+    dump_cutoff = now - timedelta(days=_DUMP_MAX_AGE_DAYS)
 
     blocks_kept = 0
     blocks_pruned = 0
@@ -154,7 +154,7 @@ def prune_ai_debug_logs_task():
     runs_file = debug_dir / "runs.jsonl"
     if runs_file.is_file():
         try:
-            k, p = _prune_jsonl(runs_file, cutoff)
+            k, p = _prune_jsonl(runs_file, index_cutoff)
             blocks_kept += k
             blocks_pruned += p
             if not runs_file.exists():
@@ -163,12 +163,12 @@ def prune_ai_debug_logs_task():
             logger.warning("Could not prune ai_debug file %s: %s", runs_file, exc)
             errors += 1
 
-    # Prune recursive log files
-    for entry in list(debug_dir.rglob("*.log")) + list(debug_dir.rglob("*.md")):
+    # Prune the encrypted per-scope dumps
+    for entry in debug_dir.rglob("*.md"):
         if not entry.is_file():
             continue
         try:
-            k, p = _prune_log_file(entry, cutoff)
+            k, p = _prune_log_file(entry, dump_cutoff)
             blocks_kept += k
             blocks_pruned += p
             if not entry.exists():
@@ -187,12 +187,12 @@ def prune_ai_debug_logs_task():
                 pass
 
     logger.info(
-        "prune_ai_debug_logs: kept=%d pruned=%d files_removed=%d errors=%d cutoff=%s",
+        "prune_ai_debug_logs: kept=%d pruned=%d files_removed=%d errors=%d dump_cutoff=%s",
         blocks_kept,
         blocks_pruned,
         files_removed,
         errors,
-        cutoff.date().isoformat(),
+        dump_cutoff.date().isoformat(),
     )
     return {
         "status": "success",

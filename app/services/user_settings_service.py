@@ -621,10 +621,10 @@ def set_party_identity(identity: dict, db) -> None:
     db.flush()
 
 
-def get_ai_debug_redact(db) -> bool:
-    """Return True if AI debug log message bodies should be redacted."""
+def get_ai_debug_capture(db) -> bool:
+    """True while full AI prompts and responses are recorded (off by default)."""
     data = _get_or_create_app(db).settings_json or {}
-    return bool(data.get("ai", {}).get("ai_debug_redact", False))
+    return bool(data.get("ai", {}).get("ai_debug_capture", False))
 
 
 VALID_EXTRACTION_ENGINES = ("chandra", "docling")
@@ -745,15 +745,15 @@ def set_ocr_concurrency(db, concurrency: int) -> None:
     db.commit()
 
 
-def set_ai_debug_redact(db, value: bool) -> None:
-    """Persist the AI debug log redaction toggle and emit an audit event."""
+def set_ai_debug_capture(db, value: bool) -> None:
+    """Persist the AI prompt-capture switch and emit an audit event."""
     settings = _get_or_create_app(db)
     data = dict(settings.settings_json or {})
     ai = dict(data.get("ai", {}))
-    ai["ai_debug_redact"] = value
+    ai["ai_debug_capture"] = value
     data["ai"] = ai
     settings.settings_json = data
     audit_service.record(
-        db, AuditEventType.AI_DEBUG_REDACT_TOGGLED, payload={"enabled": value}
+        db, AuditEventType.AI_DEBUG_CAPTURE_TOGGLED, payload={"enabled": value}
     )
     db.commit()

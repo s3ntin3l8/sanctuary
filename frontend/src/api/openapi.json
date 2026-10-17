@@ -3827,6 +3827,19 @@
         "title": "DataView",
         "type": "object"
       },
+      "DebugCaptureUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DebugCaptureUpdate",
+        "type": "object"
+      },
       "DebugLogFacets": {
         "properties": {
           "kind": {
@@ -3861,8 +3874,8 @@
       },
       "DebugLogList": {
         "properties": {
-          "ai_debug_redact": {
-            "title": "Ai Debug Redact",
+          "ai_debug_capture": {
+            "title": "Ai Debug Capture",
             "type": "boolean"
           },
           "facets": {
@@ -3884,7 +3897,7 @@
           "rows",
           "facets",
           "log_root",
-          "ai_debug_redact"
+          "ai_debug_capture"
         ],
         "title": "DebugLogList",
         "type": "object"
@@ -4129,19 +4142,6 @@
           "body"
         ],
         "title": "DebugLogView",
-        "type": "object"
-      },
-      "DebugRedactUpdate": {
-        "properties": {
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "enabled"
-        ],
-        "title": "DebugRedactUpdate",
         "type": "object"
       },
       "DedupJob": {
@@ -16824,14 +16824,14 @@
         ]
       }
     },
-    "/api/v1/settings/ai/debug-redact": {
+    "/api/v1/settings/ai/debug-capture": {
       "put": {
-        "operationId": "v1_debug_redact_api_v1_settings_ai_debug_redact_put",
+        "operationId": "v1_debug_capture_api_v1_settings_ai_debug_capture_put",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DebugRedactUpdate"
+                "$ref": "#/components/schemas/DebugCaptureUpdate"
               }
             }
           },
@@ -16842,7 +16842,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DebugRedactUpdate"
+                  "$ref": "#/components/schemas/DebugCaptureUpdate"
                 }
               }
             },
@@ -16859,7 +16859,7 @@
             "description": "Error"
           }
         },
-        "summary": "V1 Debug Redact",
+        "summary": "V1 Debug Capture",
         "tags": [
           "settings"
         ]

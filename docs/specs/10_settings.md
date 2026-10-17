@@ -16,9 +16,10 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | **Account tab** — `AccountPage.tsx`: profile, e-mail, password (`/api/v1/settings/account`, `PUT …/profile`, `PUT …/email`, `PUT …/password`); "Your data" download of everything the user owns (`GET /api/v1/settings/account/export`, Art. 15/20, OAuth credentials redacted, shared cases excluded) | ✅ |
 | **Gmail tab** — `GmailPage.tsx`: OAuth flow, allowlist, label filter, sync controls, link to the history import | ✅ |
 | **Identity tab** — `IdentityPage.tsx`: own name, own parties, user context (`GET`/`PUT /api/v1/settings/identity`) | ✅ |
-| **AI tab** — `AiPage.tsx`: endpoint instances, per-role model selection (chat/embed/ocr), test connection, reindex, rebuild-index, extraction engine, worker/OCR concurrency, debug redaction | ✅ |
+| **AI tab** — `AiPage.tsx`: endpoint instances, per-role model selection (chat/embed/ocr), test connection, reindex, rebuild-index, extraction engine, worker/OCR concurrency | ✅ |
+| **AI call log** — `AiLogsPage.tsx` (`/api/v1/settings/ai/logs`, admin): the always-on call index (`data/ai_debug/runs.jsonl`: timing, tokens, status, no document text, kept 30 days) plus an opt-in switch (`PUT …/debug-capture`, default off) that records each call's full prompt and response as an encrypted line (`enc:v1:`, `app/services/ai_debug_store.py`, kept 7 days); plaintext dumps from before are deleted at startup | ✅ |
 | **Appearance tab** — `AppearancePage.tsx`: theme (light/dark), dashboard-card visibility, timezone (admin) | ✅ |
-| **Data tab** — `DataPage.tsx`: database stats, reset-enrichment, clear-all-data, debug logs | ✅ |
+| **Data tab** — `DataPage.tsx`: database stats, reset-enrichment, clear-all-data | ✅ |
 | **Export tab** (admin) — `ExportPage.tsx`: whole-workspace download, every user's rows and the entire data directory (`GET /api/v1/settings/data/export`) | ✅ |
 | **Admin › Users** — `frontend/src/features/admin/AdminUsersPage.tsx`: create / activate / role / password reset / delete / reassign cases / signup toggle (`/api/v1/admin/users*`, `PUT /api/v1/admin/signup`) | ✅ |
 | `UserSettings` model — single `settings_json` JSON blob per `user_id` | ✅ |

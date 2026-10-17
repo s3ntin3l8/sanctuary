@@ -1947,7 +1947,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/settings/ai/debug-redact": {
+    "/api/v1/settings/ai/debug-capture": {
         parameters: {
             query?: never;
             header?: never;
@@ -1955,8 +1955,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** V1 Debug Redact */
-        put: operations["v1_debug_redact_api_v1_settings_ai_debug_redact_put"];
+        /** V1 Debug Capture */
+        put: operations["v1_debug_capture_api_v1_settings_ai_debug_capture_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4381,6 +4381,11 @@ export interface components {
             /** Doc Count */
             doc_count: number;
         };
+        /** DebugCaptureUpdate */
+        DebugCaptureUpdate: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** DebugLogFacets */
         DebugLogFacets: {
             /** Kind */
@@ -4392,8 +4397,8 @@ export interface components {
         };
         /** DebugLogList */
         DebugLogList: {
-            /** Ai Debug Redact */
-            ai_debug_redact: boolean;
+            /** Ai Debug Capture */
+            ai_debug_capture: boolean;
             facets: components["schemas"]["DebugLogFacets"];
             /** Log Root */
             log_root: string;
@@ -4445,11 +4450,6 @@ export interface components {
             body: string;
             /** Path */
             path: string;
-        };
-        /** DebugRedactUpdate */
-        DebugRedactUpdate: {
-            /** Enabled */
-            enabled: boolean;
         };
         /** DedupJob */
         DedupJob: {
@@ -10462,7 +10462,7 @@ export interface operations {
             };
         };
     };
-    v1_debug_redact_api_v1_settings_ai_debug_redact_put: {
+    v1_debug_capture_api_v1_settings_ai_debug_capture_put: {
         parameters: {
             query?: never;
             header?: never;
@@ -10471,7 +10471,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DebugRedactUpdate"];
+                "application/json": components["schemas"]["DebugCaptureUpdate"];
             };
         };
         responses: {
@@ -10481,7 +10481,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DebugRedactUpdate"];
+                    "application/json": components["schemas"]["DebugCaptureUpdate"];
                 };
             };
             /** @description Error */

@@ -1,7 +1,7 @@
 import { Fragment, useDeferredValue, useState } from 'react'
 import { Link } from 'react-router'
 
-import { type AiLogFilters, useAiLogs, useAiLogView, useSetDebugRedact } from '../../api/settings'
+import { type AiLogFilters, useAiLogs, useAiLogView, useSetDebugCapture } from '../../api/settings'
 import type { Schemas } from '../../api/client'
 import { Icon } from '../../ui/Icon'
 import { QueryState } from '../../ui/QueryState'
@@ -39,11 +39,11 @@ export function AiLogsPage() {
   const query = useAiLogs(filters)
   const logs = query.data
   const [open, setOpen] = useState<string | null>(null)
-  const redact = useSetDebugRedact()
-  const [redactOn, setRedactOn] = useState<boolean | null>(null)
+  const capture = useSetDebugCapture()
+  const [captureOn, setCaptureOn] = useState<boolean | null>(null)
 
   if (!logs) return <QueryState error={query.error} pending={query.isPending} />
-  const redactValue = redactOn ?? logs.ai_debug_redact
+  const captureValue = captureOn ?? logs.ai_debug_capture
   const filtered = Object.values(filters).some((v) => v !== undefined)
 
   return (
@@ -51,18 +51,20 @@ export function AiLogsPage() {
       <SettingsCard title="Log privacy">
         <div className="flex items-center gap-3 text-[12px]">
           <div className="flex-1">
-            <div className="font-semibold">Redact PII in AI debug logs</div>
+            <div className="font-semibold">Record full AI prompts and responses</div>
             <div className="text-muted">
-              Masks names and addresses in the prompts written to the local debug log.
+              For troubleshooting. Prompts contain document text, so this is off by default; what is
+              recorded is stored encrypted and deleted after 7 days. The call list below is always
+              kept (no document text).
             </div>
           </div>
           <Toggle
-            checked={redactValue}
-            label="Redact PII in AI debug logs"
-            disabled={redact.isPending}
+            checked={captureValue}
+            label="Record full AI prompts and responses"
+            disabled={capture.isPending}
             onChange={(next) => {
-              setRedactOn(next)
-              redact.mutate({ enabled: next }, { onError: () => setRedactOn(!next) })
+              setCaptureOn(next)
+              capture.mutate({ enabled: next }, { onError: () => setCaptureOn(!next) })
             }}
           />
         </div>

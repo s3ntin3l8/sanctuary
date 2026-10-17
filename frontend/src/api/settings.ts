@@ -262,9 +262,9 @@ export const useSetConcurrency = (kind: 'worker' | 'ocr') =>
           : api.PUT('/api/v1/settings/ai/ocr-concurrency', { body }),
       ),
   })
-export const useSetDebugRedact = () =>
-  useMutation<S['DebugRedactUpdate'], ApiError, S['DebugRedactUpdate']>({
-    mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/ai/debug-redact', { body })),
+export const useSetDebugCapture = () =>
+  useMutation<S['DebugCaptureUpdate'], ApiError, S['DebugCaptureUpdate']>({
+    mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/ai/debug-capture', { body })),
   })
 
 // --- Appearance --------------------------------------------------------------
