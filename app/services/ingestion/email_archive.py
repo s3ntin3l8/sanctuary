@@ -21,15 +21,22 @@ def is_zip(filename: str | None, mime_type: str, data: bytes) -> bool:
     return named and data[:4] in (b"PK\x03\x04", b"PK\x05\x06")
 
 
-def archive_members(data: bytes, depth: int = 0) -> list[dict]:
+def archive_members(
+    data: bytes, depth: int = 0, budget: list[int] | None = None
+) -> list[dict]:
     """The files in a zip, each ``{name, size, data, outcome, reason, members}``.
 
     ``outcome`` is ``pending`` (to be ingested), ``archive`` (a nested zip, with
     its own ``members``) or ``unsupported``/``failed`` with a ``reason``. Raises
     ``ArchiveRejected`` when the archive itself is a bomb or unreadable.
+
+    ``budget`` is a one-item list of the bytes that may still be unpacked for
+    the whole mail (shared by every zip in it and by nested ones).
     """
     check_zip(data)
     limit = config.MAX_FILE_SIZE_MB * 1024 * 1024
+    if budget is None:
+        budget = [config.MAX_EMAIL_SIZE_MB * 1024 * 1024]
     members: list[dict] = []
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         for info in archive.infolist():
@@ -54,6 +61,12 @@ def archive_members(data: bytes, depth: int = 0) -> list[dict]:
             if info.file_size > limit:
                 member.update(outcome="unsupported", reason="File is too large")
                 continue
+            if info.file_size > budget[0]:
+                member.update(
+                    outcome="unsupported",
+                    reason="Archives in this mail expand beyond the size limit",
+                )
+                continue
             try:
                 content = archive.read(info)
             except (RuntimeError, NotImplementedError):
@@ -66,12 +79,13 @@ def archive_members(data: bytes, depth: int = 0) -> list[dict]:
                 member.update(outcome="failed", reason="Unreadable archive member")
                 continue
             member["data"] = content
+            budget[0] -= len(content)
             if is_zip(name, "", content):
                 if depth + 1 >= MAX_NESTING:
                     member.update(outcome="unsupported", reason="Archive nesting limit")
                     continue
                 try:
-                    member["members"] = archive_members(content, depth + 1)
+                    member["members"] = archive_members(content, depth + 1, budget)
                 except ArchiveRejected as exc:
                     member.update(outcome="unsupported", reason=str(exc))
                     continue

@@ -455,6 +455,41 @@ def test_upload_queues_files_and_reports_duplicates(db_session):
     assert dup["batch_id"] is None  # empty batch is removed again
 
 
+@pytest.mark.parametrize(
+    ("name", "payload"),
+    [
+        ("scan.jpeg", b"\xff\xd8\xff\xe0" + b"0" * 64),
+        ("scan.jpg", b"\xff\xd8\xff\xe0" + b"1" * 64),
+        ("scan.tiff", b"II*\x00" + b"2" * 64),
+        ("scan.png", b"\x89PNG\r\n\x1a\n" + b"3" * 64),
+        ("scan.webp", b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"4" * 16),
+        ("page.html", b"<html><body>Hallo Gericht</body></html>"),
+        ("invite.ics", b"BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"),
+    ],
+)
+def test_upload_accepts_the_newly_supported_types(db_session, name, payload):
+    with patch("app.tasks.dispatch.dispatch_task"):
+        resp = client.post(
+            "/api/v1/upload",
+            files=[("files", (name, payload, "application/octet-stream"))],
+        )
+    assert resp.status_code == 200, resp.text
+    # A refused file would be reported as failed, so this is the alias check.
+    assert resp.json()["queued"] == 1, resp.json()
+
+
+def test_upload_reports_an_image_whose_content_contradicts_its_extension(db_session):
+    resp = client.post(
+        "/api/v1/upload",
+        files=[("files", ("scan.jpg", b"\x89PNG\r\n\x1a\n" + b"0" * 64, "image/jpeg"))],
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["queued"], body["failed"]) == (0, 1)
+    assert body["results"][0]["status"] == "error"
+    assert "does not match" in body["results"][0]["message"]
+
+
 def test_upload_rejects_unknown_case_and_empty_selection(db_session):
     resp = client.post(
         "/api/v1/upload",

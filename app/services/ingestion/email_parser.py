@@ -209,8 +209,14 @@ def _opaque_kind(part) -> str | None:
     """ "signature" for a detached signature, "encrypted" for a body we cannot read."""
     content_type = part.get_content_type()
     name = (part.get_filename() or "").lower()
-    if content_type in _SIGNATURE_TYPES or name.endswith((".p7s", ".asc", ".sig")):
+    if content_type in _SIGNATURE_TYPES or name.endswith((".p7s", ".sig")):
         return "signature"
+    if name.endswith(".asc"):
+        # ".asc" is also an armored key or text a sender attached: only a PGP
+        # signature block is a signature, anything else stays an attachment.
+        head = (_payload(part) or b"")[:1024]
+        if b"-----BEGIN PGP SIGNATURE-----" in head:
+            return "signature"
     if content_type in _OPAQUE_TYPES or name.endswith((".p7m", ".pgp", ".gpg")):
         return "encrypted"
     return None
@@ -528,6 +534,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
     Binary payloads are transient and excluded from persisted EmailSource data.
     """
     sources: list[dict] = []
+    # Unpacked zip bytes held for the whole mail, on top of what it already is.
+    decompression_budget = [config.MAX_EMAIL_SIZE_MB * 1024 * 1024]
 
     def read_source(
         msg,
@@ -675,7 +683,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             """A zip is accounted for as one part; its files become parts of
             this source, ingested like any other attachment."""
             try:
-                members = archive_members(data)
+                members = archive_members(data, budget=decompression_budget)
             except ArchiveRejected as exc:
                 entry.update(outcome="unsupported", reason=str(exc))
                 return

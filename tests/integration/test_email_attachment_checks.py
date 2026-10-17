@@ -479,3 +479,41 @@ def test_a_manifest_naming_the_zip_dates_the_documents_inside_it(db_session):
     for doc in docs:
         assert doc.received_date.replace(tzinfo=None) == datetime(2026, 5, 26, 6, 24)
         assert doc.extraction_confidence["received_date"] == "bea_manifest"
+
+
+@pytest.mark.integration
+def test_an_armored_key_named_asc_is_not_mistaken_for_a_signature(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"-----BEGIN PGP PUBLIC KEY BLOCK-----\nabc\n-----END PGP PUBLIC KEY BLOCK-----\n",
+                maintype="application",
+                subtype="octet-stream",
+                filename="key.asc",
+            ),
+            message_id="<asc-key@example.com>",
+        ),
+    )
+    outcome, _ = _part_outcomes(batch)["key.asc"]
+    assert outcome == "unsupported"  # loud, not a silently dropped "signature"
+    assert "attachment_unsupported" in batch.source_review_reasons
+
+
+@pytest.mark.integration
+def test_an_armored_pgp_signature_named_asc_is_a_signature(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"-----BEGIN PGP SIGNATURE-----\nabc\n-----END PGP SIGNATURE-----\n",
+                maintype="application",
+                subtype="octet-stream",
+                filename="mail.asc",
+            ),
+            body="Eigener Text.",
+            message_id="<asc-sig@example.com>",
+        ),
+    )
+    assert _part_outcomes(batch)["mail.asc"] == ("signature", None)
+    assert "attachment_unsupported" not in batch.source_review_reasons

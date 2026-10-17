@@ -238,3 +238,24 @@ def test_members_of_a_zip_named_in_the_manifest_share_its_group():
     groups, blocked = source_groups(batch, docs)
     assert not blocked
     assert groups[10] == groups[11] == source["attachment_manifest"][0]["group_id"]
+
+
+def test_members_share_one_decompression_budget_per_mail(monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "MAX_EMAIL_SIZE_MB", 1)
+    data = _zip({"a.pdf": os.urandom(600_000), "b.pdf": os.urandom(600_000)})
+    first, second = archive_members(data)
+    assert first["outcome"] == "pending" and len(first["data"]) == 600_000
+    assert (second["outcome"], second["data"]) == ("unsupported", b"")
+    assert "size limit" in second["reason"]
+
+
+def test_a_budget_spans_nested_archives():
+    inner = _zip({"deep.pdf": os.urandom(500_000)})
+    outer = _zip({"inner.zip": inner, "b.pdf": os.urandom(500_000)})
+    inner_member, sibling = archive_members(outer, budget=[700_000])
+    # Unpacking the inner zip used up most of the budget: its own file no longer fits.
+    [deep] = inner_member["members"]
+    assert (deep["outcome"], deep["data"]) == ("unsupported", b"")
+    assert (sibling["outcome"], sibling["data"]) == ("unsupported", b"")
