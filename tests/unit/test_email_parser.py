@@ -476,6 +476,12 @@ def test_manifest_is_read_from_below_the_quoted_header():
         ("Tue, May 26, 2026 at 8:24 PM", datetime(2026, 5, 26, 18, 24, tzinfo=UTC)),
         ("Tue, 26 May 2026 08:00:00 +0200", datetime(2026, 5, 26, 6, 0, tzinfo=UTC)),
         ("26. Mai 2026", datetime(2026, 5, 26, tzinfo=UTC)),
+        ("26.05.2026 08:24 +00:00", datetime(2026, 5, 26, 8, 24, tzinfo=UTC)),
+        ("26.05.2026 08:24 +0200", datetime(2026, 5, 26, 6, 24, tzinfo=UTC)),
+        ("2026-05-26T08:24:00Z", datetime(2026, 5, 26, 8, 24, tzinfo=UTC)),
+        ("2026-05-26 08:24:00+02:00", datetime(2026, 5, 26, 6, 24, tzinfo=UTC)),
+        ("Tue, 26 May 2026 08:00:00 +0530", datetime(2026, 5, 26, 2, 30, tzinfo=UTC)),
+        ("Tue, 26 May 2026 08:00:00 GMT", datetime(2026, 5, 26, 8, tzinfo=UTC)),
         ("kein Datum", None),
     ],
 )
@@ -546,3 +552,27 @@ def test_only_a_pure_forward_is_read(body, subject):
     from app.services.ingestion.email_parser import parse_inline_forward
 
     assert parse_inline_forward(body, subject) is None
+
+
+@pytest.mark.parametrize(
+    ("body", "subject", "sender"),
+    [
+        (
+            "Am Di., 26. Mai 2026 um 08:24 schrieb Müller <m@x.de>:\n> Text",
+            "WG: Ladung",
+            "Müller <m@x.de>",
+        ),
+        (
+            "On Tue, May 26, 2026 at 8:24 AM Müller <m@x.de> wrote:\n> Text",
+            "Fwd: Ladung",
+            "Müller <m@x.de>",
+        ),
+    ],
+)
+def test_attribution_line_of_a_forward_gives_sender_and_date(body, subject, sender):
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    assert parse_inline_forward(body, subject) == {
+        "sender": sender,
+        "sent_at": datetime(2026, 5, 26, 6, 24, tzinfo=UTC),
+    }

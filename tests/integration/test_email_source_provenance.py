@@ -913,3 +913,10 @@ def test_pure_forward_body_takes_the_original_sender_and_date(db_session):
     assert doc.issued_date.replace(tzinfo=None) == datetime(2026, 5, 26, 6, 24)
     assert doc.extraction_confidence["sender"] == "email_header"
     assert doc.meta["inline_forward"]["forwarder"] == "lawyer@example.com"
+
+    # EXTRACT replaces the metadata wholesale; the forward record must survive it.
+    from app.services.ingestion.service import process_uploaded_document
+
+    process_uploaded_document(doc, db_session)
+    assert doc.meta["inline_forward"]["forwarder"] == "lawyer@example.com"
+    assert doc.sender == "Landgericht <poststelle@lg.de>"
