@@ -231,8 +231,8 @@ def current_text(body: str) -> str:
     """The new text of a reply, without the quoted thread below it.
 
     Cuts at the first reply-header line (or Outlook From/Sent block) and drops
-    ``>``-quoted lines. Returns ``body`` unchanged when nothing is left, so a
-    pure forward isn't emptied.
+    ``>``-quoted lines. Returns "" for a pure forward; callers that need the
+    text anyway use ``strip_quoted_history``.
     """
     lines = body.splitlines()
     kept: list[str] = []
@@ -252,6 +252,139 @@ def current_text(body: str) -> str:
 
 def strip_quoted_history(body: str) -> str:
     return current_text(body) or body
+
+
+_MONTHS = {
+    name: number
+    for number, names in enumerate(
+        (
+            ("januar", "jan", "january", "jänner"),
+            ("februar", "feb", "february"),
+            ("märz", "mär", "mrz", "march", "mar"),
+            ("april", "apr"),
+            ("mai", "may"),
+            ("juni", "jun", "june"),
+            ("juli", "jul", "july"),
+            ("august", "aug"),
+            ("september", "sep", "sept"),
+            ("oktober", "okt", "october", "oct"),
+            ("november", "nov"),
+            ("dezember", "dez", "december", "dec"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+_TIME = r"(?:\s*(?:um|at|,)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?"
+_DAY_MONTH_YEAR = re.compile(
+    r"(\d{1,2})\.?\s+([A-Za-zäöüÄÖÜ]+)\.?,?\s+(\d{4})" + _TIME, re.IGNORECASE
+)
+_MONTH_DAY_YEAR = re.compile(
+    r"([A-Za-zäöüÄÖÜ]+)\.?\s+(\d{1,2}),?\s+(\d{4})" + _TIME, re.IGNORECASE
+)
+_NUMERIC_DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})" + _TIME)
+_EXPLICIT_ZONE = re.compile(r"[+-]\d{4}\b|\b(?:GMT|UTC)\b|\bZ$")
+
+
+def parse_forward_date(text: str) -> datetime | None:
+    """A forwarded header's date as aware UTC.
+
+    Handles "Montag, 26. Mai 2026 08:24", "26.05.2026 08:24", "Tue, May 26, 2026
+    at 8:24 AM" and RFC 5322. A time without a zone is local (``TIMEZONE``); a
+    date without a time is that calendar date at 00:00 UTC.
+    """
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    if _EXPLICIT_ZONE.search(text):
+        parsed = parse_email_date(text)
+        if parsed:
+            return parsed
+    for pattern, order in (
+        (_DAY_MONTH_YEAR, "dmy"),
+        (_MONTH_DAY_YEAR, "mdy"),
+        (_NUMERIC_DATE, "dmy"),
+    ):
+        match = pattern.search(text)
+        if not match:
+            continue
+        a, b, year, hour, minute, second, meridian = match.groups()
+        day, month = (a, b) if order == "dmy" else (b, a)
+        try:
+            month_no = int(month) if month.isdigit() else _MONTHS[month.lower()]
+            h = int(hour) if hour else None
+            if h is not None and meridian:
+                h = h % 12 + (12 if meridian.upper() == "PM" else 0)
+            if h is None:
+                return datetime(int(year), month_no, int(day), tzinfo=UTC)
+            local = datetime(
+                int(year),
+                month_no,
+                int(day),
+                h,
+                int(minute),
+                int(second or 0),
+                tzinfo=ZoneInfo(TIMEZONE),
+            )
+        except (KeyError, ValueError):
+            continue
+        return local.astimezone(UTC)
+    return None
+
+
+_FORWARD_SUBJECT_RE = re.compile(r"^\s*(?:wg|fwd?|weitergeleitet)\s*:", re.IGNORECASE)
+_FORWARD_DIVIDER_RE = re.compile(
+    r"^\s*-{2,}\s*(?:weitergeleitete nachricht|forwarded message)\s*-{2,}",
+    re.IGNORECASE,
+)
+_HEADER_LINE_RE = re.compile(r"^\s*([A-Za-zäöüÄÖÜ-]+)\s*:\s*(.*)$")
+
+
+def parse_inline_forward(body: str, subject: str = "") -> dict | None:
+    """Original sender and date of a pure inline forward.
+
+    A "WG:" without a note of its own is just the forwarded block, so the
+    forwarder's From/Date describe the forwarding, not the letter. Returns
+    ``{"sender", "sent_at"}`` (either may be None) for the first header block of
+    such a forward, and None when the mail is not a pure forward or has no
+    readable header block.
+    """
+    if current_text(body):
+        return None
+    lines = body.splitlines()
+    explicit = any(_FORWARD_DIVIDER_RE.match(line) for line in lines)
+    if not (explicit or _FORWARD_SUBJECT_RE.match(subject)):
+        return None
+    for i, line in enumerate(lines):
+        if not _FORWARD_DIVIDER_RE.match(line):
+            start = (
+                i
+                if _OUTLOOK_HEADER_RE.match(line)
+                and any(_OUTLOOK_FOLLOW_RE.match(n) for n in lines[i + 1 : i + 4])
+                else None
+            )
+        else:
+            start = i + 1
+        if start is None:
+            continue
+        sender, sent = None, None
+        for header in lines[start : start + 12]:
+            if not header.strip():
+                if sender or sent:
+                    break
+                continue
+            match = _HEADER_LINE_RE.match(header)
+            if not match:
+                break
+            key, value = match.group(1).lower(), match.group(2).strip()
+            if key in ("von", "from") and sender is None:
+                value = re.sub(r"\s*\[mailto:([^\]]+)\]", r" <\1>", value)
+                sender = re.sub(r"<mailto:([^>]+)>", r"<\1>", value) or None
+            elif key in ("gesendet", "sent", "datum", "date") and sent is None:
+                sent = parse_forward_date(value)
+        if sender or sent:
+            return {"sender": sender, "sent_at": sent}
+    return None
 
 
 def normalize_filename(value: str) -> str:
@@ -481,6 +614,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         source["attachment_manifest"] = _parse_attachment_manifest(body)
         source["email_note"] = _extract_email_note(body)
         source["body"] = strip_quoted_history(body) if body else ""
+        source["inline_forward"] = (
+            parse_inline_forward(body, source["subject"]) if body else None
+        )
         # An attached message counts as an attachment of this source as well.
         source["has_attachments"] = any(
             p["outcome"] != "ignored_inline" for p in source["parts"]

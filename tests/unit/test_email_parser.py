@@ -462,3 +462,87 @@ def test_manifest_is_read_from_below_the_quoted_header():
     result = parse_rfc822(raw)
     assert result["body"] == "Anbei."
     assert [e["filename"] for e in result["attachment_manifest"]] == ["SCHR_1.PDF"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Montag, 26. Mai 2026 08:24", datetime(2026, 5, 26, 6, 24, tzinfo=UTC)),
+        ("26.05.2026 08:24", datetime(2026, 5, 26, 6, 24, tzinfo=UTC)),
+        (
+            "Dienstag, 26. Mai 2026 um 08:24:10",
+            datetime(2026, 5, 26, 6, 24, 10, tzinfo=UTC),
+        ),
+        ("Tue, May 26, 2026 at 8:24 PM", datetime(2026, 5, 26, 18, 24, tzinfo=UTC)),
+        ("Tue, 26 May 2026 08:00:00 +0200", datetime(2026, 5, 26, 6, 0, tzinfo=UTC)),
+        ("26. Mai 2026", datetime(2026, 5, 26, tzinfo=UTC)),
+        ("kein Datum", None),
+    ],
+)
+def test_forward_date_formats(text, expected):
+    from app.services.ingestion.email_parser import parse_forward_date
+
+    assert parse_forward_date(text) == expected
+
+
+def test_german_outlook_forward_gives_original_sender_and_date():
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    body = (
+        "Von: Müller, Hans [mailto:h.mueller@kanzlei.de]\n"
+        "Gesendet: Montag, 26. Mai 2026 08:24\n"
+        "An: mandant@example.com\nBetreff: Klageerwiderung\n\nText"
+    )
+    assert parse_inline_forward(body, "WG: Klageerwiderung") == {
+        "sender": "Müller, Hans <h.mueller@kanzlei.de>",
+        "sent_at": datetime(2026, 5, 26, 6, 24, tzinfo=UTC),
+    }
+
+
+def test_gmail_forward_block_gives_original_sender_and_date():
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    body = (
+        "---------- Forwarded message ---------\n"
+        "From: Court <poststelle@lg.de>\n"
+        "Date: Tue, May 26, 2026 at 8:24 AM\n"
+        "Subject: Ladung\nTo: me@example.com\n\nText"
+    )
+    result = parse_inline_forward(body, "Fwd: Ladung")
+    assert result["sender"] == "Court <poststelle@lg.de>"
+    assert result["sent_at"] == datetime(2026, 5, 26, 6, 24, tzinfo=UTC)
+
+
+def test_nested_forward_uses_the_first_block():
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    body = (
+        "-------- Weitergeleitete Nachricht --------\n"
+        "Von: Erste <a@x.de>\nGesendet: 26.05.2026 08:24\n\n"
+        "Von: Zweite <b@x.de>\nGesendet: 01.01.2026 08:00\n"
+    )
+    assert parse_inline_forward(body, "WG: x")["sender"] == "Erste <a@x.de>"
+
+
+def test_unreadable_forward_date_keeps_the_sender_only():
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    body = "Von: Erste <a@x.de>\nGesendet: neulich\nAn: me\n"
+    assert parse_inline_forward(body, "WG: x") == {
+        "sender": "Erste <a@x.de>",
+        "sent_at": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("body", "subject"),
+    [
+        ("Siehe unten.\n\nVon: A <a@x.de>\nGesendet: 26.05.2026 08:24\n", "WG: x"),
+        ("Von: A <a@x.de>\nGesendet: 26.05.2026 08:24\n", "AW: x"),
+        ("Hallo", "WG: x"),
+    ],
+)
+def test_only_a_pure_forward_is_read(body, subject):
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    assert parse_inline_forward(body, subject) is None

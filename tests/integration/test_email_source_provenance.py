@@ -847,3 +847,69 @@ def test_subject_assignment_preserves_only_a_same_case_proceeding(
     db_session.refresh(batch)
     assert batch.case_id == target_id
     assert batch.proceeding_id == (None if change_case else proceeding.id)
+
+
+def _court_delivery(manifest_line):
+    msg = message("<bea-delivery@example.com>")
+    msg.set_content(f"Anlagen:\n{manifest_line}\n")
+    msg.add_attachment(
+        b"%PDF delivered", maintype="application", subtype="pdf", filename="SCHR.PDF"
+    )
+    return msg
+
+
+def test_manifest_timestamp_is_the_attachments_legal_receipt(db_session):
+    arrival = datetime(2026, 5, 27, 9, 0, tzinfo=UTC)
+    batch = ingest(
+        db_session,
+        _court_delivery('SCHR.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt"'),
+        mailbox_received_at=arrival,
+    )
+    doc = (
+        db_session.query(Document)
+        .filter(
+            Document.ingest_batch_id == batch.id,
+            Document.original_filename == "SCHR.PDF",
+        )
+        .one()
+    )
+    assert doc.received_date.replace(tzinfo=None) == datetime(2026, 5, 26, 6, 24)
+    assert doc.extraction_confidence["received_date"] == "bea_manifest"
+    # The batch keeps the mailbox arrival.
+    assert batch.received_at.replace(tzinfo=None) == arrival.replace(tzinfo=None)
+    assert batch.received_source == "gmail"
+
+
+def test_unusable_manifest_timestamp_keeps_the_mail_arrival(db_session):
+    arrival = datetime(2026, 5, 27, 9, 0, tzinfo=UTC)
+    batch = ingest(
+        db_session,
+        _court_delivery('SCHR.PDF: 30.02.2026 08:24 - "Landgericht Ingolstadt"'),
+        mailbox_received_at=arrival,
+    )
+    doc = (
+        db_session.query(Document)
+        .filter(
+            Document.ingest_batch_id == batch.id,
+            Document.original_filename == "SCHR.PDF",
+        )
+        .one()
+    )
+    assert doc.received_date.replace(tzinfo=None) == arrival.replace(tzinfo=None)
+    assert "received_date" not in (doc.extraction_confidence or {})
+
+
+def test_pure_forward_body_takes_the_original_sender_and_date(db_session):
+    msg = message("<wg@example.com>")
+    msg.replace_header("Subject", "WG: Ladung")
+    msg.set_content(
+        "Von: Landgericht <poststelle@lg.de>\n"
+        "Gesendet: Montag, 26. Mai 2026 08:24\n"
+        "An: client@example.com\nBetreff: Ladung\n\nSie werden geladen."
+    )
+    batch = ingest(db_session, msg)
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+    assert doc.sender == "Landgericht <poststelle@lg.de>"
+    assert doc.issued_date.replace(tzinfo=None) == datetime(2026, 5, 26, 6, 24)
+    assert doc.extraction_confidence["sender"] == "email_header"
+    assert doc.meta["inline_forward"]["forwarder"] == "lawyer@example.com"
