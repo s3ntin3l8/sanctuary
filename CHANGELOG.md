@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.5.0...v0.6.0) (2026-10-17)
+
+
+### Features
+
+* **ingest:** convert more email attachment types (no new dependencies) ([#391](https://github.com/s3ntin3l8/sanctuary/issues/391)) ([611697a](https://github.com/s3ntin3l8/sanctuary/commit/611697a34adeaa5fcaa32cdddaafa318e8960ea4))
+* **ingest:** exhibit labels and enclosure order from Anlage lists and filenames ([#394](https://github.com/s3ntin3l8/sanctuary/issues/394)) ([f5ffed6](https://github.com/s3ntin3l8/sanctuary/commit/f5ffed63da832d160e06fb7d33efe80de4d883e8))
+* **ingest:** legal receipt time from beA manifests; original sender/date of inline forwards ([#383](https://github.com/s3ntin3l8/sanctuary/issues/383)) ([6f3d4d6](https://github.com/s3ntin3l8/sanctuary/commit/6f3d4d6907ba5522fe1d4584bb194a22cda53608))
+
+
+### Bug Fixes
+
+* **ingest:** size and decompression limits for mail and zip-based attachments ([#386](https://github.com/s3ntin3l8/sanctuary/issues/386)) ([11ca74e](https://github.com/s3ntin3l8/sanctuary/commit/11ca74e8452f7d9a750600f354693cb1f53403f5)), closes [#371](https://github.com/s3ntin3l8/sanctuary/issues/371)
+* render prompt dates in the configured timezone; gmail replay follow-ups ([#382](https://github.com/s3ntin3l8/sanctuary/issues/382)) ([c62bb02](https://github.com/s3ntin3l8/sanctuary/commit/c62bb027825de69a2fb602945316d8329a521f64)), closes [#374](https://github.com/s3ntin3l8/sanctuary/issues/374) [#380](https://github.com/s3ntin3l8/sanctuary/issues/380)
+* **security:** encrypt the raw mail cache and stored .eml at rest ([#387](https://github.com/s3ntin3l8/sanctuary/issues/387)) ([5d86a3c](https://github.com/s3ntin3l8/sanctuary/commit/5d86a3c7baa3b4aaf78a99df86da6e2c5d52e54e))
+
 ## [0.5.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.4.0...v0.5.0) (2026-10-17)
 
 
