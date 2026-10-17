@@ -126,3 +126,16 @@ test('keeps the legacy regrouping explanation after acknowledgement and refetch'
   ).toBeVisible()
   expect(screen.getByText(/Existing groups are preserved/)).toBeVisible()
 })
+
+test('explains an encrypted or opaque message part', async () => {
+  stubApi({
+    'GET /api/v1/triage/bundles/42/sources': {
+      body: { ...evidence, review_reasons: ['attachment_encrypted'] },
+    },
+  })
+  renderAt('/triage', <EmailSources batchId={42} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Email sources and attachments' }))
+  expect(
+    await screen.findByText('An encrypted or opaque message part cannot be read.'),
+  ).toBeVisible()
+})

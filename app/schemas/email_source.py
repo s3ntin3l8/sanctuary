@@ -17,6 +17,9 @@ PartOutcome = Literal[
     "nested_source",
     "body_context",
     "removed",
+    "archive",
+    "signature",
+    "encrypted",
 ]
 
 

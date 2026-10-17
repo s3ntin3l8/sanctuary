@@ -390,6 +390,7 @@ def _ingest_email_docs_and_commit(
         ALLOWED_EXTENSIONS,
         MAX_FILE_SIZE,
         magic_extension,
+        same_format,
     )
     from app.services.ingestion.email_sources import bind_manifests, persist_sources
     from app.services.pipeline_status import initialize as _pipeline_init
@@ -508,7 +509,7 @@ def _ingest_email_docs_and_commit(
                 continue
             if (
                 magic_ext
-                and magic_ext != ext
+                and not same_format(magic_ext, ext)
                 and not (magic_ext == ".zip" and ext in {".docx", ".pptx", ".xlsx"})
                 # "From " is also how plain text can open.
                 and not (magic_ext == ".eml" and ext in {".txt", ".md"})

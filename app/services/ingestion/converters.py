@@ -32,7 +32,20 @@ def _layout_model_spec():
     return DOCLING_LAYOUT_EGRET_LARGE
 
 
-_allowed_extensions = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"}
+_allowed_extensions = {
+    ".pdf",
+    ".docx",
+    ".txt",
+    ".md",
+    ".pptx",
+    ".xlsx",
+    ".eml",
+    ".html",
+    ".htm",
+    ".ics",
+    *IMAGE_EXTENSIONS,
+}
 MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
 
 MAGIC_BYTES = {
@@ -41,7 +54,21 @@ MAGIC_BYTES = {
     b"PK\x05\x06": ".zip",
     b"\xd0\xcf\x11\xe0": ".doc",
     b"From ": ".eml",
+    b"\x89PNG": ".png",
+    b"\xff\xd8\xff": ".jpg",
+    b"II*\x00": ".tif",
+    b"MM\x00*": ".tif",
 }
+
+# Extensions that name the same format; a magic match accepts either spelling.
+_EXTENSION_ALIASES = {".jpeg": ".jpg", ".tiff": ".tif", ".htm": ".html"}
+
+
+def same_format(magic_ext: str, ext: str) -> bool:
+    return _EXTENSION_ALIASES.get(magic_ext, magic_ext) == _EXTENSION_ALIASES.get(
+        ext, ext
+    )
+
 
 # Known Docling glyph mapping artifacts (Common in German legal PDFs)
 _GLYPH_MAP = {
@@ -154,6 +181,14 @@ def validate_file_magic(file_path: str) -> str | None:
 
 
 ALLOWED_EXTENSIONS = _allowed_extensions
+
+
+def _ics_to_text(file_path: str) -> str:
+    """Readable text of an iCalendar invitation: what, when, where, who."""
+    from app.services.ingestion.calendar_text import ics_to_text
+
+    with open(file_path, encoding="utf-8", errors="replace") as f:
+        return ics_to_text(f.read())
 
 
 def _eml_to_text(file_path: str) -> str:
@@ -747,7 +782,7 @@ def _convert_document(file_path: str) -> dict:
     """
     markdown, chunks, metadata = _run_conversion(_get_converter(), file_path)
 
-    if _is_image_only_output(markdown):
+    if file_path.lower().endswith(".pdf") and _is_image_only_output(markdown):
         text_layer = _extract_pdf_text_layer(file_path)
         if text_layer:
             logger.info(
@@ -800,6 +835,20 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
         with open(file_path, encoding="utf-8", errors="ignore") as f:
             content = f.read()
         return {"content": content, "metadata": {"pages": 1}, "chunks": []}
+
+    if ext == ".ics":
+        return {
+            "content": _ics_to_text(file_path),
+            "metadata": {"pages": 1},
+            "chunks": [],
+        }
+
+    if ext in IMAGE_EXTENSIONS:
+        markdown, chunks, metadata = _run_conversion(
+            _get_image_ocr_converter(), file_path
+        )
+        metadata["format"] = "image"
+        return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
     # Stashed here (rather than raised) when Chandra is attempted and fails —
     # process_uploaded_document reads it off the fallback result's metadata to

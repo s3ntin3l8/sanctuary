@@ -194,3 +194,196 @@ def test_a_text_file_may_open_like_a_mailbox_but_a_pdf_may_not(db_session):
     docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
     assert [d.original_filename for d in docs] == ["notiz.txt"]
     assert _part_outcomes(batch)["schreiben.pdf"][0] == "unsupported"
+
+
+def _typed_mail(
+    attach, body="Anbei der Schriftsatz.", message_id="<typed@example.com>"
+):
+    msg = email.message.EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["To"] = "client@example.com"
+    msg["Subject"] = "Schriftsatz"
+    msg["Message-ID"] = message_id
+    msg.set_content(body)
+    attach(msg)
+    return msg.as_bytes()
+
+
+def _ingest(db, raw):
+    from unittest.mock import patch
+
+    with patch("app.services.ingestion.batch_orchestrator.dispatch_task"):
+        return ingest_raw_email(db, raw, source_type=IngestBatchSourceType.EMAIL)
+
+
+@pytest.mark.integration
+def test_a_detached_signature_is_accounted_for_and_keeps_the_body(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"MIIBsignature",
+                maintype="application",
+                subtype="pkcs7-signature",
+                filename="smime.p7s",
+            ),
+            body="Eigener Text ohne Anlagen.",
+        ),
+    )
+    assert batch.source_review_reasons == ["mailbox_arrival_unavailable"]
+    assert _part_outcomes(batch)["smime.p7s"] == ("signature", None)
+    # The signature is not an attachment: the body is still a document.
+    docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
+    assert [d.original_filename for d in docs] == [f"email_body_{batch.id}.txt"]
+
+
+@pytest.mark.integration
+def test_an_opaque_smime_body_is_a_visible_review_item(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"MIIBopaque",
+                maintype="application",
+                subtype="pkcs7-mime",
+                filename="smime.p7m",
+            )
+        ),
+    )
+    assert "attachment_encrypted" in batch.source_review_reasons
+    assert _part_outcomes(batch)["smime.p7m"][0] == "encrypted"
+    assert db_session.query(Document).filter_by(ingest_batch_id=batch.id).count() == 0
+
+
+@pytest.mark.integration
+def test_a_pgp_mime_message_is_a_visible_review_item(db_session):
+    raw = (
+        b"From: lawyer@example.com\r\nTo: client@example.com\r\nSubject: s\r\n"
+        b"Message-ID: <pgp@example.com>\r\n"
+        b'Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; '
+        b"boundary=E\r\n\r\n"
+        b"--E\r\nContent-Type: application/pgp-encrypted\r\n\r\nVersion: 1\r\n"
+        b"--E\r\nContent-Type: application/octet-stream\r\n\r\n"
+        b"-----BEGIN PGP MESSAGE-----\r\nabc\r\n-----END PGP MESSAGE-----\r\n--E--\r\n"
+    )
+    batch = _ingest(db_session, raw)
+    assert "attachment_encrypted" in batch.source_review_reasons
+    assert db_session.query(Document).filter_by(ingest_batch_id=batch.id).count() == 0
+
+
+@pytest.mark.integration
+def test_an_inline_calendar_invitation_is_no_longer_dropped(db_session):
+    ics = (
+        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Verhandlung\r\n"
+        "DTSTART:20260526T080000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    )
+    raw = _typed_mail(lambda m: m.add_alternative(ics, subtype="calendar"))
+    batch = _ingest(db_session, raw)
+    parts = _part_outcomes(batch)
+    [(name, (outcome, _))] = [(k, v) for k, v in parts.items() if k.endswith(".ics")]
+    assert outcome == "ingested"
+    doc = (
+        db_session.query(Document)
+        .filter_by(ingest_batch_id=batch.id, original_filename=name)
+        .one()
+    )
+    assert doc.file_path.endswith(".ics")
+
+
+def _zip_bytes(members):
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+@pytest.mark.integration
+def test_a_zip_attachment_is_unpacked_into_its_files(db_session):
+    archive = _zip_bytes({"Schriftsatz.pdf": PDF, "Anlagen/K1.pdf": PDF + b" k1"})
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                archive,
+                maintype="application",
+                subtype="zip",
+                filename="Anlagen.zip",
+            ),
+            body="Siehe Anlagen.",
+        ),
+    )
+    outcomes = _part_outcomes(batch)
+    assert outcomes["Anlagen.zip"] == ("archive", None)
+    assert outcomes["Schriftsatz.pdf"][0] == "ingested"
+    assert outcomes["K1.pdf"][0] == "ingested"
+    titles = {
+        d.original_filename
+        for d in db_session.query(Document).filter_by(ingest_batch_id=batch.id)
+    }
+    assert {"Schriftsatz.pdf", "K1.pdf"} <= titles
+    assert "attachment_unsupported" not in batch.source_review_reasons
+
+
+@pytest.mark.integration
+def test_a_zip_bomb_attachment_is_refused(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                _zip_bytes({"a.pdf": b"\0" * (3 * 1024 * 1024)}),
+                maintype="application",
+                subtype="zip",
+                filename="bomb.zip",
+            )
+        ),
+    )
+    outcome, reason = _part_outcomes(batch)["bomb.zip"]
+    assert outcome == "unsupported" and "compression ratio" in reason
+    assert db_session.query(Document).filter_by(ingest_batch_id=batch.id).count() == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("filename", "payload"),
+    [
+        ("scan.png", b"\x89PNG\r\n\x1a\n" + b"0" * 64),
+        ("scan.jpeg", b"\xff\xd8\xff\xe0" + b"0" * 64),
+        ("scan.tiff", b"II*\x00" + b"0" * 64),
+        ("page.html", b"<html><body>Hallo</body></html>"),
+    ],
+)
+def test_images_and_html_are_ingested_as_documents(db_session, filename, payload):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                payload,
+                maintype="application",
+                subtype="octet-stream",
+                filename=filename,
+            ),
+            message_id=f"<{filename}@example.com>",
+        ),
+    )
+    assert _part_outcomes(batch)[filename][0] == "ingested"
+
+
+@pytest.mark.integration
+def test_an_image_whose_content_contradicts_its_extension_is_refused(db_session):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"\x89PNG\r\n\x1a\n" + b"0" * 64,
+                maintype="application",
+                subtype="octet-stream",
+                filename="scan.jpg",
+            )
+        ),
+    )
+    outcome, reason = _part_outcomes(batch)["scan.jpg"]
+    assert outcome == "unsupported" and "does not match" in reason

@@ -32,7 +32,13 @@ def bind_manifests(sources: list[dict]) -> list[str]:
                 p
                 for p in parts
                 if p.get("outcome")
-                not in ("ignored_inline", "nested_source", "body_context")
+                not in (
+                    "ignored_inline",
+                    "nested_source",
+                    "body_context",
+                    "archive",
+                    "signature",
+                )
                 and normalize_filename(p.get("filename") or "")
                 == normalize_filename(entry["filename"])
             ]
@@ -69,7 +75,7 @@ def bind_manifests(sources: list[dict]) -> list[str]:
                 e["issue"] = "ambiguous_manifest_history"
                 reasons.add(e["issue"])
         for part in parts:
-            if part["outcome"] in ("empty", "unsupported", "failed"):
+            if part["outcome"] in ("empty", "unsupported", "failed", "encrypted"):
                 reasons.add("attachment_" + part["outcome"])
     return sorted(reasons)
 

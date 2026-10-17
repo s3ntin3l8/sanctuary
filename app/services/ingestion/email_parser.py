@@ -16,6 +16,8 @@ from markdownify import markdownify
 from app import config
 from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
+from app.services.ingestion.archive_guard import ArchiveRejected
+from app.services.ingestion.email_archive import archive_members, is_zip
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,26 @@ def _extract_email_note(body: str) -> str:
         filtered.append(stripped)
 
     return " ".join(filtered).strip()
+
+
+_SIGNATURE_TYPES = {
+    "application/pkcs7-signature",
+    "application/x-pkcs7-signature",
+    "application/pgp-signature",
+}
+_OPAQUE_TYPES = {"application/pkcs7-mime", "application/x-pkcs7-mime"}
+_ENCRYPTED_REASON = "Encrypted or opaque message part cannot be read"
+
+
+def _opaque_kind(part) -> str | None:
+    """ "signature" for a detached signature, "encrypted" for a body we cannot read."""
+    content_type = part.get_content_type()
+    name = (part.get_filename() or "").lower()
+    if content_type in _SIGNATURE_TYPES or name.endswith((".p7s", ".asc", ".sig")):
+        return "signature"
+    if content_type in _OPAQUE_TYPES or name.endswith((".p7m", ".pgp", ".gpg")):
+        return "encrypted"
+    return None
 
 
 def _encoded_size(part) -> int:
@@ -599,6 +621,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                         reason="Invalid attached email encoding or nesting",
                     )
                 return
+            if part.get_content_type() == "multipart/encrypted":
+                record(part, path, part_raw, "encrypted").update(
+                    reason=_ENCRYPTED_REASON
+                )
+                return
             if part.is_multipart():
                 raw_children = _raw_mime_children(part_raw, part.get_boundary() or "")
                 for i, child in enumerate(part.iter_parts()):
@@ -644,6 +671,37 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 source["attachments"].append(entry)
             return entry
 
+        def record_archive(entry, path, data):
+            """A zip is accounted for as one part; its files become parts of
+            this source, ingested like any other attachment."""
+            try:
+                members = archive_members(data)
+            except ArchiveRejected as exc:
+                entry.update(outcome="unsupported", reason=str(exc))
+                return
+            emit_members(members, path)
+
+        def emit_members(members, base):
+            for i, member in enumerate(members):
+                path = f"{base}.z{i}"
+                entry = {
+                    "id": path,
+                    "filename": member["name"],
+                    "original_filename": member["name"],
+                    "mime_type": mimetypes.guess_type(member["name"])[0]
+                    or "application/octet-stream",
+                    "disposition": "attachment",
+                    "size": member["size"],
+                    "outcome": member["outcome"],
+                    "reason": member["reason"],
+                    "document_ids": [],
+                    "content": member["data"],
+                }
+                source["parts"].append(entry)
+                if member["outcome"] == "pending":
+                    source["attachments"].append(entry)
+                emit_members(member["members"], path)
+
         walk(msg, source_id, source_bytes)
         html_body = "\n".join(html)
         for part, path in leaves:
@@ -655,15 +713,25 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 and part.get_content_maintype() == "image"
                 and f"cid:{cid}" in html_body
             )
-            if embedded:
+            kind = _opaque_kind(part)
+            if kind:
+                entry = record(part, path, _payload(part) or b"", kind)
+                if kind == "encrypted":
+                    entry.update(reason=_ENCRYPTED_REASON)
+            elif embedded:
                 record(part, path, _payload(part) or b"", "ignored_inline")
             elif (
-                explicit or part.get_filename() or part.get_content_maintype() != "text"
+                explicit
+                or part.get_filename()
+                or part.get_content_maintype() != "text"
+                or part.get_content_type() == "text/calendar"
             ):
                 data = _payload(part)
                 if data is None:
                     entry = record(part, path, b"", "unsupported")
                     entry.update(reason="File is too large", size=_encoded_size(part))
+                elif is_zip(part.get_filename(), part.get_content_type(), data):
+                    record_archive(record(part, path, data, "archive"), path, data)
                 else:
                     record(part, path, data)
         body = "\n".join(plain)
@@ -678,8 +746,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             parse_inline_forward(body, source["subject"]) if body else None
         )
         # An attached message counts as an attachment of this source as well.
+        # A detached signature is not an attachment: it must not turn the
+        # mail's own body into mere transport.
         source["has_attachments"] = any(
-            p["outcome"] != "ignored_inline" for p in source["parts"]
+            p["outcome"] not in ("ignored_inline", "signature") for p in source["parts"]
         )
         return source
 
