@@ -165,3 +165,35 @@ def test_compare_dates_naive_become_aware():
     dt1 = datetime(2024, 1, 1)
     dt2 = datetime(2024, 1, 2)
     assert compare_dates(dt1, dt2) == -1
+
+
+@pytest.fixture
+def berlin(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Europe/Berlin"))
+
+
+@pytest.mark.unit
+def test_local_date_str_moves_a_late_utc_instant_to_the_next_german_day(berlin):
+    from datetime import datetime
+
+    from app.services.timezone_service import local_date_str
+
+    # 22:30 UTC in summer is 00:30 CEST the next day.
+    assert local_date_str(datetime(2026, 6, 1, 22, 30)) == "2026-06-02"
+    assert local_date_str(datetime(2026, 6, 1, 21, 30)) == "2026-06-01"
+
+
+@pytest.mark.unit
+def test_local_date_str_keeps_a_printed_calendar_date(berlin, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+    from app.services.timezone_service import local_date_str
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("America/New_York"))
+    assert local_date_str(datetime(2026, 6, 1)) == "2026-06-01"

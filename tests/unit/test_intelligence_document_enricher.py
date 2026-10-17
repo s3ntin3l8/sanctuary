@@ -567,3 +567,34 @@ def test_enrich_builds_the_filing_context_for_an_enclosure(
     assert f"Case: {doc_with_content.case_id}" in block
     assert "Enclosed in: 'Antrag auf Bewilligung' (opposing)" in block
     assert "not a contradiction" in block
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_renders_dates_in_the_configured_timezone(
+    doc_with_content, monkeypatch
+):
+    """Mail received at 22:30 UTC is the next day in Germany; the prompt says so."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Europe/Berlin"))
+    doc_with_content.received_date = datetime(2026, 6, 1, 22, 30)
+    doc_with_content.issued_date = datetime(2026, 6, 1, 22, 30)
+    captured = {}
+
+    def fake_call_json_ai(*args, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
+        captured["user_prompt"] = kwargs.get("user_prompt", "")
+        return DocumentEnrichment.model_validate({})
+
+    with patch(
+        "app.services.intelligence.document_enricher.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_enricher_sync(doc_with_content)
+
+    assert "Received date: 2026-06-02" in captured["user_prompt"]
+    assert "Issued date: 2026-06-02" in captured["user_prompt"]
