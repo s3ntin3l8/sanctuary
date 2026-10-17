@@ -1,5 +1,8 @@
 """Exhibit labels (Anlage K 3, B 2, 1) and their order, from a lawyer's list.
 
+A part cut out of a PDF by slicing does not inherit its source's label: the
+parts are different documents, so one label would be wrong for most of them.
+
 Two sources, both deterministic: a free-text list in the mail ("Anlage K3:
 Vertrag vom …") and the label a filename carries ("Anlage_K3_Vertrag.pdf",
 "K3.pdf"). The list gives the order the sender intended; a bare label only
@@ -35,8 +38,11 @@ _FILENAME_ANLAGE_RE = re.compile(
     rf"(?:^|[\s_.\-]){_ANLAGE}[\s_.\-]*(?P<prefix>[A-Za-z]{{0,3}})[\s_.\-]*(?P<num>\d{{1,3}})(?P<suffix>[a-z]?)(?![\d])",
     re.IGNORECASE,
 )
+# AG/ASG are exhibit prefixes only after the word "Anlage": bare, "AG 3 C 123-26"
+# is a court and a file number.
+_BARE_PREFIXES = sorted(_PREFIXES - {"AG", "ASG"}, key=len, reverse=True)
 _FILENAME_BARE_RE = re.compile(
-    r"^(?P<prefix>K|B|Bf|ASt|KE)[\s_.\-]*(?P<num>\d{1,3})(?P<suffix>[a-z]?)(?![\d])",
+    rf"^(?P<prefix>{'|'.join(_BARE_PREFIXES)})[\s_.\-]*(?P<num>\d{{1,3}})(?P<suffix>[a-z]?)(?![\d])",
     re.IGNORECASE,
 )
 
