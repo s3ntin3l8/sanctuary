@@ -337,6 +337,21 @@ test('ai logs: a call expands right under its row and shows only that call', asy
   expect(screen.queryByRole('button', { name: 'View call' })).not.toBeInTheDocument()
 })
 
+test('ai logs: a call with no recorded dump says so instead of loading forever', async () => {
+  stubApi({
+    'GET /api/v1/settings/ai/logs': { body: { ...logList, ai_debug_capture: false } },
+    'GET /api/v1/settings/ai/logs/view': {
+      status: 404,
+      body: { detail: 'Log file not found.', code: 'not_found' },
+    },
+  })
+  renderAt('/settings/ai/logs', <AiLogsPage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'View call' }))
+  expect(await screen.findByText(/No prompt or response was recorded/)).toBeInTheDocument()
+  expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+})
+
 test('ai logs: filters are sent to the server', async () => {
   const fetch = stubApi({ 'GET /api/v1/settings/ai/logs': { body: logList } })
   renderAt('/settings/ai/logs', <AiLogsPage />)

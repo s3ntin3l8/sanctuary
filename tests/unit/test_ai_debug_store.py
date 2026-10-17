@@ -98,4 +98,14 @@ def test_plaintext_dumps_from_before_encryption_are_purged(tmp_path):
     (root / "runs.jsonl").write_text('{"ts": "t"}\n')
     assert ai_debug_store.purge_plaintext(root) == 1
     assert not plain.exists() and sealed.exists()
+    assert not (root / "ib-0001").exists()  # the emptied directory goes too
     assert (root / "runs.jsonl").exists()  # the metadata index is not a dump
+
+
+def test_a_file_with_an_encrypted_call_is_never_purged(tmp_path):
+    path = tmp_path / "ai_debug" / "doc_1.md"
+    ai_debug_store.append_block(path, _block("keep", datetime.now(UTC)))
+    with path.open("a") as f:
+        f.write("a torn partial wr")  # an interrupted append
+    assert ai_debug_store.purge_plaintext(tmp_path / "ai_debug") == 0
+    assert path.exists()

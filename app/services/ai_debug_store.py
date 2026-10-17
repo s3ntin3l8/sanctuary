@@ -10,6 +10,7 @@ that decrypts to the call's markdown block. One line per call keeps appends chea
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import logging
 import os
@@ -63,24 +64,21 @@ def read_text(path: Path) -> str:
 
 
 def purge_plaintext(root: Path) -> int:
-    """Delete dumps written before capture was encrypted (any ``.md`` holding a
-    line that is not an encrypted call). Returns how many files were removed."""
+    """Delete dumps written before capture was encrypted (any ``.md`` without a
+    single encrypted call line), and the directories that leaves empty. Returns
+    how many files were removed."""
     removed = 0
     if not root.is_dir():
         return removed
     for path in root.rglob("*.md"):
         try:
-            lines = [
-                ln
-                for ln in path.read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines()
-                if ln.strip()
-            ]
-            if all(secrets.is_encrypted(ln.strip()) for ln in lines):
-                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if any(secrets.is_encrypted(ln.strip()) for ln in lines):
+                continue  # a call is encrypted: at worst a torn append, keep it
             path.unlink()
             removed += 1
+            with contextlib.suppress(OSError):
+                path.parent.rmdir()  # only succeeds when nothing else is in it
         except OSError:
             logger.warning("Could not check AI debug dump %s", path.name, exc_info=True)
     return removed

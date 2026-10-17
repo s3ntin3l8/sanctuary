@@ -232,7 +232,8 @@ export function AiLogsPage() {
 }
 
 function CallDetail({ row }: { row: Row }) {
-  const log = useAiLogView(row).data
+  const view = useAiLogView(row)
+  const log = view.data
   const meta = [
     row.provider && `provider ${row.provider}`,
     row.ttfb_ms != null && `ttfb ${formatDuration(row.ttfb_ms)}`,
@@ -267,7 +268,10 @@ function CallDetail({ row }: { row: Row }) {
         </p>
       )}
       <pre className="max-h-96 overflow-auto font-mono text-[11px] whitespace-pre-wrap">
-        {log?.body ?? 'Loading…'}
+        {log?.body ??
+          (view.isError
+            ? 'No prompt or response was recorded for this call. Switch on “Record full AI prompts and responses” above to capture future calls.'
+            : 'Loading…')}
       </pre>
     </div>
   )
