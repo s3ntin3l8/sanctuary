@@ -463,6 +463,8 @@ def test_upload_queues_files_and_reports_duplicates(db_session):
         ("scan.tiff", b"II*\x00" + b"2" * 64),
         ("scan.png", b"\x89PNG\r\n\x1a\n" + b"3" * 64),
         ("scan.webp", b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"4" * 16),
+        ("photo.heic", b"\x00\x00\x00\x1cftypheic" + b"\0" * 32),
+        ("photo.heif", b"\x00\x00\x00\x1cftypmif1" + b"\0" * 32),
         ("page.html", b"<html><body>Hallo Gericht</body></html>"),
         ("invite.ics", b"BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"),
     ],

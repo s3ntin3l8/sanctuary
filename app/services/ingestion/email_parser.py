@@ -17,7 +17,19 @@ from app import config
 from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
 from app.services.ingestion.archive_guard import ArchiveRejected
-from app.services.ingestion.email_archive import archive_members, is_zip
+from app.services.ingestion.email_archive import (
+    TnefUnreadable,
+    archive_members,
+    is_tnef,
+    is_zip,
+    tnef_members,
+)
+from app.services.ingestion.email_msg import (
+    MsgNestingLimit,
+    MsgUnreadable,
+    is_msg,
+    msg_to_rfc822,
+)
 from app.services.ingestion.exhibits import parse_anlage_list
 
 logger = logging.getLogger(__name__)
@@ -693,9 +705,50 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 return
             emit_members(members, path)
 
-        def emit_members(members, base):
+        def record_msg(part, path, data, depth):
+            """An attached Outlook message is read as the mail it is."""
+            try:
+                rfc822 = msg_to_rfc822(data)
+            except MsgNestingLimit:
+                record(part, path, data, "failed").update(
+                    reason="Attached email nesting limit reached"
+                )
+                return
+            except MsgUnreadable:
+                record(part, path, data, "failed").update(
+                    reason="Unreadable attached Outlook message"
+                )
+                return
+            entry = record(part, path, data, "nested_source")
+            try:
+                read_source(
+                    email.message_from_bytes(rfc822, policy=default),
+                    f"{path}.m0",
+                    source_id,
+                    depth + 1,
+                    rfc822,
+                )
+            except ValueError:
+                entry.update(
+                    outcome="failed", reason="Attached email nesting limit reached"
+                )
+
+        def record_tnef(part, path, data):
+            """A winmail.dat's files are parts of this mail; one without any is
+            only Outlook's rich-text copy of the body."""
+            try:
+                members = tnef_members(data, decompression_budget)
+            except TnefUnreadable:
+                record(part, path, data, "failed").update(
+                    reason="Unreadable winmail.dat"
+                )
+                return
+            record(part, path, data, "archive" if members else "ignored_inline")
+            emit_members(members, path, "t")
+
+        def emit_members(members, base, tag="z"):
             for i, member in enumerate(members):
-                path = f"{base}.z{i}"
+                path = f"{base}.{tag}{i}"
                 entry = {
                     "id": path,
                     "filename": member["name"],
@@ -712,7 +765,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 source["parts"].append(entry)
                 if member["outcome"] == "pending":
                     source["attachments"].append(entry)
-                emit_members(member["members"], path)
+                emit_members(member["members"], path, tag)
 
         walk(msg, source_id, source_bytes)
         html_body = "\n".join(html)
@@ -744,6 +797,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     entry.update(reason="File is too large", size=_encoded_size(part))
                 elif is_zip(part.get_filename(), part.get_content_type(), data):
                     record_archive(record(part, path, data, "archive"), path, data)
+                elif is_msg(part.get_filename(), part.get_content_type(), data):
+                    record_msg(part, path, data, depth)
+                elif is_tnef(part.get_filename(), part.get_content_type(), data):
+                    record_tnef(part, path, data)
                 else:
                     entry = record(part, path, data)
                     # An invitation travels as a sibling of the mail's own text

@@ -84,7 +84,7 @@ def persist_sources(sources: list[dict]) -> list[dict]:
     return [EmailSource.model_validate(s).model_dump(mode="json") for s in sources]
 
 
-_ARCHIVE_SUFFIX = re.compile(r"\.z\d+$")
+_ARCHIVE_SUFFIX = re.compile(r"\.[zt]\d+$")
 
 
 def _entries_for(manifest: list[dict], part_id: str | None) -> list[dict]:
