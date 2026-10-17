@@ -25,31 +25,34 @@ def _when(d: Document) -> datetime:
     return d.issued_date or d.ingest_date or _EPOCH
 
 
-def _emails(
-    db: Session, name: str, docs: list[Document], visible: set[str] | None
-) -> list[str]:
-    """Addresses this correspondent writes from: those recorded on the entities
-    that bear this name (or this very address) in the caller's cases, and those
-    in the From of their documents. All lowercase."""
-    query = db.query(Entity.type, Entity.name, Entity.email).filter(
-        Entity.email.isnot(None), Entity.type.in_(NAMED_ACTORS)
+def _same_name(a: str, b: str) -> bool:
+    """Do two names normalise to the same non-empty key, for any actor type?"""
+    return any(
+        (key := normalize_entity_name(a, t)) and key == normalize_entity_name(b, t)
+        for t in NAMED_ACTORS
     )
-    if visible is not None:
-        query = query.filter(Entity.case_id.in_(visible))
+
+
+def _emails(db: Session, name: str, docs: list[Document]) -> list[str]:
+    """Addresses this correspondent writes from, all lowercase: those recorded
+    on entities of the cases their documents are in that bear this name (or are
+    this very address), and the From addresses of those documents whose sender
+    bears it. Names match by normalised name, not by substring."""
     needle = name.strip().lower()
-    wanted: dict = {}  # the contact's name, keyed once per entity type
     found: set[str] = set()
-    for entity_type, entity_name, email in query:
-        if entity_type not in wanted:
-            wanted[entity_type] = normalize_entity_name(name, entity_type)
-        key = wanted[entity_type]
-        if needle == email.lower() or (
-            key and key == normalize_entity_name(entity_name, entity_type)
-        ):
-            found.add(email.lower())
+    case_ids = {d.case_id for d in docs if d.case_id and d.case_id != "_TRIAGE"}
+    if case_ids:
+        rows = db.query(Entity.name, Entity.email).filter(
+            Entity.case_id.in_(case_ids),
+            Entity.email.isnot(None),
+            Entity.type.in_(NAMED_ACTORS),
+        )
+        for entity_name, email in rows:
+            if needle == email.lower() or _same_name(name, entity_name):
+                found.add(email.lower())
     for d in docs:
         label, address = parseaddr(d.sender or "")
-        if "@" in address and (needle in label.lower() or needle in address.lower()):
+        if "@" in address and (needle == address.lower() or _same_name(name, label)):
             found.add(address.lower())
     return sorted(found)
 
@@ -76,7 +79,7 @@ def contact(
     dated = [_when(d) for d in docs if d.issued_date or d.ingest_date]
     return ContactView(
         name=name,
-        emails=_emails(db, name, docs, visible),
+        emails=_emails(db, name, docs),
         document_count=len(docs),
         case_count=len(cases),
         last_contact=max(dated) if dated else None,

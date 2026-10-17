@@ -53,7 +53,7 @@ from app.models.enums import (
     RelationshipConfidence,
     RelationshipType,
 )
-from app.repositories.document_relationship import insert_edge_if_absent
+from app.repositories.document_relationship import insert_edge_if_absent, is_rejected
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services import access_service, family_context
 from app.services.intelligence.thread_open_scanner import recompute_thread_open
@@ -198,10 +198,25 @@ def _inherit_case(
     (its own reference, inherited from elsewhere, or set by the user), and only
     into a case the batch's owner may edit.
     """
-    if parent.note == _THREAD_NOTE or family_context.has_case(lead):
+    if parent.note == _THREAD_NOTE:
         return
     ancestor = parent.lead
     if not family_context.has_case(ancestor):
+        return
+    # A case the reply earned itself (own reference, user) is final; one it
+    # inherited follows the nearest ancestor, so edge and case stay in step.
+    source = family_context.case_source(lead)
+    if source in ("own", "user") or (
+        source == "inherited" and lead.case_id == ancestor.case_id
+    ):
+        return
+    # An edge the user rejected says this reply is not part of that matter.
+    if is_rejected(
+        db,
+        from_document_id=lead.id,
+        to_document_id=ancestor.id,
+        relationship_type=parent.rel_type,
+    ):
         return
     owner = db.get(User, batch.owner_id) if batch.owner_id is not None else None
     editable = access_service.editable_case_ids(db, owner)

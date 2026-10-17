@@ -82,12 +82,29 @@ def test_a_contact_does_not_borrow_the_address_of_a_longer_name(
                 name="Müller Bau GmbH",
                 email="info@mueller-bau.example",
             ),
+            Document(
+                title="Schriftsatz",
+                file_path="x",
+                case_id=sample_case.id,
+                sender="Hans Müller <hans@other.example>",
+            ),
+            Document(
+                title="Rechnung",
+                file_path="y",
+                case_id=sample_case.id,
+                sender="Müller Bau GmbH <info@mueller-bau.example>",
+            ),
         ]
     )
     db_session.commit()
 
-    body = client.get("/api/v1/contacts", params={"name": "Hans Müller"}).json()
-    assert body["emails"] == ["hans@kanzlei.example"]
+    full = client.get("/api/v1/contacts", params={"name": "Hans Müller"}).json()
+    assert full["emails"] == ["hans@kanzlei.example", "hans@other.example"]
+    # A partial name matches documents by substring, but borrows no address:
+    # neither the entity's nor the other correspondent's.
+    partial = client.get("/api/v1/contacts", params={"name": "Müller"}).json()
+    assert partial["document_count"] == 2
+    assert partial["emails"] == []
     by_address = client.get(
         "/api/v1/contacts", params={"name": "info@mueller-bau.example"}
     ).json()

@@ -459,3 +459,103 @@ def test_the_parents_proceeding_is_taken_only_without_an_az_of_its_own(
     assert plain.proceeding_id == proc.id
     assert other.case_id == case.id
     assert other.proceeding_id != proc.id
+
+
+@pytest.mark.unit
+def test_a_rejected_header_edge_does_not_move_the_case(
+    db_session, sample_case, sample_user
+):
+    from app.repositories.document_relationship import reject_edge
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    _, parent = _filed_parent(db_session, case, sample_user)
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+    assert reply.case_id == case.id  # filed by the edge...
+
+    (edge,) = _edges(db_session)
+    reject_edge(db_session, edge)  # ...until the user says it is not part of it
+    reply.case_id = "_TRIAGE"
+    reply.extraction_confidence = {}
+    db_session.commit()
+
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+    assert reply.case_id == "_TRIAGE"
+
+
+@pytest.mark.unit
+def test_an_inherited_case_follows_a_nearer_ancestor(
+    db_session, sample_case, sample_user
+):
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+
+    first = _owned_case(db_session, sample_case, sample_user)
+    second = Case(
+        id="OTHER-2",
+        title="Other",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=sample_user.id,
+    )
+    db_session.add(second)
+    db_session.commit()
+    grand_b = _batch(db_session, "<g@x>", owner_id=sample_user.id)
+    grand_b.case_id = first.id
+    _doc(db_session, grand_b, first.id, "earlier")
+    reply_b = _batch(
+        db_session,
+        "<r@x>",
+        in_reply_to="<mine@x>",
+        refs=["<g@x>", "<mine@x>"],
+        owner_id=sample_user.id,
+    )
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+    assert reply.case_id == first.id
+
+    # A nearer ancestor, filed elsewhere, arrives later.
+    near_b = _batch(db_session, "<mine@x>", owner_id=sample_user.id)
+    near_b.case_id = second.id
+    _doc(db_session, near_b, second.id, "nearer")
+    link_batch(db_session, near_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+    assert reply.case_id == second.id
+
+
+@pytest.mark.unit
+def test_a_case_the_reply_earned_is_never_replaced(
+    db_session, sample_case, sample_user
+):
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services import family_context
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    _filed_parent(db_session, case, sample_user)
+    other = Case(
+        id="OTHER-3",
+        title="Other",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=sample_user.id,
+    )
+    db_session.add(other)
+    db_session.commit()
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, other.id, "reply")
+    family_context.mark_case(reply, "user_set")
+    db_session.commit()
+
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+    assert reply.case_id == other.id

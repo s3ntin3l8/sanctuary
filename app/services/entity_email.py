@@ -61,20 +61,22 @@ def attach_sender_email(db: Session, doc_id: int) -> int:
         .filter(Entity.case_id == doc.case_id, Entity.type.in_(NAMED_ACTORS))
         .all()
     )
+    # Names that exist in the case per type: sub-units collapse into them, as
+    # the extractor does.
+    known: dict[EntityType, set[str]] = {}
+    for entity in entities:
+        known.setdefault(entity.type, set()).add(
+            normalize_entity_name(entity.name, entity.type)
+        )
     filled = 0
     for entity in entities:
         if entity.email is not None:
             continue
-        # The extractor's own keying: sub-units collapse into the parent that
-        # exists in the case, and variants of a known party snap to its spelling.
-        known = {
-            normalize_entity_name(e.name, e.type)
-            for e in entities
-            if e.type == entity.type
-        }
-        wanted = _key(name, entity.type, known, snaps)
+        wanted = _key(name, entity.type, known[entity.type], snaps)
         # A bare honorific ("Dr.", "Frau") normalises to nothing: it names nobody.
-        if wanted and wanted == _key(entity.name, entity.type, known, snaps):
+        if wanted and wanted == _key(
+            entity.name, entity.type, known[entity.type], snaps
+        ):
             entity.email = address
             filled += 1
     return filled
@@ -84,8 +86,8 @@ def _key(
     name: str, entity_type: EntityType, known: set[str], snaps: dict[str, str]
 ) -> str:
     canonical = normalize_entity_name(name, entity_type, canonical_names=known)
-    snapped = snaps.get(canonical, name)
-    if snapped is name:
+    snapped = snaps.get(canonical)
+    if snapped is None:
         return canonical
     return normalize_entity_name(snapped, entity_type, canonical_names=known)
 
