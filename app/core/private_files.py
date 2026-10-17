@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def write_private(path: Path, data: bytes) -> None:
@@ -28,8 +31,14 @@ def write_private(path: Path, data: bytes) -> None:
 def _fsync_dir(directory: Path) -> None:
     """Make the rename itself durable: the new directory entry is only on disk
     once the parent directory is flushed."""
-    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        # Some network/overlay filesystems cannot fsync a directory. The file's
+        # own fsync is the real guarantee and the data is already in place, so
+        # this must not fail an otherwise successful write.
+        logger.debug("Could not fsync directory %s", directory, exc_info=True)

@@ -211,6 +211,8 @@ def test_the_user_export_carries_their_own_raw_mail_only(
             assert f"email_sources/{foreign.id}.eml" not in names
             assert "gmail_cache/loose1.eml" in names
             assert "gmail_cache/theirs.eml" not in names
+            readme = archive.read("README.md").decode()
+            assert "email_sources/" in readme and "gmail_cache/" in readme
         assert manifest["undecryptable"] == 0
     finally:
         gmail_cache.clear(sample_user.id)
@@ -264,3 +266,24 @@ def test_undecryptable_cache_files_are_counted_and_summarised_once(
         assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 1
     finally:
         gmail_cache.clear(sample_user.id)
+
+
+def test_the_user_export_does_not_relabel_a_scanned_pdf_as_mail(
+    db_session, sample_user, monkeypatch
+):
+    import io
+    import zipfile
+
+    from app.models.enums import IngestBatchSourceType
+    from app.services import export_service
+    from app.services.export_service import build_user_export_zip
+
+    monkeypatch.setattr(export_service, "DATA_DIR", config.DATA_DIR)
+    scan = _ingest(
+        db_session, _mail("<scan-export@example.com>"), owner_id=sample_user.id
+    )
+    scan.source_type = IngestBatchSourceType.SCAN
+    db_session.commit()
+    data, _ = build_user_export_zip(db_session, sample_user)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert f"email_sources/{scan.id}.eml" not in archive.namelist()

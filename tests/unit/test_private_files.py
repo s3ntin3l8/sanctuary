@@ -55,3 +55,17 @@ def test_the_parent_directory_is_fsynced_after_the_rename(tmp_path):
     ):
         write_private(target, b"payload")
     assert order == ["replace", "fsync_dir:mail"]
+
+
+def test_a_filesystem_that_cannot_fsync_a_directory_does_not_fail_the_write(tmp_path):
+    target = tmp_path / "mail" / "mail.eml"
+    real_open = os.open
+
+    def open_dir(path, flags, *args, **kwargs):
+        if flags & os.O_DIRECTORY:
+            raise OSError("fsync on a directory is not supported")
+        return real_open(path, flags, *args, **kwargs)
+
+    with patch("os.open", open_dir):
+        write_private(target, b"payload")
+    assert target.read_bytes() == b"payload"
