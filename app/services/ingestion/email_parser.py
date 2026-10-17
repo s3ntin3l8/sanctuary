@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from markdownify import markdownify
 
+from app import config
 from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
 
@@ -191,6 +192,25 @@ def _extract_email_note(body: str) -> str:
         filtered.append(stripped)
 
     return " ".join(filtered).strip()
+
+
+def _encoded_size(part) -> int:
+    """Bytes the part will decode to, estimated from its still-encoded payload."""
+    payload = part.get_payload()
+    if not isinstance(payload, str):
+        return 0
+    encoding = str(part.get("Content-Transfer-Encoding", "")).lower()
+    return len(payload) * 3 // 4 if encoding == "base64" else len(payload)
+
+
+def _payload(part) -> bytes | None:
+    """The decoded payload, or None when it is larger than one file may be.
+
+    Checked on the encoded form so an oversized attachment is never decoded.
+    """
+    if _encoded_size(part) > config.MAX_FILE_SIZE_MB * 1024 * 1024:
+        return None
+    return part.get_payload(decode=True) or b""
 
 
 def _decode_text(part) -> str:
@@ -636,13 +656,16 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 and f"cid:{cid}" in html_body
             )
             if embedded:
-                record(
-                    part, path, part.get_payload(decode=True) or b"", "ignored_inline"
-                )
+                record(part, path, _payload(part) or b"", "ignored_inline")
             elif (
                 explicit or part.get_filename() or part.get_content_maintype() != "text"
             ):
-                record(part, path, part.get_payload(decode=True) or b"")
+                data = _payload(part)
+                if data is None:
+                    entry = record(part, path, b"", "unsupported")
+                    entry.update(reason="File is too large", size=_encoded_size(part))
+                else:
+                    record(part, path, data)
         body = "\n".join(plain)
         if not body.strip() and html_body.strip():
             body = markdownify(

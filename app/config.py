@@ -21,6 +21,14 @@ SQLALCHEMY_DATABASE_URL = os.getenv(
 # Application Settings
 # Largest file an MCP agent may upload (base64 in a JSON-RPC body, so keep it modest).
 MCP_MAX_UPLOAD_MB = int(os.getenv("MCP_MAX_UPLOAD_MB", "25"))
+# Largest single document (upload, scan, email attachment) and largest raw email.
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
+MAX_EMAIL_SIZE_MB = int(os.getenv("MAX_EMAIL_SIZE_MB", "100"))
+# docx/pptx/xlsx are zip archives: refuse a decompression bomb before it is
+# unpacked (declared entry count, total uncompressed size, per-entry ratio).
+MAX_ARCHIVE_ENTRIES = int(os.getenv("MAX_ARCHIVE_ENTRIES", "5000"))
+MAX_ARCHIVE_UNCOMPRESSED_MB = int(os.getenv("MAX_ARCHIVE_UNCOMPRESSED_MB", "500"))
+MAX_ARCHIVE_RATIO = int(os.getenv("MAX_ARCHIVE_RATIO", "200"))
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"

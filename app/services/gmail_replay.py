@@ -19,6 +19,7 @@ from app.models.enums import IngestBatchSourceType
 from app.services import gmail_cache, gmail_index_service
 from app.services.ingestion.gmail import (
     GmailMessageGone,
+    GmailMessageTooLarge,
     connect_gmail,
     fetch_metadata,
     parse_metadata,
@@ -96,8 +97,8 @@ def capture(db, *, online: bool = False, replace: bool = False) -> dict:
         if raw is None and online:
             try:
                 raw = _raw_message(owner, gmail_id, lambda owner=owner: service(owner))
-            except GmailMessageGone:
-                raw = None  # deleted in Gmail since it was listed
+            except (GmailMessageGone, GmailMessageTooLarge):
+                raw = None  # deleted in Gmail since it was listed, or too large to hold
         row = (
             db.query(GmailMessageIndex)
             .filter(

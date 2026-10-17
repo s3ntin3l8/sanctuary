@@ -7,6 +7,8 @@ from typing import overload
 
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app.config import MAX_FILE_SIZE_MB
+from app.services.ingestion.archive_guard import ARCHIVE_EXTENSIONS, check_zip
 from app.services.model_gate import ModelGateTimeout
 
 logger = logging.getLogger(__name__)
@@ -31,7 +33,7 @@ def _layout_model_spec():
 
 
 _allowed_extensions = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
 
 MAGIC_BYTES = {
     b"%PDF": ".pdf",
@@ -783,6 +785,9 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
     process_uploaded_document, always invoked from process_document_task).
     """
     ext = os.path.splitext(file_path)[1].lower()
+
+    if ext in ARCHIVE_EXTENSIONS:
+        check_zip(file_path)
 
     if ext == ".eml":
         return {

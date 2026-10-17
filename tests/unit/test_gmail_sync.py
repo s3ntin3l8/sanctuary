@@ -673,6 +673,36 @@ def test_a_message_deleted_in_gmail_is_dropped_not_retried(gmail_user, db_sessio
 
 
 @pytest.mark.unit
+def test_an_oversized_message_is_dropped_not_retried(gmail_user, db_session):
+    from app.services.ingestion.gmail import GmailMessageTooLarge
+
+    service = _fake_service(messages=[{"id": "huge-1"}, {"id": "ok-1"}])
+
+    def _fetch(_service, gid):
+        if gid.startswith("huge"):
+            raise GmailMessageTooLarge(gid)
+        return b"raw"
+
+    with (
+        patch(
+            "app.services.ingestion.gmail.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
+        patch("app.tasks.gmail_sync.fetch_raw_message", side_effect=_fetch),
+        patch("app.tasks.gmail_sync.ingest_raw_email"),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        gmail_sync.sync_gmail_for_user.run(gmail_user.id)
+
+    db_session.expire_all()
+    assert (
+        _get_settings_json(db_session, gmail_user.id).get("gmail_failed_message_ids")
+        or []
+    ) == []
+
+
+@pytest.mark.unit
 def test_access_revoked_mid_run_ends_the_run_with_a_reconnect(gmail_user, db_session):
     from app.services.ingestion.gmail import GmailReconnectRequired
 
