@@ -238,6 +238,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
                 is_proof=d.id in bundle.proof_doc_ids,
                 sub_group_id=d.sub_group_id,
                 reference_inherited=family_context.case_source(d) == "inherited",
+                exhibit_label=((d.meta or {}).get("exhibit") or {}).get("label"),
             )
             for d in bundle.documents
         ],

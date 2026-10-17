@@ -258,6 +258,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       is_proof: false,
       sub_group_id: null,
       reference_inherited: false,
+      exhibit_label: null,
     },
     {
       id: 2211,
@@ -274,6 +275,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       is_proof: false,
       sub_group_id: null,
       reference_inherited: false,
+      exhibit_label: null,
     },
     {
       id: 2212,
@@ -290,6 +292,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       is_proof: true,
       sub_group_id: null,
       reference_inherited: false,
+      exhibit_label: 'B 1',
     },
   ],
   sub_groups: [

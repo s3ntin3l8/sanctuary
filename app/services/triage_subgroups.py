@@ -25,6 +25,7 @@ from app.models.database import (
 from app.models.enums import DocumentRole, DocumentStatus, RelationshipType
 from app.repositories.document_relationship import insert_edge_if_absent
 from app.services import family_context
+from app.services.ingestion import exhibits
 from app.services.ingestion.service import apply_review_reasons
 
 
@@ -64,6 +65,10 @@ def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGr
             roots.append(d)
         else:
             children_of.setdefault(d.parent_id, []).append(d)
+
+    # Enclosures keep the order their sender gave them (Anlage K 1, K 2, …).
+    for siblings in children_of.values():
+        siblings.sort(key=lambda d: exhibits.sort_key(d.meta))
 
     roots.sort(
         key=lambda d: (

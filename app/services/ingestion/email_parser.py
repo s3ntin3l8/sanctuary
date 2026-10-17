@@ -18,6 +18,7 @@ from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
 from app.services.ingestion.archive_guard import ArchiveRejected
 from app.services.ingestion.email_archive import archive_members, is_zip
+from app.services.ingestion.exhibits import parse_anlage_list
 
 logger = logging.getLogger(__name__)
 
@@ -760,6 +761,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             )
         source["attachment_manifest"] = _parse_attachment_manifest(body)
         source["email_note"] = _extract_email_note(body)
+        # The note is one flattened line; the list needs the mail's own lines.
+        source["anlage_list"] = parse_anlage_list(current_text(body)) if body else []
         source["body"] = strip_quoted_history(body) if body else ""
         source["inline_forward"] = (
             parse_inline_forward(body, source["subject"]) if body else None

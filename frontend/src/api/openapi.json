@@ -11419,6 +11419,17 @@
             "title": "Depth",
             "type": "integer"
           },
+          "exhibit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exhibit Label"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -11499,7 +11510,8 @@
           "page_count",
           "is_proof",
           "sub_group_id",
-          "reference_inherited"
+          "reference_inherited",
+          "exhibit_label"
         ],
         "title": "TriageDocument",
         "type": "object"

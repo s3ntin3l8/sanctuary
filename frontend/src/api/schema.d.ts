@@ -6697,6 +6697,8 @@ export interface components {
         TriageDocument: {
             /** Depth */
             depth: number;
+            /** Exhibit Label */
+            exhibit_label: string | null;
             /** Id */
             id: number;
             /** Is Proof */

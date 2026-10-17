@@ -490,8 +490,8 @@ def process_uploaded_document(doc: Document, db: Session):
     elif not doc.title:
         doc.title = extract_clean_title(safe_filename, "")
     # Facts about where the document came from that conversion cannot know:
-    # a person cut it out of a larger PDF; a mail was a pure inline forward.
-    for key in ("slice_range", "inline_forward"):
+    # a person cut it out of a larger PDF; a mail was a pure inline forward; an exhibit label from its mail.
+    for key in ("slice_range", "inline_forward", "exhibit"):
         carried = (doc.meta or {}).get(key)
         if carried:
             conversion_metadata[key] = carried
