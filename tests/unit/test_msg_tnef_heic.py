@@ -273,3 +273,56 @@ def test_heic_is_readable_by_any_pil_open(tmp_path):
     path.write_bytes(_heic())
     with Image.open(path) as image:  # no OCR path involved
         assert image.size == (32, 32)
+
+
+class _Raising(SimpleNamespace):
+    @property
+    def data(self):
+        raise RuntimeError("broken attachment")
+
+
+def test_one_broken_attachment_keeps_the_message_readable():
+    broken = _Raising(longFilename="kaputt.pdf")
+    good = SimpleNamespace(data=b"%PDF-1.4 ok", longFilename="gut.pdf")
+    fake = _fake_message(attachments=[broken, good])
+    with patch("extract_msg.openMsg", return_value=fake):
+        msg = email.message_from_bytes(
+            email_msg.msg_to_rfc822(OLE), policy=policy.default
+        )
+    assert "Sie werden geladen." in msg.get_body(("plain",)).get_content()
+    by_name = {a.get_filename(): a.get_content() for a in msg.iter_attachments()}
+    assert by_name["gut.pdf"] == b"%PDF-1.4 ok"
+    assert by_name["kaputt.pdf"] == b""  # an empty part: a visible review item
+
+
+def test_a_broken_msg_attachment_is_a_visible_empty_part_when_ingested():
+    broken = _Raising(longFilename="kaputt.pdf")
+    with patch("extract_msg.openMsg", return_value=_fake_message(attachments=[broken])):
+        parsed = parse_rfc822(_mail_with(OLE, "Ladung.msg", "vnd.ms-outlook"))
+    child = next(s for s in parsed["sources"] if s["parent_id"] == "0")
+    [part] = [p for p in child["parts"] if p["filename"] == "kaputt.pdf"]
+    assert part["outcome"] == "pending" and part["size"] == 0
+
+
+def test_openmsg_is_asked_to_tolerate_signed_and_broken_parts():
+    from extract_msg.enums import ErrorBehavior
+
+    with patch("extract_msg.openMsg", return_value=_fake_message()) as opened:
+        email_msg.msg_to_rfc822(OLE)
+    behaviour = opened.call_args.kwargs["errorBehavior"]
+    assert behaviour & ErrorBehavior.STANDARDS_VIOLATION
+    assert behaviour & ErrorBehavior.ATTACH_BROKEN
+
+
+def test_the_nesting_limit_is_named_as_such():
+    message = _fake_message(attachments=[])
+    for _ in range(email_msg._MAX_EMBEDDED + 2):
+        message = _fake_message(
+            attachments=[SimpleNamespace(data=message, longFilename="inner.msg")]
+        )
+    with patch("extract_msg.openMsg", return_value=message):
+        with pytest.raises(email_msg.MsgNestingLimit):
+            email_msg.msg_to_rfc822(OLE)
+        parsed = parse_rfc822(_mail_with(OLE, "Ladung.msg", "vnd.ms-outlook"))
+    part = next(p for p in parsed["parts"] if p["filename"] == "Ladung.msg")
+    assert part["reason"] == "Attached email nesting limit reached"

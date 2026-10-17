@@ -24,7 +24,12 @@ from app.services.ingestion.email_archive import (
     is_zip,
     tnef_members,
 )
-from app.services.ingestion.email_msg import MsgUnreadable, is_msg, msg_to_rfc822
+from app.services.ingestion.email_msg import (
+    MsgNestingLimit,
+    MsgUnreadable,
+    is_msg,
+    msg_to_rfc822,
+)
 from app.services.ingestion.exhibits import parse_anlage_list
 
 logger = logging.getLogger(__name__)
@@ -704,6 +709,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             """An attached Outlook message is read as the mail it is."""
             try:
                 rfc822 = msg_to_rfc822(data)
+            except MsgNestingLimit:
+                record(part, path, data, "failed").update(
+                    reason="Attached email nesting limit reached"
+                )
+                return
             except MsgUnreadable:
                 record(part, path, data, "failed").update(
                     reason="Unreadable attached Outlook message"

@@ -16,6 +16,10 @@ class MsgUnreadable(ValueError):
     """The bytes are not a readable Outlook message."""
 
 
+class MsgNestingLimit(MsgUnreadable):
+    """Outlook messages are embedded in each other deeper than we read."""
+
+
 def is_msg(filename: str | None, mime_type: str, data: bytes) -> bool:
     named = (filename or "").lower().endswith(".msg") or mime_type in (
         "application/vnd.ms-outlook",
@@ -31,7 +35,7 @@ def _line(value: object) -> str:
 
 def _to_email(message, depth: int) -> EmailMessage:
     if depth > _MAX_EMBEDDED:
-        raise MsgUnreadable("Outlook message nesting limit reached")
+        raise MsgNestingLimit("Outlook message nesting limit reached")
     out = EmailMessage()
     for header, value in (
         ("From", message.sender),
@@ -62,37 +66,58 @@ def _to_email(message, depth: int) -> EmailMessage:
     else:
         out.set_content("")
 
-    for attachment in message.attachments:
-        data = attachment.data
-        if hasattr(data, "attachments"):  # an embedded Outlook message
-            embedded = _to_email(data, depth + 1)
-            out.add_attachment(embedded)
-            continue
-        if not isinstance(data, bytes) or not data:
-            continue
-        name = (
-            getattr(attachment, "longFilename", None)
-            or getattr(attachment, "shortFilename", None)
-            or getattr(attachment, "name", None)
-            or "attachment"
-        )
-        mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        maintype, _, subtype = mime.partition("/")
-        out.add_attachment(
-            data,
-            maintype=maintype,
-            subtype=subtype or "octet-stream",
-            filename=_line(name),
-        )
+    for index, attachment in enumerate(message.attachments):
+        name = f"attachment_{index}"
+        try:
+            name = _line(
+                getattr(attachment, "longFilename", None)
+                or getattr(attachment, "shortFilename", None)
+                or getattr(attachment, "name", None)
+                or name
+            )
+            data = attachment.data
+            if hasattr(data, "attachments"):  # an embedded Outlook message
+                out.add_attachment(_to_email(data, depth + 1))
+                continue
+            if not isinstance(data, bytes) or not data:
+                continue
+            mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            maintype, _, subtype = mime.partition("/")
+            out.add_attachment(
+                data,
+                maintype=maintype,
+                subtype=subtype or "octet-stream",
+                filename=name,
+            )
+        except MsgNestingLimit:
+            raise
+        except Exception:  # noqa: BLE001 - one bad attachment must not lose the mail
+            # An empty attachment is a visible "no readable bytes" review item:
+            # the message and its other files stay readable.
+            out.add_attachment(
+                b"",
+                maintype="application",
+                subtype="octet-stream",
+                filename=name,
+            )
     return out
 
 
 def msg_to_rfc822(data: bytes) -> bytes:
     """RFC 822 bytes of an Outlook message; raises ``MsgUnreadable``."""
     import extract_msg
+    from extract_msg.enums import ErrorBehavior
 
+    # A signed message or a broken attachment must not make the whole message
+    # unreadable: tolerate them while loading, and guard each attachment below.
+    tolerant = (
+        ErrorBehavior.ATTACH_NOT_IMPLEMENTED
+        | ErrorBehavior.ATTACH_BROKEN
+        | ErrorBehavior.CUSTOM_ATTACH_TOLERANT
+        | ErrorBehavior.STANDARDS_VIOLATION
+    )
     try:
-        message = extract_msg.openMsg(io.BytesIO(data))
+        message = extract_msg.openMsg(io.BytesIO(data), errorBehavior=tolerant)
     except Exception as exc:  # extract_msg raises many types for bad input
         raise MsgUnreadable(str(exc)) from exc
     try:
