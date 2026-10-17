@@ -16,7 +16,7 @@ from app.core.paths import to_storage_path
 from app.core.private_files import write_private
 from app.core.timezone import now_utc
 from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus, OriginatorType
 from app.repositories.ingest_batch import (
     NO_NEW_DOCUMENTS,
     IngestBatchRepository,
@@ -131,6 +131,11 @@ def _resolve_subject_case(
         if proc:
             return proc.case_id, proc.id
     return None, None
+
+
+def _own_fields(own: bool) -> dict:
+    """Body-document fields for mail the user wrote themselves (else defaults)."""
+    return {"originator_type": OriginatorType.OWN} if own else {}
 
 
 def _is_outgoing(sender: str, own_addresses: Iterable[str]) -> bool:
@@ -407,6 +412,10 @@ def _ingest_email_docs_and_commit(
                 att.update(outcome="removed", reason="Automatic reply")
             continue
         source_sender = source["sender"]
+        # The body of mail from one of the user's own addresses is the user's
+        # own writing, whatever the AI later makes of its text. (Its attachments
+        # are not: a court letter the user forwards is still the court's.)
+        outgoing = _is_outgoing(source_sender, own_addresses)
         source_subject = source["subject"] or subject
         # Resolve an attached message's own reference before inheriting the
         # outer forwarding subject. Never overwrite the outer batch's identity.
@@ -417,9 +426,7 @@ def _ingest_email_docs_and_commit(
             )
             if inner_case:
                 source_case, source_proceeding = inner_case, inner_proceeding
-        if source["body"].strip() and (
-            not source["has_attachments"] or _is_outgoing(source_sender, own_addresses)
-        ):
+        if source["body"].strip() and (not source["has_attachments"] or outgoing):
             name = (
                 f"email_body_{batch.id}.txt"
                 if source["id"] == "0"
@@ -449,13 +456,15 @@ def _ingest_email_docs_and_commit(
                 sender=body_sender or None,
                 received_date=received_date,
                 issued_date=body_date,
-                # The mail headers are the source of both; the body-text
+                **_own_fields(outgoing and not forward),
+                # The mail headers are the source of these; the body-text
                 # extractors would replace them with a guess.
                 extraction_confidence={
                     field: EMAIL_HEADER_CONFIDENCE
                     for field, value in (
                         ("sender", body_sender),
                         ("issued_date", body_date),
+                        ("originator_type", outgoing and not forward),
                     )
                     if value
                 },

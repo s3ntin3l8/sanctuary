@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from email.utils import parseaddr
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
-from app.models.database import Case, Document, User
+from app.models.database import Case, Document, Entity, User
 from app.schemas.contacts import ContactCase, ContactDocument, ContactView
 from app.services import access_service
 from app.services.document_service import DocumentService
+from app.services.entity_email import NAMED_ACTORS
+from app.services.normalization import normalize_entity_name
 
 router = APIRouter(tags=["contacts"])
 
@@ -20,6 +23,35 @@ _EPOCH = datetime.min.replace(tzinfo=UTC)
 
 def _when(d: Document) -> datetime:
     return d.issued_date or d.ingest_date or _EPOCH
+
+
+def _emails(
+    db: Session, name: str, docs: list[Document], visible: set[str] | None
+) -> list[str]:
+    """Addresses this correspondent writes from: those recorded on the entities
+    that bear this name (or this very address) in the caller's cases, and those
+    in the From of their documents. All lowercase."""
+    query = db.query(Entity.type, Entity.name, Entity.email).filter(
+        Entity.email.isnot(None), Entity.type.in_(NAMED_ACTORS)
+    )
+    if visible is not None:
+        query = query.filter(Entity.case_id.in_(visible))
+    needle = name.strip().lower()
+    wanted: dict = {}  # the contact's name, keyed once per entity type
+    found: set[str] = set()
+    for entity_type, entity_name, email in query:
+        if entity_type not in wanted:
+            wanted[entity_type] = normalize_entity_name(name, entity_type)
+        key = wanted[entity_type]
+        if needle == email.lower() or (
+            key and key == normalize_entity_name(entity_name, entity_type)
+        ):
+            found.add(email.lower())
+    for d in docs:
+        label, address = parseaddr(d.sender or "")
+        if "@" in address and (needle in label.lower() or needle in address.lower()):
+            found.add(address.lower())
+    return sorted(found)
 
 
 @router.get("/contacts", response_model=ContactView)
@@ -44,6 +76,7 @@ def contact(
     dated = [_when(d) for d in docs if d.issued_date or d.ingest_date]
     return ContactView(
         name=name,
+        emails=_emails(db, name, docs, visible),
         document_count=len(docs),
         case_count=len(cases),
         last_contact=max(dated) if dated else None,

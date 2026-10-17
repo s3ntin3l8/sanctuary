@@ -26,6 +26,9 @@ export function ContactPage() {
         </span>
         <div className="min-w-0">
           <h1 className="truncate font-display text-[22px] font-extrabold">{c.name}</h1>
+          {c.emails.length > 0 && (
+            <p className="truncate font-mono text-[11px] text-muted">{c.emails.join(' · ')}</p>
+          )}
           <Link
             to={`/search?q=${encodeURIComponent(c.name)}`}
             className="text-[11.5px] text-tealink hover:underline"

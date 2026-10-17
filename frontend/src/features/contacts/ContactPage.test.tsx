@@ -7,6 +7,7 @@ import { ContactPage } from './ContactPage'
 
 const contact: Schemas['ContactView'] = {
   name: 'RA Müller',
+  emails: ['mueller@kanzlei.example'],
   document_count: 2,
   case_count: 1,
   last_contact: '2026-09-01T00:00:00Z',
@@ -47,6 +48,7 @@ test('shows the correspondent, their cases and what they sent', async () => {
     '/document/1',
   )
   expect(screen.getByText('Denies the claim in full.')).toBeVisible()
+  expect(screen.getByText('mueller@kanzlei.example')).toBeVisible()
   expect(screen.getByRole('link', { name: 'Search all references' })).toHaveAttribute(
     'href',
     '/search?q=RA%20M%C3%BCller',

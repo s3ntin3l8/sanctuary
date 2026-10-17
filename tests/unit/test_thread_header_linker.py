@@ -296,3 +296,166 @@ def test_rejected_header_edge_is_not_recreated(db_session, sample_case):
     assert link_batch(db_session, parent_b.id) == 0
     db_session.commit()
     assert _edges(db_session) == []
+
+
+# --- the case follows the headers (#373) ------------------------------------
+
+
+def _owned_case(db, sample_case, sample_user):
+    sample_case.owner_id = sample_user.id
+    db.commit()
+    return sample_case
+
+
+def _filed_parent(db, case, owner, **doc_kwargs):
+    parent_b = _batch(db, "<p@x>", owner_id=owner.id)
+    parent_b.case_id = case.id
+    parent = _doc(db, parent_b, case.id, "original", **doc_kwargs)
+    return parent_b, parent
+
+
+@pytest.mark.unit
+def test_a_reply_without_a_case_is_filed_where_its_parent_is(
+    db_session, sample_case, sample_user
+):
+    from app.services import family_context
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    _filed_parent(db_session, case, sample_user)
+    reply_b = _batch(
+        db_session,
+        "<r@x>",
+        in_reply_to="<p@x>",
+        refs=["<p@x>"],
+        owner_id=sample_user.id,
+    )
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+    db_session.refresh(reply_b)
+
+    assert reply.case_id == case.id
+    assert family_context.case_source(reply) == "inherited"
+    assert reply_b.case_id == case.id
+
+
+@pytest.mark.unit
+def test_a_reply_with_a_case_of_its_own_keeps_it(db_session, sample_case, sample_user):
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    other = Case(
+        id="OTHER-1",
+        title="Other",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=sample_user.id,
+    )
+    db_session.add(other)
+    db_session.commit()
+    _filed_parent(db_session, case, sample_user)
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, other.id, "reply")
+
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+
+    assert reply.case_id == "OTHER-1"
+
+
+@pytest.mark.unit
+def test_a_reply_does_not_follow_a_parent_the_owner_cannot_edit(
+    db_session, sample_case, sample_user
+):
+    # The case belongs to nobody the batch's owner could act as.
+    sample_case.owner_id = None
+    db_session.commit()
+    _filed_parent(db_session, sample_case, sample_user)
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+
+    link_batch(db_session, reply_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+
+    assert reply.case_id == "_TRIAGE"
+
+
+@pytest.mark.unit
+def test_the_gmail_thread_fallback_never_carries_a_case(
+    db_session, sample_case, sample_user
+):
+    from app.services.intelligence import thread_header_linker as linker
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    _, parent = _filed_parent(db_session, case, sample_user)
+    reply_b = _batch(db_session, "<r@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+
+    linker._inherit_case(
+        db_session,
+        reply_b,
+        reply,
+        linker._Parent(parent, RelationshipType.REFERENCES, linker._THREAD_NOTE),
+    )
+
+    assert reply.case_id == "_TRIAGE"
+
+
+@pytest.mark.unit
+def test_a_reply_that_arrived_first_is_filed_when_its_parent_is_linked(
+    db_session, sample_case, sample_user
+):
+    case = _owned_case(db_session, sample_case, sample_user)
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+    link_batch(db_session, reply_b.id)  # the parent is not there yet
+    db_session.commit()
+    db_session.refresh(reply)
+    assert reply.case_id == "_TRIAGE"
+
+    parent_b, _ = _filed_parent(db_session, case, sample_user)
+    link_batch(db_session, parent_b.id)
+    db_session.commit()
+    db_session.refresh(reply)
+
+    assert reply.case_id == case.id
+
+
+@pytest.mark.unit
+def test_the_parents_proceeding_is_taken_only_without_an_az_of_its_own(
+    db_session, sample_case, sample_user
+):
+    from app.models.database import Proceeding
+    from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    proc = Proceeding(
+        case_id=case.id,
+        court_name="Amtsgericht Ingolstadt",
+        court_level=ProceedingCourtLevel.AG,
+        az_court="3 C 1/26",
+        status=ProceedingStatus.ACTIVE,
+    )
+    db_session.add(proc)
+    db_session.commit()
+    _filed_parent(db_session, case, sample_user, proceeding_id=proc.id)
+
+    plain_b = _batch(db_session, "<r1@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    plain = _doc(db_session, plain_b, "_TRIAGE", "plain reply")
+    other_b = _batch(db_session, "<r2@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    other = _doc(db_session, other_b, "_TRIAGE", "own AZ", az_court="9 C 9/26")
+
+    link_batch(db_session, plain_b.id)
+    link_batch(db_session, other_b.id)
+    db_session.commit()
+    db_session.refresh(plain)
+    db_session.refresh(other)
+
+    assert plain.proceeding_id == proc.id
+    assert other.case_id == case.id
+    assert other.proceeding_id != proc.id

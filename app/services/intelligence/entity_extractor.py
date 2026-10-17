@@ -10,6 +10,7 @@ from app.models.database import Case, Document, Entity
 from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import content_windows
+from app.services.entity_email import attach_sender_email
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import ENTITY_EXTRACTOR_SYSTEM
@@ -303,6 +304,9 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
             )
         )
         count += 1
+
+    # The mail's From address belongs to the entity its display name names.
+    attach_sender_email(db, doc.id)
 
     # Always commit: it also releases the advisory lock taken above, even when
     # nothing new was inserted.
