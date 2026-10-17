@@ -736,7 +736,15 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 elif is_zip(part.get_filename(), part.get_content_type(), data):
                     record_archive(record(part, path, data, "archive"), path, data)
                 else:
-                    record(part, path, data)
+                    entry = record(part, path, data)
+                    # An invitation travels as a sibling of the mail's own text
+                    # (multipart/alternative): it must not turn that text into
+                    # mere transport.
+                    entry["inline_alternative"] = (
+                        part.get_content_type() == "text/calendar"
+                        and not part.get_filename()
+                        and part.get_content_disposition() != "attachment"
+                    )
         body = "\n".join(plain)
         if not body.strip() and html_body.strip():
             body = markdownify(
@@ -752,7 +760,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         # A detached signature is not an attachment: it must not turn the
         # mail's own body into mere transport.
         source["has_attachments"] = any(
-            p["outcome"] not in ("ignored_inline", "signature") for p in source["parts"]
+            p["outcome"] not in ("ignored_inline", "signature")
+            and not p.get("inline_alternative")
+            for p in source["parts"]
         )
         return source
 

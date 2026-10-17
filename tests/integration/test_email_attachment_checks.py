@@ -288,6 +288,16 @@ def test_an_inline_calendar_invitation_is_no_longer_dropped(db_session):
         .one()
     )
     assert doc.file_path.endswith(".ics")
+    # The invitation is a sibling of the mail's own text, not a reason to
+    # reduce that text to transport.
+    assert (
+        db_session.query(Document)
+        .filter_by(
+            ingest_batch_id=batch.id, original_filename=f"email_body_{batch.id}.txt"
+        )
+        .count()
+        == 1
+    )
 
 
 def _zip_bytes(members):
@@ -444,3 +454,28 @@ def test_a_webp_attachment_must_really_be_webp(db_session):
     )
     outcome, reason = _part_outcomes(bad)["fake.webp"]
     assert outcome == "unsupported" and "does not match" in reason
+
+
+@pytest.mark.integration
+def test_a_manifest_naming_the_zip_dates_the_documents_inside_it(db_session):
+    from datetime import datetime
+
+    archive = _zip_bytes({"Schriftsatz.pdf": PDF, "K1.pdf": PDF + b" k1"})
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                archive,
+                maintype="application",
+                subtype="zip",
+                filename="Anlagen.zip",
+            ),
+            body='Anlagen:\nAnlagen.zip: 26.05.2026 08:24 - "Landgericht Ingolstadt"\n',
+            message_id="<zip-manifest@example.com>",
+        ),
+    )
+    docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
+    assert {d.original_filename for d in docs} >= {"Schriftsatz.pdf", "K1.pdf"}
+    for doc in docs:
+        assert doc.received_date.replace(tzinfo=None) == datetime(2026, 5, 26, 6, 24)
+        assert doc.extraction_confidence["received_date"] == "bea_manifest"

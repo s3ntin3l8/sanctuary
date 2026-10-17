@@ -601,8 +601,10 @@ def _ingest_email_docs_and_commit(
 def _apply_manifest_receipt(db: Session, sources: list[dict]) -> None:
     """The court's delivery timestamp is the legal receipt time of its attachment.
 
-    Only a current, validly dated entry bound to exactly one document counts;
-    the batch keeps the mailbox arrival, so ``received_at`` stays Gmail's.
+    Only a current, validly dated entry counts. An entry bound to one document
+    dates that document; one naming a delivered zip dates the documents of the
+    files inside it. The batch keeps the mailbox arrival, so ``received_at``
+    stays Gmail's.
     """
     for source in sources:
         for entry in source.get("attachment_manifest", []):
@@ -610,17 +612,28 @@ def _apply_manifest_receipt(db: Session, sources: list[dict]) -> None:
                 entry.get("issue")
                 or entry.get("historical")
                 or not entry.get("timestamp")
-                or entry.get("doc_id") is None
+                or not entry.get("part_id")
             ):
                 continue
-            doc = db.get(Document, entry["doc_id"])
-            if doc is None:
-                continue
-            doc.received_date = datetime.fromisoformat(entry["timestamp"])
-            doc.extraction_confidence = {
-                **(doc.extraction_confidence or {}),
-                "received_date": BEA_MANIFEST_CONFIDENCE,
-            }
+            if entry.get("doc_id") is not None:
+                doc_ids = [entry["doc_id"]]
+            else:
+                prefix = entry["part_id"] + ".z"
+                doc_ids = [
+                    doc_id
+                    for part in source.get("parts", [])
+                    if part["id"].startswith(prefix)
+                    for doc_id in part.get("document_ids", [])
+                ]
+            for doc_id in doc_ids:
+                doc = db.get(Document, doc_id)
+                if doc is None:
+                    continue
+                doc.received_date = datetime.fromisoformat(entry["timestamp"])
+                doc.extraction_confidence = {
+                    **(doc.extraction_confidence or {}),
+                    "received_date": BEA_MANIFEST_CONFIDENCE,
+                }
 
 
 def ingest_scanned_file(
