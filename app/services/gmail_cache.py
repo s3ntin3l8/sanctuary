@@ -6,7 +6,9 @@ asked again. That makes a re-import after "Clear all data" — or after fixing a
 parser bug — deterministic and offline: no Gmail traffic, no valid token needed.
 
 This is real correspondence, so it stays on this machine (``data/`` is
-gitignored), is created owner-only, and is never used as a test fixture. It is
+gitignored), is created owner-only, is encrypted at rest with
+``SECRETS_ENCRYPTION_KEY`` (messages and their metadata sidecars), and is never
+used as a test fixture. It is
 distinct from ``IngestBatch.raw_source_path`` on purpose: deleting a bundle must
 not delete the cache.
 """
@@ -14,13 +16,17 @@ not delete the cache.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
-import tempfile
 from pathlib import Path
 
 from app import config as cfg
+from app.core import secrets
+from app.core.private_files import write_private
+
+logger = logging.getLogger(__name__)
 
 CACHE_DIRNAME = "gmail_raw"
 
@@ -39,28 +45,31 @@ def _path(user_id: int, gmail_id: str) -> Path:
     return cache_dir(user_id) / f"{gmail_id}.eml"
 
 
-def read(user_id: int, gmail_id: str) -> bytes | None:
-    """The cached raw message, or None. An empty/unreadable file is a miss."""
+def _read_plain(path: Path) -> bytes | None:
+    """The file's decrypted bytes. A file that cannot be read or decrypted
+    (wrong or missing key) is a miss: the message is simply fetched again."""
     try:
-        raw = _path(user_id, gmail_id).read_bytes()
+        data = path.read_bytes()
     except OSError:
         return None
-    return raw or None
+    try:
+        return secrets.decrypt_bytes(data) or None
+    except secrets.SecretsError:
+        logger.warning(
+            "Cached mail %s cannot be decrypted; treating as a miss", path.name
+        )
+        return None
+
+
+def read(user_id: int, gmail_id: str) -> bytes | None:
+    """The cached raw message, or None. An empty/unreadable file is a miss."""
+    return _read_plain(_path(user_id, gmail_id))
 
 
 def write(user_id: int, gmail_id: str, raw: bytes) -> None:
-    """Store ``raw`` atomically (temp file + rename), owner-only. Idempotent."""
-    path = _path(user_id, gmail_id)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".eml")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(raw)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    """Store ``raw`` encrypted and atomically (temp file + rename), owner-only.
+    Idempotent."""
+    write_private(_path(user_id, gmail_id), secrets.encrypt_bytes(raw))
 
 
 def cached_ids(user_id: int, gmail_ids: list[str]) -> set[str]:
@@ -76,7 +85,7 @@ def cached_ids(user_id: int, gmail_ids: list[str]) -> set[str]:
 
 
 def stats(user_id: int) -> tuple[int, int]:
-    """(message count, total bytes) of this user's cache."""
+    """(message count, total bytes on disk — encrypted size) of this user's cache."""
     count = size = 0
     try:
         for entry in os.scandir(cache_dir(user_id)):
@@ -97,21 +106,15 @@ def clear(user_id: int) -> int:
 
 def write_metadata(user_id: int, gmail_id: str, metadata: dict) -> None:
     path = _path(user_id, gmail_id).with_suffix(".json")
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w") as handle:
-            json.dump(metadata, handle)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    write_private(path, secrets.encrypt_bytes(json.dumps(metadata).encode()))
 
 
 def read_metadata(user_id: int, gmail_id: str) -> dict | None:
-    try:
-        value = json.loads(_path(user_id, gmail_id).with_suffix(".json").read_text())
-        return value if isinstance(value, dict) else None
-    except (OSError, ValueError):
+    data = _read_plain(_path(user_id, gmail_id).with_suffix(".json"))
+    if data is None:
         return None
+    try:
+        value = json.loads(data)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None

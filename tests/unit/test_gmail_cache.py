@@ -79,7 +79,9 @@ def test_stats_and_clear():
     assert gmail_cache.stats(UID) == (0, 0)
     gmail_cache.write(UID, "a", b"123")
     gmail_cache.write(UID, "b", b"45")
-    assert gmail_cache.stats(UID) == (2, 5)
+    count, size = gmail_cache.stats(UID)
+    assert count == 2
+    assert size > 5  # the bytes on disk, i.e. the encrypted size
 
     assert gmail_cache.clear(UID) == 2
     assert gmail_cache.stats(UID) == (0, 0)
@@ -92,3 +94,44 @@ def test_users_never_see_each_others_mail():
     gmail_cache.write(UID + 1, "m1", b"theirs")
     gmail_cache.clear(UID)
     assert gmail_cache.read(UID + 1, "m1") == b"theirs"
+
+
+def _on_disk(gmail_id, suffix=".eml"):
+    return (gmail_cache.cache_dir(UID) / f"{gmail_id}{suffix}").read_bytes()
+
+
+def test_the_message_is_encrypted_on_disk():
+    gmail_cache.write(UID, "m1", b"Subject: Klage gegen Mustermann\r\n\r\nbody")
+    on_disk = _on_disk("m1")
+    assert b"Mustermann" not in on_disk
+    assert on_disk.startswith(b"SNCENC1\n")
+    assert gmail_cache.read(UID, "m1") == b"Subject: Klage gegen Mustermann\r\n\r\nbody"
+
+
+def test_the_metadata_sidecar_is_encrypted_on_disk():
+    gmail_cache.write_metadata(UID, "m1", {"subject": "Klage gegen Mustermann"})
+    assert b"Mustermann" not in _on_disk("m1", ".json")
+    assert gmail_cache.read_metadata(UID, "m1") == {"subject": "Klage gegen Mustermann"}
+
+
+def test_legacy_plaintext_files_are_still_read():
+    gmail_cache.write(UID, "m1", b"x")
+    (gmail_cache.cache_dir(UID) / "m1.eml").write_bytes(b"From: old\r\n\r\nplain")
+    (gmail_cache.cache_dir(UID) / "m1.json").write_text('{"subject": "old"}')
+    assert gmail_cache.read(UID, "m1") == b"From: old\r\n\r\nplain"
+    assert gmail_cache.read_metadata(UID, "m1") == {"subject": "old"}
+
+
+def test_a_wrong_key_is_a_cache_miss_not_an_error(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app import config
+
+    gmail_cache.write(UID, "m1", b"secret mail")
+    gmail_cache.write_metadata(UID, "m1", {"subject": "s"})
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    assert gmail_cache.read(UID, "m1") is None
+    assert gmail_cache.read_metadata(UID, "m1") is None
+    assert gmail_cache.cached_ids(UID, ["m1"]) == {"m1"}  # present, just unreadable

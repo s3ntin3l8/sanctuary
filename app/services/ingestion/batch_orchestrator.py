@@ -11,7 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
+from app.core import secrets
 from app.core.paths import to_storage_path
+from app.core.private_files import write_private
 from app.core.timezone import now_utc
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
@@ -325,11 +327,8 @@ def ingest_raw_email(
     written_paths: list[Path] = []
 
     try:
-        source_dir = DATA_DIR / "email_sources" / str(owner_id)
-        source_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        raw_path = source_dir / f"{batch.id}.eml"
-        raw_path.write_bytes(raw_bytes)
-        raw_path.chmod(0o600)
+        raw_path = DATA_DIR / "email_sources" / str(owner_id) / f"{batch.id}.eml"
+        write_private(raw_path, secrets.encrypt_bytes(raw_bytes))
         written_paths.append(raw_path)
         batch.raw_source_path = to_storage_path(raw_path)
         _ingest_email_docs_and_commit(

@@ -17,6 +17,7 @@ from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
+from app.core import secrets
 from app.core.timezone import now_utc
 from app.models.database import (
     ActionItem,
@@ -62,6 +63,10 @@ _TABLES = [
 ]
 
 
+# Directories under DATA_DIR whose files are encrypted raw mail (app.core.secrets).
+_ENCRYPTED_MAIL_DIRS = {"gmail_raw", "email_sources"}
+
+
 def build_export_zip(db: Session) -> tuple[bytes, dict]:
     """Return (zip_bytes, manifest) for a whole-workspace export (admin)."""
     buf = io.BytesIO()
@@ -86,6 +91,7 @@ def build_export_zip(db: Session) -> tuple[bytes, dict]:
 
         # --- Document files ---
         data_dir = Path(DATA_DIR)
+        undecryptable = 0
         if data_dir.exists():
             for f in data_dir.rglob("*"):
                 if (
@@ -96,12 +102,24 @@ def build_export_zip(db: Session) -> tuple[bytes, dict]:
                 ):
                     rel = f.relative_to(data_dir)
                     try:
-                        zf.write(f, arcname=f"files/{rel}")
+                        if rel.parts[0] in _ENCRYPTED_MAIL_DIRS:
+                            # Stored mail is encrypted at rest; the export is
+                            # readable evidence, so it carries the plaintext.
+                            data = f.read_bytes()
+                            try:
+                                data = secrets.decrypt_bytes(data)
+                            except secrets.SecretsError:
+                                undecryptable += 1
+                            zf.writestr(f"files/{rel}", data)
+                        else:
+                            zf.write(f, arcname=f"files/{rel}")
                         files_included += 1
                     except (PermissionError, OSError):
                         pass
 
-        _write_manifest(zf, "workspace", table_counts, files_included)
+        _write_manifest(
+            zf, "workspace", table_counts, files_included, undecryptable=undecryptable
+        )
 
     return buf.getvalue(), manifest_of("workspace", table_counts, files_included)
 
@@ -117,7 +135,11 @@ def manifest_of(scope: str, table_counts: dict[str, int], files_included: int) -
 
 
 def _write_manifest(
-    zf: zipfile.ZipFile, scope: str, table_counts: dict[str, int], files_included: int
+    zf: zipfile.ZipFile,
+    scope: str,
+    table_counts: dict[str, int],
+    files_included: int,
+    undecryptable: int = 0,
 ) -> None:
     zf.writestr(
         "manifest.json",
@@ -138,6 +160,12 @@ def _write_manifest(
         f"- `files/` — {what}\n\n"
         "## Tables\n" + "\n".join(f"- {t}: {n} rows" for t, n in table_counts.items())
     )
+    if undecryptable:
+        readme += (
+            f"\n\n## Note\n{undecryptable} stored mail file(s) could not be decrypted "
+            "with the current SECRETS_ENCRYPTION_KEY and are included as stored "
+            "(encrypted)."
+        )
     zf.writestr("README.md", readme)
 
 

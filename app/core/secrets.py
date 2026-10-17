@@ -62,6 +62,38 @@ def decrypt(value: str) -> str:
         ) from exc
 
 
+# Raw mail kept on disk (the Gmail cache and stored .eml files) is encrypted
+# with the same key. A file starting with the magic is a Fernet token; anything
+# else is legacy plaintext and is read as is until the startup pass rewrites it.
+FILE_MAGIC = b"SNCENC1\n"
+
+
+def is_encrypted_bytes(data: bytes) -> bool:
+    return data.startswith(FILE_MAGIC)
+
+
+def encrypt_bytes(data: bytes) -> bytes:
+    """Encrypt file content; with no key configured it is stored as is (the
+    same single-user trade-off as an unconfigured instance has everywhere)."""
+    # An empty file stays empty: the caches read that as a miss.
+    if not data or is_encrypted_bytes(data) or not config.SECRETS_ENCRYPTION_KEY:
+        return data
+    return FILE_MAGIC + _fernet().encrypt(data)
+
+
+def decrypt_bytes(data: bytes) -> bytes:
+    """Decrypt file content; legacy plaintext passes through unchanged."""
+    if not is_encrypted_bytes(data):
+        return data
+    try:
+        return _fernet().decrypt(data[len(FILE_MAGIC) :])
+    except InvalidToken as exc:
+        raise SecretsError(
+            "Stored mail could not be decrypted — SECRETS_ENCRYPTION_KEY "
+            "does not match the key it was encrypted with."
+        ) from exc
+
+
 def require_key_if_secrets_stored(db) -> None:
     """Fail closed at startup: encrypted credentials exist but no key is set.
 

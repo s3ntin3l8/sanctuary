@@ -1,0 +1,24 @@
+"""Owner-only file writes: atomic (temp file + rename), 0600 in a 0700 directory."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+from pathlib import Path
+
+
+def write_private(path: Path, data: bytes) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=path.suffix)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            # Stored mail cannot always be re-fetched: a crash after the rename
+            # must not leave a zero-length file in place of the message.
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core import secrets
 from app.schemas.email_source import EmailProvenance, EmailSource
 from app.services.ingestion.email_parser import normalize_filename
 
@@ -196,7 +197,10 @@ def raw_source(batch) -> bytes | None:
             return cached
     if batch.raw_source_path:
         try:
-            return Path(resolve_storage_path(batch.raw_source_path)).read_bytes()
+            data = Path(resolve_storage_path(batch.raw_source_path)).read_bytes()
         except OSError:
-            pass
+            return None
+        # A key that no longer matches raises SecretsError (a 503 at the API),
+        # not "no longer available": the mail is there, the key is not.
+        return secrets.decrypt_bytes(data)
     return None
