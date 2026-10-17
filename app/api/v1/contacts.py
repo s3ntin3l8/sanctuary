@@ -46,6 +46,8 @@ def _emails(db: Session, name: str, docs: list[Document]) -> list[str]:
             Entity.type.in_(NAMED_ACTORS),
         )
         for entity_name, email in rows:
+            if email is None:
+                continue
             if needle == email.lower() or wanted & _name_keys(entity_name):
                 found.add(email.lower())
     for d in docs:
