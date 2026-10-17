@@ -576,3 +576,33 @@ def test_attribution_line_of_a_forward_gives_sender_and_date(body, subject, send
         "sender": sender,
         "sent_at": datetime(2026, 5, 26, 6, 24, tzinfo=UTC),
     }
+
+
+@pytest.mark.parametrize(
+    ("body", "sender", "sent_at"),
+    [
+        (
+            "Am 26.05.2026 um 08:24 Uhr schrieb Müller <m@x.de>:\n> Text",
+            "Müller <m@x.de>",
+            datetime(2026, 5, 26, 6, 24, tzinfo=UTC),
+        ),
+        ("Am Montag schrieb Müller <m@x.de>:\n> Text", "Müller <m@x.de>", None),
+        ("On Monday Müller wrote:\n> Text", None, None),
+    ],
+)
+def test_attribution_sender_is_never_a_date_fragment(body, sender, sent_at):
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    result = parse_inline_forward(body, "WG: x")
+    if sender is None and sent_at is None:
+        assert result is None
+    else:
+        assert result == {"sender": sender, "sent_at": sent_at}
+
+
+def test_attribution_without_a_trailing_colon_is_not_one():
+    from app.services.ingestion.email_parser import parse_inline_forward
+
+    assert (
+        parse_inline_forward("On behalf of the court we wrote to you", "WG: x") is None
+    )

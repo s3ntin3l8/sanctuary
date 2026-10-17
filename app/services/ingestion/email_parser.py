@@ -358,7 +358,7 @@ _HEADER_LINE_RE = re.compile(r"^\s*([A-Za-zäöüÄÖÜ-]+)\s*:\s*(.*)$")
 # "Am 26.05.2026 um 08:24 schrieb Müller <m@x.de>:" / "On May 26, 2026 at 8:24 AM
 # Müller <m@x.de> wrote:" — the attribution line of a quoted message.
 _ATTRIBUTION_RE = re.compile(
-    r"^\s*(?:am|on)\s+(.{0,200}?)\s*\b(?:schrieb|wrote)\b\s*(.*?):?\s*$",
+    r"^\s*(?:am|on)\s+(.{0,200}?)\s*\b(?:schrieb|wrote)\b\s*(.*?):\s*$",
     re.IGNORECASE,
 )
 
@@ -382,8 +382,11 @@ def parse_inline_forward(body: str, subject: str = "") -> dict | None:
         attribution = _ATTRIBUTION_RE.match(line)
         if attribution:
             lead, trailing = attribution.groups()
-            found = _scan_forward_date(re.sub(r"\s+", " ", lead).strip())
-            sender = (lead[found[1] :] if found else lead).strip(" ,:") or trailing
+            lead = re.sub(r"\s+", " ", lead).strip()
+            found = _scan_forward_date(lead)
+            # German puts the sender after "schrieb"; English between the date
+            # and "wrote". Without a date the English form cannot be split.
+            sender = trailing.strip() or (lead[found[1] :].strip(" ,") if found else "")
             if found or sender:
                 return {
                     "sender": sender or None,
