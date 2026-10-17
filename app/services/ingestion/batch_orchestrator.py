@@ -651,7 +651,9 @@ def _apply_exhibits(db: Session, sources: list[dict]) -> None:
         if not attachments:
             continue
         documents = {
-            part["id"]: part["document_ids"][0] for part in source.get("parts", [])
+            part["id"]: part["document_ids"][0]
+            for part in source.get("parts", [])
+            if part.get("document_ids")
         }
         found = assign_exhibits(attachments, source.get("anlage_list") or [])
         for part_id, exhibit in found.items():

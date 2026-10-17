@@ -129,3 +129,13 @@ def test_enclosures_are_ordered_as_the_sender_listed_them(db_session):
         "Anlage_K2_b.txt",
         "Anlage_K3_c.txt",
     ]
+
+
+def test_parts_without_a_document_do_not_disturb_the_exhibits(db_session):
+    batch = _ingest(
+        db_session,
+        _mail([("Anlage_K1_Vertrag.txt", b"Mietvertrag Text"), ("macro.xyz", b"data")]),
+    )
+    found = _exhibits(db_session, batch)
+    assert found["Anlage_K1_Vertrag.txt"]["label"] == "K 1"
+    assert "macro.xyz" not in found  # unsupported: no document, no exhibit
