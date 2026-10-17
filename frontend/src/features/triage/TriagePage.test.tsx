@@ -47,6 +47,13 @@ test('lists bundles with their state and filters by status chip', async () => {
   expect(screen.getByText(/1 scan awaiting slicing/)).toBeVisible()
 })
 
+test('an enclosure shows the exhibit label its sender gave it', async () => {
+  stub()
+  renderAt('/triage?bundle=batch-42', <TriagePage />)
+  expect(await screen.findByText('Bundle contents · 3')).toBeVisible()
+  expect(screen.getByText('B 1')).toBeVisible()
+})
+
 test('a ?bundle= deep link opens that bundle and scrolls it into view', async () => {
   const scrollIntoView = vi.fn()
   const original = Element.prototype.scrollIntoView

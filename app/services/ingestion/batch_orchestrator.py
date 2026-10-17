@@ -28,6 +28,7 @@ from app.services.ingestion.archive_guard import (
     check_zip,
 )
 from app.services.ingestion.email_parser import parse_rfc822
+from app.services.ingestion.exhibits import assign_exhibits
 from app.services.ingestion.extractors import (
     BEA_MANIFEST_CONFIDENCE,
     EMAIL_HEADER_CONFIDENCE,
@@ -580,6 +581,7 @@ def _ingest_email_docs_and_commit(
 
     batch.source_review_reasons = bind_manifests(parsed["sources"])
     _apply_manifest_receipt(db, parsed["sources"])
+    _apply_exhibits(db, parsed["sources"])
     if batch.received_source != "gmail":
         batch.source_review_reasons = sorted(
             set(batch.source_review_reasons + ["mailbox_arrival_unavailable"])
@@ -634,6 +636,30 @@ def _apply_manifest_receipt(db: Session, sources: list[dict]) -> None:
                     **(doc.extraction_confidence or {}),
                     "received_date": BEA_MANIFEST_CONFIDENCE,
                 }
+
+
+def _apply_exhibits(db: Session, sources: list[dict]) -> None:
+    """Record each attachment's exhibit label and listed position on its document."""
+    for source in sources:
+        attachments = [
+            (part["id"], part["filename"])
+            for part in source.get("parts", [])
+            if part["outcome"] == "ingested"
+            and not part["id"].endswith(".body")
+            and len(part.get("document_ids", [])) == 1
+        ]
+        if not attachments:
+            continue
+        documents = {
+            part["id"]: part["document_ids"][0]
+            for part in source.get("parts", [])
+            if part.get("document_ids")
+        }
+        found = assign_exhibits(attachments, source.get("anlage_list") or [])
+        for part_id, exhibit in found.items():
+            doc = db.get(Document, documents[part_id])
+            if doc is not None:
+                doc.meta = {**(doc.meta or {}), "exhibit": exhibit}
 
 
 def ingest_scanned_file(

@@ -110,6 +110,11 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                         size={14}
                         className="text-muted"
                       />
+                      {d.exhibit_label && (
+                        <span className="shrink-0 rounded-sm bg-accent/10 px-1 font-mono text-[10px] text-muted">
+                          {d.exhibit_label}
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1 truncate">{d.title}</span>
                       {d.reference_inherited && (
                         <span title="Case taken over from its bundle">

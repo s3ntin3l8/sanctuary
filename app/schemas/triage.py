@@ -35,6 +35,7 @@ class TriageDocument(BaseModel):
     is_proof: bool
     sub_group_id: int | None
     reference_inherited: bool
+    exhibit_label: str | None
 
 
 class TriageSubGroup(BaseModel):

@@ -33,6 +33,7 @@ from app.models.enums import (
     IngestBatchStatus,
     RelationshipType,
 )
+from app.services.ingestion import exhibits
 from app.services.pipeline_status import stages_dict
 from app.services.triage_confirmation import _sanitize_case_title
 
@@ -601,6 +602,7 @@ def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
                     if d.significance_tier is not None
                     else 99,
                     0 if d.role == DocumentRole.COVER_LETTER else 1,
+                    exhibits.sort_key(d.meta),
                     d.ingest_date or datetime.min.replace(tzinfo=UTC),
                 )
             )
