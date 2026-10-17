@@ -166,3 +166,21 @@ def test_a_bare_honorific_names_nobody(db_session, sample_case):
     assert attach_sender_email(db_session, doc.id) == 0
     db_session.refresh(entity)
     assert entity.email is None
+
+
+def test_extraction_records_the_sender_address_on_the_entity_it_creates(
+    db_session, sample_case
+):
+    """The wiring that actually runs: ENTITIES saves the entity, then the From
+    address of the mail is recorded on it."""
+    from app.services.intelligence.entity_extractor import _save_entities
+
+    doc = _batch_doc(
+        db_session, sample_case.id, '"Müller, Hans" <h.mueller@kanzlei.example>'
+    )
+    result = {"entities": [{"type": "PERSON", "name": "Hans Müller"}]}
+
+    assert _save_entities(doc, result, db_session) == 1
+    entity = db_session.query(Entity).filter_by(case_id=sample_case.id).one()
+    assert entity.name == "Hans Müller"
+    assert entity.email == "h.mueller@kanzlei.example"

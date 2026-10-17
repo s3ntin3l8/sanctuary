@@ -559,3 +559,24 @@ def test_a_case_the_reply_earned_is_never_replaced(
     db_session.commit()
     db_session.refresh(reply)
     assert reply.case_id == other.id
+
+
+@pytest.mark.unit
+def test_filing_a_reply_clears_its_no_case_review_reason(
+    db_session, sample_case, sample_user
+):
+    from app.services.ingestion.service import refresh_review_reasons
+
+    case = _owned_case(db_session, sample_case, sample_user)
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", owner_id=sample_user.id)
+    reply = _doc(db_session, reply_b, "_TRIAGE", "reply")
+    refresh_review_reasons(reply, db_session, commit=True)
+    assert "missing_case_id" in (reply.review_reasons or [])
+
+    parent_b, _ = _filed_parent(db_session, case, sample_user)
+    link_batch(db_session, parent_b.id)  # the parent arrives after its reply
+    db_session.commit()
+    db_session.refresh(reply)
+
+    assert reply.case_id == case.id
+    assert "missing_case_id" not in (reply.review_reasons or [])

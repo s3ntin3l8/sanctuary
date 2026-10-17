@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Case, Document, Entity, IngestBatch, UserSettings
 from app.models.enums import EntityType, OriginatorType
-from app.services.normalization import normalize_entity_name
+from app.services.normalization import build_party_canonical_map, normalize_entity_name
 
 NAMED_ACTORS = (
     EntityType.PERSON,
@@ -52,10 +52,8 @@ def attach_sender_email(db: Session, doc_id: int) -> int:
     # originator: an own forward or an own mail's attachments are not stamped OWN.
     if address in _own_addresses(db, batch.owner_id):
         return 0
-    from app.services.intelligence.entity_extractor import _build_party_canonical_map
-
     case = db.get(Case, doc.case_id)
-    snaps = _build_party_canonical_map(case)
+    snaps = build_party_canonical_map(case)
     entities = (
         db.query(Entity)
         .filter(Entity.case_id == doc.case_id, Entity.type.in_(NAMED_ACTORS))

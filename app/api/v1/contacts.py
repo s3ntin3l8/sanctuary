@@ -25,12 +25,9 @@ def _when(d: Document) -> datetime:
     return d.issued_date or d.ingest_date or _EPOCH
 
 
-def _same_name(a: str, b: str) -> bool:
-    """Do two names normalise to the same non-empty key, for any actor type?"""
-    return any(
-        (key := normalize_entity_name(a, t)) and key == normalize_entity_name(b, t)
-        for t in NAMED_ACTORS
-    )
+def _name_keys(name: str) -> set[str]:
+    """The non-empty keys a name has as each kind of actor."""
+    return {k for t in NAMED_ACTORS if (k := normalize_entity_name(name, t))}
 
 
 def _emails(db: Session, name: str, docs: list[Document]) -> list[str]:
@@ -39,6 +36,7 @@ def _emails(db: Session, name: str, docs: list[Document]) -> list[str]:
     this very address), and the From addresses of those documents whose sender
     bears it. Names match by normalised name, not by substring."""
     needle = name.strip().lower()
+    wanted = _name_keys(name)
     found: set[str] = set()
     case_ids = {d.case_id for d in docs if d.case_id and d.case_id != "_TRIAGE"}
     if case_ids:
@@ -48,11 +46,11 @@ def _emails(db: Session, name: str, docs: list[Document]) -> list[str]:
             Entity.type.in_(NAMED_ACTORS),
         )
         for entity_name, email in rows:
-            if needle == email.lower() or _same_name(name, entity_name):
+            if needle == email.lower() or wanted & _name_keys(entity_name):
                 found.add(email.lower())
     for d in docs:
         label, address = parseaddr(d.sender or "")
-        if "@" in address and (needle == address.lower() or _same_name(name, label)):
+        if "@" in address and (needle == address.lower() or wanted & _name_keys(label)):
             found.add(address.lower())
     return sorted(found)
 

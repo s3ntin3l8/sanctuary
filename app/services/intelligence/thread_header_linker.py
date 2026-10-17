@@ -234,6 +234,11 @@ def _inherit_case(
     ):
         lead.proceeding_id = ancestor.proceeding_id
     family_context.propagate_batch(db, batch.id)
+    # "No case assigned" was derived from the old state; the document is filed now.
+    from app.services.ingestion.service import refresh_review_reasons
+
+    db.flush()
+    refresh_review_reasons(lead, db, commit=False)
 
 
 def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
