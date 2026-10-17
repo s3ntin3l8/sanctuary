@@ -488,10 +488,12 @@ def process_uploaded_document(doc: Document, db: Session):
         doc.title = h1_text
     elif not doc.title:
         doc.title = extract_clean_title(safe_filename, "")
-    # A person cut this document out of a larger PDF: keep that fact.
-    slice_range = (doc.meta or {}).get("slice_range")
-    if slice_range:
-        conversion_metadata["slice_range"] = slice_range
+    # Facts about where the document came from that conversion cannot know:
+    # a person cut it out of a larger PDF; a mail was a pure inline forward.
+    for key in ("slice_range", "inline_forward"):
+        carried = (doc.meta or {}).get(key)
+        if carried:
+            conversion_metadata[key] = carried
     doc.meta = conversion_metadata
     _flag_packet(doc)
 

@@ -343,6 +343,9 @@ def _parse_candidate_date(raw_value: str) -> datetime | None:
 # Provenance for a field read from the mail headers (an email-body document's
 # From and Date). Like "user_set" it is not the body-text extractors' to redo.
 EMAIL_HEADER_CONFIDENCE = "email_header"
+# The court's delivery timestamp from a beA/court manifest, as an attachment's
+# received date.
+BEA_MANIFEST_CONFIDENCE = "bea_manifest"
 
 # Compiled once — used for subject-line case matching at email ingest time.
 _SUBJECT_AZ_COURT_RE = re.compile(

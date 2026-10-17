@@ -7,7 +7,7 @@ import mimetypes
 import quopri
 import re
 import unicodedata
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from email.policy import default
 from zoneinfo import ZoneInfo
 
@@ -231,8 +231,8 @@ def current_text(body: str) -> str:
     """The new text of a reply, without the quoted thread below it.
 
     Cuts at the first reply-header line (or Outlook From/Sent block) and drops
-    ``>``-quoted lines. Returns ``body`` unchanged when nothing is left, so a
-    pure forward isn't emptied.
+    ``>``-quoted lines. Returns "" for a pure forward; callers that need the
+    text anyway use ``strip_quoted_history``.
     """
     lines = body.splitlines()
     kept: list[str] = []
@@ -252,6 +252,176 @@ def current_text(body: str) -> str:
 
 def strip_quoted_history(body: str) -> str:
     return current_text(body) or body
+
+
+_MONTHS = {
+    name: number
+    for number, names in enumerate(
+        (
+            ("januar", "jan", "january", "jänner"),
+            ("februar", "feb", "february"),
+            ("märz", "mär", "mrz", "march", "mar"),
+            ("april", "apr"),
+            ("mai", "may"),
+            ("juni", "jun", "june"),
+            ("juli", "jul", "july"),
+            ("august", "aug"),
+            ("september", "sep", "sept"),
+            ("oktober", "okt", "october", "oct"),
+            ("november", "nov"),
+            ("dezember", "dez", "december", "dec"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+_ZONE = r"(?:\s*(Z|GMT|UTC|[+-]\d{2}:?\d{2})(?![\w:]))?"
+_TIME = r"(?:\s*(?:um|at|,)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?" + _ZONE + ")?"
+_DAY_MONTH_YEAR = re.compile(
+    r"(\d{1,2})\.?\s+([A-Za-zäöüÄÖÜ]+)\.?,?\s+(\d{4})" + _TIME, re.IGNORECASE
+)
+_MONTH_DAY_YEAR = re.compile(
+    r"([A-Za-zäöüÄÖÜ]+)\.?\s+(\d{1,2}),?\s+(\d{4})" + _TIME, re.IGNORECASE
+)
+_NUMERIC_DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})" + _TIME)
+_ISO_DATE = re.compile(
+    r"(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?"
+    + _ZONE.replace("(Z|GMT|UTC|", "(Z|")
+)
+
+
+def _zone_offset(zone: str) -> timezone:
+    if zone.upper() in ("Z", "GMT", "UTC"):
+        return UTC
+    digits = zone.replace(":", "")
+    sign = -1 if digits[0] == "-" else 1
+    return timezone(sign * timedelta(hours=int(digits[1:3]), minutes=int(digits[3:5])))
+
+
+def _scan_forward_date(text: str) -> tuple[datetime, int] | None:
+    """The first date in ``text`` as aware UTC, and where it ends.
+
+    Handles "Montag, 26. Mai 2026 08:24", "26.05.2026 08:24", "Tue, May 26, 2026
+    at 8:24 AM", ISO 8601 and RFC 5322. An explicit zone or offset is honoured;
+    a time without one is local (``TIMEZONE``); a date without a time is that
+    calendar date at 00:00 UTC.
+    """
+    for pattern, order in (
+        (_ISO_DATE, "ymd"),
+        (_DAY_MONTH_YEAR, "dmy"),
+        (_MONTH_DAY_YEAR, "mdy"),
+        (_NUMERIC_DATE, "dmy"),
+    ):
+        match = pattern.search(text)
+        if not match:
+            continue
+        a, b, c, hour, minute, second, *rest = match.groups()
+        meridian = rest[0] if order != "ymd" else None
+        zone = rest[-1]
+        year, month, day = (
+            (a, b, c) if order == "ymd" else (c, a, b) if order == "mdy" else (c, b, a)
+        )
+        try:
+            month_no = int(month) if month.isdigit() else _MONTHS[month.lower()]
+            h = int(hour) if hour else None
+            if h is not None and meridian:
+                h = h % 12 + (12 if meridian.upper() == "PM" else 0)
+            if h is None:
+                return datetime(int(year), month_no, int(day), tzinfo=UTC), match.end()
+            local = datetime(
+                int(year),
+                month_no,
+                int(day),
+                h,
+                int(minute),
+                int(second or 0),
+                tzinfo=_zone_offset(zone) if zone else ZoneInfo(TIMEZONE),
+            )
+        except (KeyError, ValueError):
+            continue
+        return local.astimezone(UTC), match.end()
+    return None
+
+
+def parse_forward_date(text: str) -> datetime | None:
+    """A forwarded header's date as aware UTC (see ``_scan_forward_date``)."""
+    found = _scan_forward_date(re.sub(r"\s+", " ", text).strip())
+    return found[0] if found else None
+
+
+_FORWARD_SUBJECT_RE = re.compile(r"^\s*(?:wg|fwd?|weitergeleitet)\s*:", re.IGNORECASE)
+_FORWARD_DIVIDER_RE = re.compile(
+    r"^\s*-{2,}\s*(?:weitergeleitete nachricht|forwarded message)\s*-{2,}",
+    re.IGNORECASE,
+)
+_HEADER_LINE_RE = re.compile(r"^\s*([A-Za-zäöüÄÖÜ-]+)\s*:\s*(.*)$")
+# "Am 26.05.2026 um 08:24 schrieb Müller <m@x.de>:" / "On May 26, 2026 at 8:24 AM
+# Müller <m@x.de> wrote:" — the attribution line of a quoted message.
+_ATTRIBUTION_RE = re.compile(
+    r"^\s*(?:am|on)\s+(.{0,200}?)\s*\b(?:schrieb|wrote)\b\s*(.*?):\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_inline_forward(body: str, subject: str = "") -> dict | None:
+    """Original sender and date of a pure inline forward.
+
+    A "WG:" without a note of its own is just the forwarded block, so the
+    forwarder's From/Date describe the forwarding, not the letter. Returns
+    ``{"sender", "sent_at"}`` (either may be None) for the first header block of
+    such a forward, and None when the mail is not a pure forward or has no
+    readable header block.
+    """
+    if current_text(body):
+        return None
+    lines = body.splitlines()
+    explicit = any(_FORWARD_DIVIDER_RE.match(line) for line in lines)
+    if not (explicit or _FORWARD_SUBJECT_RE.match(subject)):
+        return None
+    for i, line in enumerate(lines):
+        attribution = _ATTRIBUTION_RE.match(line)
+        if attribution:
+            lead, trailing = attribution.groups()
+            lead = re.sub(r"\s+", " ", lead).strip()
+            found = _scan_forward_date(lead)
+            # German puts the sender after "schrieb"; English between the date
+            # and "wrote". Without a date the English form cannot be split.
+            sender = trailing.strip() or (lead[found[1] :].strip(" ,") if found else "")
+            if found or sender:
+                return {
+                    "sender": sender or None,
+                    "sent_at": found[0] if found else None,
+                }
+            continue
+        if not _FORWARD_DIVIDER_RE.match(line):
+            start = (
+                i
+                if _OUTLOOK_HEADER_RE.match(line)
+                and any(_OUTLOOK_FOLLOW_RE.match(n) for n in lines[i + 1 : i + 4])
+                else None
+            )
+        else:
+            start = i + 1
+        if start is None:
+            continue
+        sender, sent = None, None
+        for header in lines[start : start + 12]:
+            if not header.strip():
+                if sender or sent:
+                    break
+                continue
+            match = _HEADER_LINE_RE.match(header)
+            if not match:
+                break
+            key, value = match.group(1).lower(), match.group(2).strip()
+            if key in ("von", "from") and sender is None:
+                value = re.sub(r"\s*\[mailto:([^\]]+)\]", r" <\1>", value)
+                sender = re.sub(r"<mailto:([^>]+)>", r"<\1>", value) or None
+            elif key in ("gesendet", "sent", "datum", "date") and sent is None:
+                sent = parse_forward_date(value)
+        if sender or sent:
+            return {"sender": sender, "sent_at": sent}
+    return None
 
 
 def normalize_filename(value: str) -> str:
@@ -481,6 +651,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         source["attachment_manifest"] = _parse_attachment_manifest(body)
         source["email_note"] = _extract_email_note(body)
         source["body"] = strip_quoted_history(body) if body else ""
+        source["inline_forward"] = (
+            parse_inline_forward(body, source["subject"]) if body else None
+        )
         # An attached message counts as an attachment of this source as well.
         source["has_attachments"] = any(
             p["outcome"] != "ignored_inline" for p in source["parts"]

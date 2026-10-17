@@ -22,6 +22,7 @@ from app.repositories.ingest_batch import (
 )
 from app.services.ingestion.email_parser import parse_rfc822
 from app.services.ingestion.extractors import (
+    BEA_MANIFEST_CONFIDENCE,
     EMAIL_HEADER_CONFIDENCE,
     extract_az_court_from_subject,
     extract_internal_id_from_subject,
@@ -422,6 +423,11 @@ def _ingest_email_docs_and_commit(
             path.write_text(source["body"], encoding="utf-8")
             written_paths.append(path)
             part_id = source["id"] + ".body"
+            # A pure "WG:" is the forwarded letter itself: its sender and date
+            # are the original's, not the forwarder's headers.
+            forward = source.get("inline_forward") or {}
+            body_sender = forward.get("sender") or source_sender
+            body_date = forward.get("sent_at") or source["received_date"]
             doc = Document(
                 title=source_subject,
                 owner_id=owner_id,
@@ -434,19 +440,31 @@ def _ingest_email_docs_and_commit(
                 proceeding_id=source_proceeding,
                 ingest_batch_id=batch.id,
                 internal_id=extract_internal_id_from_subject(source_subject) or None,
-                sender=source_sender or None,
+                sender=body_sender or None,
                 received_date=received_date,
-                issued_date=source["received_date"],
+                issued_date=body_date,
                 # The mail headers are the source of both; the body-text
                 # extractors would replace them with a guess.
                 extraction_confidence={
                     field: EMAIL_HEADER_CONFIDENCE
                     for field, value in (
-                        ("sender", source_sender),
-                        ("issued_date", source["received_date"]),
+                        ("sender", body_sender),
+                        ("issued_date", body_date),
                     )
                     if value
                 },
+                meta=(
+                    {
+                        "inline_forward": {
+                            "forwarder": source_sender,
+                            "forwarded_at": source["received_date"].isoformat()
+                            if source["received_date"]
+                            else None,
+                        }
+                    }
+                    if forward
+                    else None
+                ),
                 page_count=0,
             )
             db.add(doc)
@@ -550,6 +568,7 @@ def _ingest_email_docs_and_commit(
             docs_to_process.append(doc)
 
     batch.source_review_reasons = bind_manifests(parsed["sources"])
+    _apply_manifest_receipt(db, parsed["sources"])
     if batch.received_source != "gmail":
         batch.source_review_reasons = sorted(
             set(batch.source_review_reasons + ["mailbox_arrival_unavailable"])
@@ -566,6 +585,31 @@ def _ingest_email_docs_and_commit(
         batch.status = IngestBatchStatus.CONFIRMED
         batch.meta = {**(batch.meta or {}), "reason": NO_NEW_DOCUMENTS}
     db.commit()
+
+
+def _apply_manifest_receipt(db: Session, sources: list[dict]) -> None:
+    """The court's delivery timestamp is the legal receipt time of its attachment.
+
+    Only a current, validly dated entry bound to exactly one document counts;
+    the batch keeps the mailbox arrival, so ``received_at`` stays Gmail's.
+    """
+    for source in sources:
+        for entry in source.get("attachment_manifest", []):
+            if (
+                entry.get("issue")
+                or entry.get("historical")
+                or not entry.get("timestamp")
+                or entry.get("doc_id") is None
+            ):
+                continue
+            doc = db.get(Document, entry["doc_id"])
+            if doc is None:
+                continue
+            doc.received_date = datetime.fromisoformat(entry["timestamp"])
+            doc.extraction_confidence = {
+                **(doc.extraction_confidence or {}),
+                "received_date": BEA_MANIFEST_CONFIDENCE,
+            }
 
 
 def ingest_scanned_file(
