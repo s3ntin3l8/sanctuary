@@ -1,4 +1,13 @@
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import { Icon } from './Icon'
 
@@ -14,10 +23,23 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  // A timer outliving the provider would set state after unmount (and after jsdom teardown in tests).
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      pending.forEach(clearTimeout)
+      pending.clear()
+    }
+  }, [])
   const push = useCallback((message: string, kind: Kind = 'success') => {
     const id = Date.now() + Math.random()
     setToasts((t) => [...t, { id, kind, message }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000)
+    const timer = setTimeout(() => {
+      timers.current.delete(timer)
+      setToasts((t) => t.filter((x) => x.id !== id))
+    }, 4000)
+    timers.current.add(timer)
   }, [])
   const value = useMemo(() => push, [push])
   return (
