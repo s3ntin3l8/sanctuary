@@ -115,6 +115,25 @@ def _prune_jsonl(jsonl_file: Path, cutoff: datetime) -> tuple[int, int]:
                 pass
 
 
+@celery_app.task(name="app.tasks.maintenance.reseal_stored_secrets_task")
+def reseal_stored_secrets_task():
+    """Seal stored mail and credentials with the current SECRETS_ENCRYPTION_KEY:
+    encrypt leftover plaintext, move values off a retired key."""
+    from app.dependencies import get_db_session
+    from app.services import reseal
+
+    db = get_db_session()
+    try:
+        report = reseal.reseal_all(db)
+    finally:
+        db.close()
+    return {
+        "encrypted": report.encrypted,
+        "rotated": report.rotated,
+        "undecryptable": report.undecryptable,
+    }
+
+
 @celery_app.task(name="app.tasks.maintenance.prune_ai_debug_logs_task")
 def prune_ai_debug_logs_task():
     """Prune ai_debug log blocks and index entries older than 30 days."""

@@ -1,16 +1,24 @@
-"""Encryption at rest for credentials stored in the settings JSON blobs.
+"""Encryption at rest for credentials stored in the settings JSON blobs and for
+raw mail kept on disk.
 
-Fernet (AES-128-CBC + HMAC) keyed by ``SECRETS_ENCRYPTION_KEY``. Encrypted
-values carry an ``enc:v1:`` prefix so reads can tell them from plaintext:
-``decrypt`` passes unprefixed values through unchanged (non-secret sentinels
-such as the AI "not-needed" key, and rows not yet migrated), while a prefixed
-value that cannot be decrypted raises ``SecretsError`` — a wrong or missing key
-must never silently look like "no credentials".
+Fernet (AES-128-CBC + HMAC) keyed by ``SECRETS_ENCRYPTION_KEY``, which is
+mandatory (``require_key`` stops the web app and every worker without it).
+``SECRETS_ENCRYPTION_KEY_PREVIOUS`` (comma-separated) lists retired keys that
+still *open* old values; everything is *sealed* with the current key only, and
+``reseal`` / ``reseal_bytes`` move a value onto it.
+
+Encrypted values carry an ``enc:v1:`` prefix so reads can tell them from
+plaintext: ``decrypt`` passes unprefixed values through unchanged (non-secret
+sentinels such as the AI "not-needed" key), while a prefixed value that cannot
+be decrypted raises ``SecretsError`` — a wrong or missing key must never
+silently look like "no credentials".
 """
 
 from __future__ import annotations
 
-from cryptography.fernet import Fernet, InvalidToken
+from functools import lru_cache
+
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from app import config
 
@@ -21,7 +29,28 @@ class SecretsError(RuntimeError):
     """The encryption key is missing/wrong, so a stored secret is unusable."""
 
 
-def _fernet() -> Fernet:
+def _fernet_of(key: str, name: str) -> Fernet:
+    try:
+        return Fernet(key.encode())
+    except ValueError as exc:
+        raise SecretsError(
+            f"{name} is not a valid Fernet key (32 url-safe base64-encoded bytes)."
+        ) from exc
+
+
+@lru_cache(maxsize=8)
+def _ring(key: str, previous: str) -> tuple[Fernet, MultiFernet]:
+    current = _fernet_of(key, "SECRETS_ENCRYPTION_KEY")
+    retired = [
+        _fernet_of(k.strip(), "SECRETS_ENCRYPTION_KEY_PREVIOUS")
+        for k in previous.split(",")
+        if k.strip()
+    ]
+    return current, MultiFernet([current, *retired])
+
+
+def _keys() -> tuple[Fernet, MultiFernet]:
+    """(the current key alone, every key). Read per call: config is patched in tests."""
     key = config.SECRETS_ENCRYPTION_KEY
     if not key:
         raise SecretsError(
@@ -29,13 +58,13 @@ def _fernet() -> Fernet:
             "`python -c 'from cryptography.fernet import Fernet; "
             "print(Fernet.generate_key().decode())'` and add it to .env."
         )
-    try:
-        return Fernet(key.encode())
-    except ValueError as exc:
-        raise SecretsError(
-            "SECRETS_ENCRYPTION_KEY is not a valid Fernet key (32 url-safe "
-            "base64-encoded bytes)."
-        ) from exc
+    return _ring(key, config.SECRETS_ENCRYPTION_KEY_PREVIOUS)
+
+
+def require_key() -> None:
+    """Fail closed: refuse to start without a usable key (also validates every
+    retired key). Without one, mail and credentials would be written in the clear."""
+    _keys()
 
 
 def is_encrypted(value: object) -> bool:
@@ -46,7 +75,7 @@ def encrypt(plaintext: str) -> str:
     """Encrypt ``plaintext``; already-encrypted values are returned as is."""
     if is_encrypted(plaintext):
         return plaintext
-    return PREFIX + _fernet().encrypt(plaintext.encode()).decode()
+    return PREFIX + _keys()[0].encrypt(plaintext.encode()).decode()
 
 
 def decrypt(value: str) -> str:
@@ -54,12 +83,31 @@ def decrypt(value: str) -> str:
     if not is_encrypted(value):
         return value
     try:
-        return _fernet().decrypt(value[len(PREFIX) :].encode()).decode()
+        return _keys()[1].decrypt(value[len(PREFIX) :].encode()).decode()
     except InvalidToken as exc:
         raise SecretsError(
-            "Stored secret could not be decrypted — SECRETS_ENCRYPTION_KEY "
-            "does not match the key it was encrypted with."
+            "Stored secret could not be decrypted — neither SECRETS_ENCRYPTION_KEY "
+            "nor SECRETS_ENCRYPTION_KEY_PREVIOUS matches the key it was encrypted with."
         ) from exc
+
+
+def reseal(value: str) -> str | None:
+    """``value`` sealed with the current key if it was sealed with a retired one;
+    ``None`` if it is not encrypted or already current. Raises ``SecretsError``
+    if no key opens it."""
+    if not is_encrypted(value):
+        return None
+    token = value[len(PREFIX) :].encode()
+    current, ring = _keys()
+    try:
+        current.decrypt(token)
+        return None
+    except InvalidToken:
+        pass
+    try:
+        return PREFIX + ring.rotate(token).decode()
+    except InvalidToken as exc:
+        raise SecretsError("Stored secret is sealed with an unknown key.") from exc
 
 
 # Raw mail kept on disk (the Gmail cache and stored .eml files) is encrypted
@@ -73,12 +121,11 @@ def is_encrypted_bytes(data: bytes) -> bool:
 
 
 def encrypt_bytes(data: bytes) -> bytes:
-    """Encrypt file content; with no key configured it is stored as is (the
-    same single-user trade-off as an unconfigured instance has everywhere)."""
+    """Encrypt file content with the current key (``SecretsError`` without one)."""
     # An empty file stays empty: the caches read that as a miss.
-    if not data or is_encrypted_bytes(data) or not config.SECRETS_ENCRYPTION_KEY:
+    if not data or is_encrypted_bytes(data):
         return data
-    return FILE_MAGIC + _fernet().encrypt(data)
+    return FILE_MAGIC + _keys()[0].encrypt(data)
 
 
 def decrypt_bytes(data: bytes) -> bytes:
@@ -86,34 +133,28 @@ def decrypt_bytes(data: bytes) -> bytes:
     if not is_encrypted_bytes(data):
         return data
     try:
-        return _fernet().decrypt(data[len(FILE_MAGIC) :])
+        return _keys()[1].decrypt(data[len(FILE_MAGIC) :])
     except InvalidToken as exc:
         raise SecretsError(
-            "Stored mail could not be decrypted — SECRETS_ENCRYPTION_KEY "
-            "does not match the key it was encrypted with."
+            "Stored mail could not be decrypted — neither SECRETS_ENCRYPTION_KEY "
+            "nor SECRETS_ENCRYPTION_KEY_PREVIOUS matches the key it was encrypted with."
         ) from exc
 
 
-def require_key_if_secrets_stored(db) -> None:
-    """Fail closed at startup: encrypted credentials exist but no key is set.
-
-    Without this the app would boot and then report every Gmail connection as
-    "needs reconnect" and every AI key as unusable — hiding that the real fix
-    is restoring SECRETS_ENCRYPTION_KEY (a reconnect with a *new* key would
-    also orphan whatever the old key protected).
-    """
-    if config.SECRETS_ENCRYPTION_KEY:
-        return
-    from app.models.database import AppSettings, UserSettings
-
-    stored: list[object] = []
-    for row in db.query(UserSettings.settings_json).all():
-        data = row[0] if isinstance(row[0], dict) else {}
-        stored.append(data.get("gmail_credentials_json"))
-    for row in db.query(AppSettings.settings_json).all():
-        data = row[0] if isinstance(row[0], dict) else {}
-        for inst in (data.get("ai") or {}).get("instances", []):
-            stored.append(inst.get("api_key"))
-        stored.append((data.get("gmail_oauth") or {}).get("client_secret"))
-    if any(is_encrypted(v) for v in stored):
-        _fernet()  # raises the "SECRETS_ENCRYPTION_KEY is not set" error
+def reseal_bytes(data: bytes) -> bytes | None:
+    """``data`` sealed with the current key if it was sealed with a retired one;
+    ``None`` if it is plaintext or already current. Raises ``SecretsError`` if
+    no key opens it."""
+    if not is_encrypted_bytes(data):
+        return None
+    token = data[len(FILE_MAGIC) :]
+    current, ring = _keys()
+    try:
+        current.decrypt(token)
+        return None
+    except InvalidToken:
+        pass
+    try:
+        return FILE_MAGIC + ring.rotate(token)
+    except InvalidToken as exc:
+        raise SecretsError("Stored mail is sealed with an unknown key.") from exc
