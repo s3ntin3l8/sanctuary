@@ -350,3 +350,117 @@ def test_ai_sender_replaces_the_header_marker(db_session):
     assert doc.sender == "Kanzlei Vogt"
     assert doc.extraction_confidence["sender"] == "high"
     assert doc.extraction_confidence["issued_date"] == "email_header"
+
+
+def _own_mail(message_id, with_attachment=False):
+    msg = email.message.EmailMessage()
+    msg["From"] = "Ich <me@example.com>"
+    msg["To"] = "lawyer@example.com"
+    msg["Subject"] = "Frage"
+    msg["Message-ID"] = message_id
+    msg.set_content("Bitte prüfen Sie den beigefügten Bescheid.")
+    if with_attachment:
+        msg.add_attachment(
+            b"%PDF-1.4 bescheid",
+            maintype="application",
+            subtype="pdf",
+            filename="Bescheid.pdf",
+        )
+    return msg.as_bytes()
+
+
+@pytest.mark.integration
+def test_own_mail_is_own_by_its_from_address(db_session):
+    from app.models.enums import OriginatorType
+
+    batch = ingest_raw_email(
+        db_session,
+        _own_mail("<own-1@example.com>"),
+        source_type=IngestBatchSourceType.EMAIL,
+        own_addresses={"ME@example.com"},
+    )
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+    assert doc.originator_type == OriginatorType.OWN
+    assert doc.extraction_confidence["originator_type"] == "email_header"
+
+
+@pytest.mark.integration
+def test_incoming_mail_is_not_stamped_own(db_session):
+    from app.models.enums import OriginatorType
+
+    batch = ingest_raw_email(
+        db_session,
+        _own_mail("<own-2@example.com>"),
+        source_type=IngestBatchSourceType.EMAIL,
+        own_addresses={"someone-else@example.com"},
+    )
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+    assert doc.originator_type == OriginatorType.UNKNOWN
+    assert "originator_type" not in (doc.extraction_confidence or {})
+
+
+@pytest.mark.integration
+def test_only_the_body_of_own_mail_is_own_not_what_it_forwards(db_session):
+    from app.models.enums import OriginatorType
+
+    batch = ingest_raw_email(
+        db_session,
+        _own_mail("<own-3@example.com>", with_attachment=True),
+        source_type=IngestBatchSourceType.EMAIL,
+        own_addresses={"me@example.com"},
+    )
+    docs = {
+        d.original_filename: d
+        for d in db_session.query(Document).filter(Document.ingest_batch_id == batch.id)
+    }
+    assert docs[f"email_body_{batch.id}.txt"].originator_type == OriginatorType.OWN
+    assert docs["Bescheid.pdf"].originator_type == OriginatorType.UNKNOWN
+
+
+@pytest.mark.unit
+def test_the_ai_cannot_override_the_own_originator_of_own_mail(db_session):
+    from app.models.database import Document as Doc
+    from app.models.enums import OriginatorType
+    from app.services.ai_summary import enrich_document_with_ai
+
+    doc = Doc(
+        title="t",
+        file_path="x",
+        originator_type=OriginatorType.OWN,
+        extraction_confidence={"originator_type": "email_header"},
+    )
+    db_session.add(doc)
+    db_session.flush()
+
+    enrich_document_with_ai(
+        doc,
+        {"originator_type": "opposing", "confidence": {"originator_type": "low"}},
+        db_session,
+    )
+
+    assert doc.originator_type == OriginatorType.OWN
+    assert doc.extraction_confidence["originator_type"] == "email_header"
+
+
+@pytest.mark.integration
+def test_an_own_inline_forward_is_not_stamped_own(db_session):
+    from app.models.enums import OriginatorType
+
+    msg = email.message.EmailMessage()
+    msg["From"] = "Ich <me@example.com>"
+    msg["To"] = "lawyer@example.com"
+    msg["Subject"] = "WG: Ladung"
+    msg["Message-ID"] = "<own-wg@example.com>"
+    msg.set_content(
+        "Von: Landgericht <poststelle@lg.example>\n"
+        "Gesendet: Montag, 26. Mai 2026 08:24\nAn: me@example.com\n\nSie werden geladen."
+    )
+    batch = ingest_raw_email(
+        db_session,
+        msg.as_bytes(),
+        source_type=IngestBatchSourceType.EMAIL,
+        own_addresses={"me@example.com"},
+    )
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+    assert doc.originator_type == OriginatorType.UNKNOWN
+    assert doc.sender == "Landgericht <poststelle@lg.example>"

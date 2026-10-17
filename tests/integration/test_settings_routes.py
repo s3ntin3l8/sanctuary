@@ -375,7 +375,8 @@ def test_ai_instance_update_keeps_key_when_omitted(db_session):
     assert saved["base_url"] == "http://x"
     # Stored encrypted, never as plaintext; still resolves to the same key.
     assert saved["api_key"].startswith("enc:v1:")
-    assert "k1" not in saved["api_key"]
+    # (A substring check on the token would flake: it is random base64.)
+    assert saved["api_key"] != "k1"  # pragma: allowlist secret
     from app.services.ai_config import get_instance
 
     stored_key = get_instance(db_session, inst["id"])["api_key"]

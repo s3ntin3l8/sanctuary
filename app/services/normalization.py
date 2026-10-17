@@ -6,8 +6,12 @@
 
 import re
 import unicodedata
+from typing import TYPE_CHECKING
 
 from app.models.enums import EntityType
+
+if TYPE_CHECKING:
+    from app.models.database import Case
 
 _HM_PATTERN = re.compile(r"\bh\s*&\s*m\b|\bh\s+and\s+m\b", re.IGNORECASE)
 
@@ -117,3 +121,66 @@ def normalize_entity_name(
     s = _german_fold(s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def build_party_canonical_map(case: "Case | None") -> dict[str, str]:
+    """Snap-to-canonical lookup for known case parties.
+
+    Returns a dict mapping `normalize_entity_name(variant, PERSON|ORG)` to the
+    canonical party name in `Case.parties`. The entity-extractor often emits
+    PERSON variants like "Liu", "Yingying Liu", "J. Liu, Yingying" that share
+    a dedup key with "Liu Yingying" once normalized — but some variants don't
+    quite normalize identically (East-Asian vs Western name ordering doesn't
+    collapse, initials, comma-reverse edge cases). Anchoring on the case's
+    `parties` list pins variants of both orderings to one row.
+    """
+    if not case or not case.parties:
+        return {}
+    mapping: dict[str, str] = {}
+    for party in case.parties:
+        if not isinstance(party, dict):
+            continue
+        canonical = (party.get("name") or "").strip()
+        if not canonical:
+            continue
+        # Map all entity-type normalisations so humans ("Liu Yingying") and
+        # orgs ("Haidl Funk Rechtsanwälte") and courts ("Amtsgericht
+        # Ingolstadt") all snap uniformly.
+        for et in (
+            EntityType.PERSON,
+            EntityType.ORGANIZATION,
+            EntityType.LAW_FIRM,
+            EntityType.COURT,
+        ):
+            key = normalize_entity_name(canonical, et)
+            if key:
+                mapping[key] = canonical
+        # For two-token PERSON names, expand the keyset so all common
+        # variants of the same person map back to the canonical spelling:
+        #
+        #  - swap order ("Liu Yingying" ↔ "Yingying Liu") for East-Asian
+        #    vs Western name ordering (existing).
+        #  - initial-form ("Y. Liu", "Liu, Y.", "L. Yingying") for the
+        #    abbreviated references the AI sometimes emits (Round 7 — fixes
+        #    the post-R6 doc 25 "Liu, Y." duplicate).
+        #
+        # Single-token bare-surname references ("Liu", "Frau Liu" stripped
+        # of honorific) are deliberately NOT mapped — a bare surname is
+        # ambiguous between "Liu Yingying" and "Liu Jun" (or any other Liu
+        # on the case) and snapping would falsely merge them. The
+        # honorific-stripped "Frau Liu" → key "liu" case is documented as
+        # accepted ambiguity; user can merge manually if needed.
+        tokens = canonical.split()
+        if len(tokens) == 2:
+            first, last = tokens
+            variants = [
+                f"{last} {first}",  # swapped order
+                f"{first[0]}. {last}",  # "Y. Liu"
+                f"{last}, {first[0]}.",  # "Liu, Y."
+                f"{last[0]}. {first}",  # "L. Yingying" (swapped + initial)
+            ]
+            for variant in variants:
+                key = normalize_entity_name(variant, EntityType.PERSON)
+                if key and key not in mapping:
+                    mapping[key] = canonical
+    return mapping

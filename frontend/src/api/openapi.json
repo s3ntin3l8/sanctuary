@@ -2720,6 +2720,13 @@
             "title": "Documents",
             "type": "array"
           },
+          "emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Emails",
+            "type": "array"
+          },
           "last_contact": {
             "anyOf": [
               {
@@ -2739,6 +2746,7 @@
         },
         "required": [
           "name",
+          "emails",
           "document_count",
           "case_count",
           "last_contact",

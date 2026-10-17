@@ -4064,6 +4064,8 @@ export interface components {
             document_count: number;
             /** Documents */
             documents: components["schemas"]["ContactDocument"][];
+            /** Emails */
+            emails: string[];
             /** Last Contact */
             last_contact: string | null;
             /** Name */

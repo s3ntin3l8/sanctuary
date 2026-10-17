@@ -568,15 +568,21 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             doc.extraction_confidence = {k: v for k, v in conf.items() if k != "sender"}
         doc.sender = cleaned_sender
 
-    parsed_ot = parse_originator_type(summary_data.get("originator_type"))
-    if parsed_ot is not None and "originator_type" not in user_set:
-        doc.originator_type = parsed_ot
-
     header_set = {
         key
         for key, val in (doc.extraction_confidence or {}).items()
         if val == EMAIL_HEADER_CONFIDENCE
     }
+
+    # The user's own mail is OWN by its From address (set at ingest): the model's
+    # reading of the text does not override a fact the headers prove.
+    parsed_ot = parse_originator_type(summary_data.get("originator_type"))
+    if (
+        parsed_ot is not None
+        and "originator_type" not in user_set
+        and "originator_type" not in header_set
+    ):
+        doc.originator_type = parsed_ot
     if (
         summary_data.get("issued_date")
         and "issued_date" not in user_set
