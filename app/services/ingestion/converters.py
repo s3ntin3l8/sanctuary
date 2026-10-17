@@ -7,6 +7,7 @@ import tempfile
 import threading
 from typing import overload
 
+import pillow_heif
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.config import MAX_FILE_SIZE_MB
@@ -14,6 +15,9 @@ from app.services.ingestion.archive_guard import ARCHIVE_EXTENSIONS, check_zip
 from app.services.model_gate import ModelGateTimeout
 
 logger = logging.getLogger(__name__)
+
+# HEIC/HEIF become readable to every PIL open in the process, not only the OCR path.
+pillow_heif.register_heif_opener()
 
 
 def _layout_model_spec():
@@ -206,10 +210,8 @@ def _ocr_readable_image(file_path: str):
     if os.path.splitext(file_path)[1].lower() not in {".heic", ".heif"}:
         yield file_path
         return
-    import pillow_heif
     from PIL import Image
 
-    pillow_heif.register_heif_opener()
     with tempfile.TemporaryDirectory() as tmp:
         png = os.path.join(tmp, "image.png")
         with Image.open(file_path) as image:

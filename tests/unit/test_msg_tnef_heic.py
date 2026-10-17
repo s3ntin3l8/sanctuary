@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64
 
 
-def _tnef(files: dict[str, bytes]) -> bytes:
+def _tnef(files: dict[str | bytes, bytes]) -> bytes:
     """A minimal TNEF stream: one attachment object per file."""
 
     def obj(level, attribute, data):
@@ -33,7 +33,8 @@ def _tnef(files: dict[str, bytes]) -> bytes:
     out = struct.pack("<IH", 0x223E9F78, 1)
     for name, data in files.items():
         out += obj(2, 0x00069002, b"\0" * 14)  # attachment render data
-        out += obj(2, 0x00018010, name.encode() + b"\0")  # title
+        title = name if isinstance(name, bytes) else name.encode()
+        out += obj(2, 0x00018010, title + b"\0")  # title
         out += obj(2, 0x0006800F, data)  # data
     return out
 
@@ -217,3 +218,58 @@ def test_heic_is_converted_to_a_png_for_ocr(tmp_path):
     assert not os.path.exists(seen["path"])  # the temporary copy is gone
     assert path.exists()  # the stored original is untouched
     assert result["metadata"]["format"] == "image"
+
+
+def test_a_windows_1252_title_is_decoded_not_fatal():
+    data = _tnef({"Schriftsatz Müller.pdf".encode("cp1252"): b"%PDF-1.4 x"})
+    [member] = tnef_members(data)
+    assert (member["name"], member["outcome"]) == ("Schriftsatz Müller.pdf", "pending")
+
+
+def test_one_bad_member_fails_only_itself():
+
+    data = _tnef({"a.pdf": b"%PDF-1.4 a", "b.pdf": b"%PDF-1.4 b"})
+    real = tnef_members.__globals__["_tnef_name"]
+
+    def flaky(attachment, index):
+        if index == 0:
+            raise RuntimeError("boom")
+        return real(attachment, index)
+
+    with patch("app.services.ingestion.email_archive._tnef_name", side_effect=flaky):
+        bad, good = tnef_members(data)
+    assert (bad["outcome"], bad["reason"]) == (
+        "failed",
+        "Unreadable winmail.dat member",
+    )
+    assert (good["name"], good["outcome"]) == ("b.pdf", "pending")
+
+
+def test_a_zip_inside_a_winmail_dat_is_expanded():
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("K1.pdf", b"%PDF-1.4 k1")
+    [member] = tnef_members(_tnef({"Anlagen.zip": buffer.getvalue()}))
+    assert member["outcome"] == "archive"
+    assert [m["name"] for m in member["members"]] == ["K1.pdf"]
+
+
+def test_msg_recipients_are_comma_separated_headers():
+    fake = _fake_message(to="A <a@x.de>; B <b@y.de>", cc="C <c@z.de>;", attachments=[])
+    with patch("extract_msg.openMsg", return_value=fake):
+        msg = email.message_from_bytes(
+            email_msg.msg_to_rfc822(OLE), policy=policy.default
+        )
+    assert [a.addr_spec for a in msg["To"].addresses] == ["a@x.de", "b@y.de"]
+    assert [a.addr_spec for a in msg["Cc"].addresses] == ["c@z.de"]
+
+
+def test_heic_is_readable_by_any_pil_open(tmp_path):
+    from PIL import Image
+
+    path = tmp_path / "plain.heic"
+    path.write_bytes(_heic())
+    with Image.open(path) as image:  # no OCR path involved
+        assert image.size == (32, 32)

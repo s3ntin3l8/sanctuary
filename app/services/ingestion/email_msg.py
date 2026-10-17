@@ -35,8 +35,9 @@ def _to_email(message, depth: int) -> EmailMessage:
     out = EmailMessage()
     for header, value in (
         ("From", message.sender),
-        ("To", message.to),
-        ("Cc", message.cc),
+        # extract-msg separates recipients with ";", which is not a mail header.
+        ("To", str(message.to or "").replace(";", ",")),
+        ("Cc", str(message.cc or "").replace(";", ",")),
         ("Subject", message.subject),
         ("Message-ID", message.messageId),
     ):

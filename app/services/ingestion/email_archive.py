@@ -129,13 +129,22 @@ def tnef_members(data: bytes, budget: list[int] | None = None) -> list[dict]:
         raise TnefUnreadable(str(exc)) from exc
     members: list[dict] = []
     for index, attachment in enumerate(attachments):
-        content = bytes(attachment.data or b"")
-        name = (
-            PurePosixPath(
-                (attachment.name or f"attachment_{index}").replace("\\", "/")
-            ).name
-            or f"attachment_{index}"
-        )
+        name = f"attachment_{index}"
+        try:
+            name = _tnef_name(attachment, index)
+            content = bytes(attachment.data or b"")
+        except Exception:  # noqa: BLE001 - one bad member fails only itself
+            members.append(
+                {
+                    "name": name,
+                    "size": 0,
+                    "data": b"",
+                    "outcome": "failed",
+                    "reason": "Unreadable winmail.dat member",
+                    "members": [],
+                }
+            )
+            continue
         if not content:
             continue
         member = {
@@ -157,4 +166,33 @@ def tnef_members(data: bytes, budget: list[int] | None = None) -> list[dict]:
         else:
             member["data"] = content
             budget[0] -= len(content)
+            if is_zip(name, "", content):
+                try:
+                    member["members"] = archive_members(content, 1, budget)
+                except ArchiveRejected as exc:
+                    member.update(outcome="unsupported", reason=str(exc))
+                else:
+                    if member["members"]:
+                        member["outcome"] = "archive"
+                    else:
+                        member.update(
+                            outcome="unsupported", reason="Archive contains no files"
+                        )
     return members
+
+
+def _tnef_name(attachment, index: int) -> str:
+    """The attachment's file name: the long name when the stream carries one.
+
+    tnefparse decodes a bare title as UTF-8, which raises on the Windows-1252
+    umlauts a title really holds; fall back to decoding the raw bytes ourselves.
+    """
+    try:
+        name = attachment.long_filename()
+    except UnicodeDecodeError:
+        raw = getattr(attachment, "_name", b"")
+        name = raw.decode("cp1252", errors="replace") if isinstance(raw, bytes) else raw
+    if isinstance(name, bytes):
+        name = name.decode("cp1252", errors="replace")
+    name = PurePosixPath((name or "").strip("\x00").replace("\\", "/")).name
+    return name or f"attachment_{index}"
