@@ -3,11 +3,13 @@ services:
     image: pgvector/pgvector:pg17
     container_name: sanctuary-db
     restart: unless-stopped
+    # Loopback only: the app talks to it over the compose network; the host
+    # mapping is just for `make run` / psql on this machine.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-sanctuary}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sanctuary}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}
       - POSTGRES_DB=${POSTGRES_DB:-sanctuary}
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -22,7 +24,7 @@ services:
     container_name: sanctuary-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -41,7 +43,7 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
@@ -68,7 +70,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
@@ -94,7 +96,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
@@ -117,7 +119,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
