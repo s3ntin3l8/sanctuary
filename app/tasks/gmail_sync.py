@@ -195,6 +195,7 @@ def _ingest_messages(
                 msg_id,
                 user_id,
             )
+    gmail_cache.log_undecryptable_summary(f"Gmail sync (user {user_id})")
     return succeeded, failed_ids
 
 
@@ -851,6 +852,7 @@ def import_gmail_messages(self, user_id: int, run_id: str):
                     is None
                 ):
                     return _stopped(work)
+            gmail_cache.log_undecryptable_summary(f"Gmail sync (user {user_id})")
 
         finished = gmail_runs.finish_run(
             "import", user_id, run_id, patch=_progress(work)

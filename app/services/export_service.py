@@ -41,6 +41,8 @@ from app.models.database import (
     UserReaction,
     UserSettings,
 )
+from app.services import gmail_cache
+from app.services.ingestion import email_sources
 
 # All user-data tables in export order (avoids FK ordering concerns for import).
 _TABLES = [
@@ -121,16 +123,27 @@ def build_export_zip(db: Session) -> tuple[bytes, dict]:
             zf, "workspace", table_counts, files_included, undecryptable=undecryptable
         )
 
-    return buf.getvalue(), manifest_of("workspace", table_counts, files_included)
+    return buf.getvalue(), manifest_of(
+        "workspace", table_counts, files_included, undecryptable
+    )
 
 
-def manifest_of(scope: str, table_counts: dict[str, int], files_included: int) -> dict:
+def manifest_of(
+    scope: str,
+    table_counts: dict[str, int],
+    files_included: int,
+    undecryptable: int = 0,
+) -> dict:
+    """``undecryptable`` counts stored mail the current key could not open: the
+    workspace export ships those files as ciphertext, the user export leaves
+    them out."""
     return {
         "export_date": now_utc().date().isoformat(),
         "schema_note": "sanctuary GDPR export",
         "scope": scope,
         "table_counts": table_counts,
         "files_included": files_included,
+        "undecryptable": undecryptable,
     }
 
 
@@ -143,7 +156,9 @@ def _write_manifest(
 ) -> None:
     zf.writestr(
         "manifest.json",
-        json.dumps(manifest_of(scope, table_counts, files_included), indent=2),
+        json.dumps(
+            manifest_of(scope, table_counts, files_included, undecryptable), indent=2
+        ),
     )
     what = (
         "original document files from the data directory"
@@ -161,10 +176,14 @@ def _write_manifest(
         "## Tables\n" + "\n".join(f"- {t}: {n} rows" for t, n in table_counts.items())
     )
     if undecryptable:
+        outcome = (
+            "are included as stored (encrypted)"
+            if scope == "workspace"
+            else "are not included"
+        )
         readme += (
             f"\n\n## Note\n{undecryptable} stored mail file(s) could not be decrypted "
-            "with the current SECRETS_ENCRYPTION_KEY and are included as stored "
-            "(encrypted)."
+            f"with the current SECRETS_ENCRYPTION_KEY and {outcome}."
         )
     zf.writestr("README.md", readme)
 
@@ -306,7 +325,50 @@ def build_user_export_zip(db: Session, user: User) -> tuple[bytes, dict]:
                 continue
             zf.write(path, arcname=f"files/{path.relative_to(data_dir)}")
             files_included += 1
+        mail_files, undecryptable = _own_raw_mail(db, user)
+        for arcname, raw in mail_files:
+            zf.writestr(arcname, raw)
+            files_included += 1
         table_counts = {t: len(rows) for t, rows in tables.items()}
-        _write_manifest(zf, "user", table_counts, files_included)
+        _write_manifest(
+            zf, "user", table_counts, files_included, undecryptable=undecryptable
+        )
 
-    return buf.getvalue(), manifest_of("user", table_counts, files_included)
+    return buf.getvalue(), manifest_of(
+        "user", table_counts, files_included, undecryptable
+    )
+
+
+def _own_raw_mail(db: Session, user: User) -> tuple[list[tuple[str, bytes]], int]:
+    """The user's own raw mail as ``(zip path, plaintext)`` plus the number of
+    files the current key could not open (left out, not shipped as ciphertext).
+
+    That is the stored ``.eml`` of every batch they ingested and the Gmail cache
+    messages no exported batch covers (fetched, not yet or never ingested)."""
+    files: list[tuple[str, bytes]] = []
+    undecryptable = 0
+    covered: set[str] = set()
+    for batch in db.query(IngestBatch).filter(IngestBatch.owner_id == user.id):
+        if batch.gmail_id:
+            covered.add(batch.gmail_id)
+        try:
+            raw = email_sources.raw_source(batch)
+        except secrets.SecretsError:
+            undecryptable += 1
+            continue
+        if raw:
+            files.append((f"email_sources/{batch.id}.eml", raw))
+    cache = gmail_cache.cache_dir(user.id)
+    for path in sorted(cache.glob("*.eml")) if cache.is_dir() else []:
+        if path.name.startswith(".") or path.stem in covered:
+            continue  # a leftover temp file, or already exported with its batch
+        try:
+            raw = secrets.decrypt_bytes(path.read_bytes())
+        except secrets.SecretsError:
+            undecryptable += 1
+            continue
+        except OSError:
+            continue
+        if raw:
+            files.append((f"gmail_cache/{path.name}", raw))
+    return files, undecryptable

@@ -156,3 +156,111 @@ def test_replay_capture_skips_a_leftover_temp_file(db_session, sample_user):
     db_session.commit()
     manifest = gmail_replay.capture(db_session)
     assert [m["gmail_id"] for m in manifest["messages"]] == ["good1"]
+
+
+def test_the_manifest_counts_undecryptable_mail(db_session, monkeypatch):
+    import io
+    import json
+    import zipfile
+
+    from app.services import export_service
+    from app.services.export_service import build_export_zip
+
+    monkeypatch.setattr(export_service, "DATA_DIR", config.DATA_DIR)
+    gmail_cache.write(424244, "exp3", _mail("<exp3@example.com>").as_bytes())
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    try:
+        data, manifest = build_export_zip(db_session)
+        assert manifest["undecryptable"] >= 1
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            assert (
+                json.loads(archive.read("manifest.json"))["undecryptable"]
+                == manifest["undecryptable"]
+            )
+    finally:
+        gmail_cache.clear(424244)
+
+
+def test_the_user_export_carries_their_own_raw_mail_only(
+    db_session, sample_user, monkeypatch
+):
+    import io
+    import zipfile
+
+    from app.services import export_service
+    from app.services.export_service import build_user_export_zip
+
+    monkeypatch.setattr(export_service, "DATA_DIR", config.DATA_DIR)
+    own = _ingest(
+        db_session, _mail("<own-export@example.com>"), owner_id=sample_user.id
+    )
+    foreign = _ingest(db_session, _mail("<foreign-export@example.com>"), owner_id=None)
+    # Cached but never ingested; another user's cache is none of their business.
+    gmail_cache.write(sample_user.id, "loose1", _mail("<loose@example.com>").as_bytes())
+    gmail_cache.write(
+        sample_user.id + 1000, "theirs", _mail("<t@example.com>").as_bytes()
+    )
+    try:
+        data, manifest = build_user_export_zip(db_session, sample_user)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            names = archive.namelist()
+            assert f"email_sources/{own.id}.eml" in names
+            assert b"Mustermann" in archive.read(f"email_sources/{own.id}.eml")
+            assert f"email_sources/{foreign.id}.eml" not in names
+            assert "gmail_cache/loose1.eml" in names
+            assert "gmail_cache/theirs.eml" not in names
+        assert manifest["undecryptable"] == 0
+    finally:
+        gmail_cache.clear(sample_user.id)
+        gmail_cache.clear(sample_user.id + 1000)
+
+
+def test_the_user_export_leaves_out_mail_it_cannot_decrypt(
+    db_session, sample_user, monkeypatch
+):
+    import io
+    import zipfile
+
+    from app.services import export_service
+    from app.services.export_service import build_user_export_zip
+
+    monkeypatch.setattr(export_service, "DATA_DIR", config.DATA_DIR)
+    own = _ingest(
+        db_session, _mail("<own-locked@example.com>"), owner_id=sample_user.id
+    )
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    data, manifest = build_user_export_zip(db_session, sample_user)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert f"email_sources/{own.id}.eml" not in archive.namelist()
+        assert "not included" in archive.read("README.md").decode()
+    assert manifest["undecryptable"] >= 1
+
+
+def test_undecryptable_cache_files_are_counted_and_summarised_once(
+    sample_user, monkeypatch, caplog
+):
+    import logging
+
+    gmail_cache.write(sample_user.id, "rot1", _mail("<rot1@example.com>").as_bytes())
+    gmail_cache.write(sample_user.id, "rot2", _mail("<rot2@example.com>").as_bytes())
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    gmail_cache.take_undecryptable()
+    try:
+        with caplog.at_level(logging.DEBUG, logger="app.services.gmail_cache"):
+            assert gmail_cache.read(sample_user.id, "rot1") is None
+            assert gmail_cache.read(sample_user.id, "rot2") is None
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+        caplog.clear()
+        gmail_cache.log_undecryptable_summary("test run")
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1 and "2 cached message(s)" in warnings[0].getMessage()
+        gmail_cache.log_undecryptable_summary("test run")
+        assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 1
+    finally:
+        gmail_cache.clear(sample_user.id)

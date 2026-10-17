@@ -22,3 +22,14 @@ def write_private(path: Path, data: bytes) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    _fsync_dir(path.parent)
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Make the rename itself durable: the new directory entry is only on disk
+    once the parent directory is flushed."""
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
