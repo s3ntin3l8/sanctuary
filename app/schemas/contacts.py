@@ -28,6 +28,7 @@ class ContactDocument(BaseModel):
 
 class ContactView(BaseModel):
     name: str
+    emails: list[str]
     document_count: int
     case_count: int
     last_contact: datetime | None

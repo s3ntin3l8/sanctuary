@@ -10,11 +10,15 @@ from app.models.database import Case, Document, Entity
 from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import content_windows
+from app.services.entity_email import attach_sender_email
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import ENTITY_EXTRACTOR_SYSTEM
 from app.services.intelligence.schemas import EntityList
-from app.services.normalization import normalize_entity_name
+from app.services.normalization import (
+    build_party_canonical_map,
+    normalize_entity_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,69 +106,6 @@ def _call_entity_extractor_sync(
     return {"entities": entities}
 
 
-def _build_party_canonical_map(case: Case | None) -> dict[str, str]:
-    """Snap-to-canonical lookup for known case parties.
-
-    Returns a dict mapping `normalize_entity_name(variant, PERSON|ORG)` to the
-    canonical party name in `Case.parties`. The entity-extractor often emits
-    PERSON variants like "Liu", "Yingying Liu", "J. Liu, Yingying" that share
-    a dedup key with "Liu Yingying" once normalized — but some variants don't
-    quite normalize identically (East-Asian vs Western name ordering doesn't
-    collapse, initials, comma-reverse edge cases). Anchoring on the case's
-    `parties` list pins variants of both orderings to one row.
-    """
-    if not case or not case.parties:
-        return {}
-    mapping: dict[str, str] = {}
-    for party in case.parties:
-        if not isinstance(party, dict):
-            continue
-        canonical = (party.get("name") or "").strip()
-        if not canonical:
-            continue
-        # Map all entity-type normalisations so humans ("Liu Yingying") and
-        # orgs ("Haidl Funk Rechtsanwälte") and courts ("Amtsgericht
-        # Ingolstadt") all snap uniformly.
-        for et in (
-            EntityType.PERSON,
-            EntityType.ORGANIZATION,
-            EntityType.LAW_FIRM,
-            EntityType.COURT,
-        ):
-            key = normalize_entity_name(canonical, et)
-            if key:
-                mapping[key] = canonical
-        # For two-token PERSON names, expand the keyset so all common
-        # variants of the same person map back to the canonical spelling:
-        #
-        #  - swap order ("Liu Yingying" ↔ "Yingying Liu") for East-Asian
-        #    vs Western name ordering (existing).
-        #  - initial-form ("Y. Liu", "Liu, Y.", "L. Yingying") for the
-        #    abbreviated references the AI sometimes emits (Round 7 — fixes
-        #    the post-R6 doc 25 "Liu, Y." duplicate).
-        #
-        # Single-token bare-surname references ("Liu", "Frau Liu" stripped
-        # of honorific) are deliberately NOT mapped — a bare surname is
-        # ambiguous between "Liu Yingying" and "Liu Jun" (or any other Liu
-        # on the case) and snapping would falsely merge them. The
-        # honorific-stripped "Frau Liu" → key "liu" case is documented as
-        # accepted ambiguity; user can merge manually if needed.
-        tokens = canonical.split()
-        if len(tokens) == 2:
-            first, last = tokens
-            variants = [
-                f"{last} {first}",  # swapped order
-                f"{first[0]}. {last}",  # "Y. Liu"
-                f"{last}, {first[0]}.",  # "Liu, Y."
-                f"{last[0]}. {first}",  # "L. Yingying" (swapped + initial)
-            ]
-            for variant in variants:
-                key = normalize_entity_name(variant, EntityType.PERSON)
-                if key and key not in mapping:
-                    mapping[key] = canonical
-    return mapping
-
-
 def _coerce_entity_type(entity_type: EntityType, name: str) -> EntityType:
     """Override the AI's type assignment for unambiguous cases.
 
@@ -210,7 +151,7 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
     case = (
         db.query(Case).filter(Case.id == doc.case_id).first() if doc.case_id else None
     )
-    party_canonicals = _build_party_canonical_map(case)
+    party_canonicals = build_party_canonical_map(case)
 
     # First pass: collect canonical names from this payload so sub-unit
     # collapse (e.g. "Landratsamt X, Amt Y" → "Landratsamt X") can fire
@@ -303,6 +244,12 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
             )
         )
         count += 1
+
+    # The mail's From address belongs to the entity its display name names. The
+    # session does not autoflush, so the entities added above must be written
+    # before they can be found.
+    db.flush()
+    attach_sender_email(db, doc.id)
 
     # Always commit: it also releases the advisory lock taken above, even when
     # nothing new was inserted.

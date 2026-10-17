@@ -27,6 +27,11 @@ no-op.
 
 Emails arrive in any order (concurrent Gmail import), so linking a batch also
 re-resolves every batch that names it as an ancestor, by header or by thread.
+
+A reply that names no case of its own is filed where its header ancestor is
+(``_inherit_case``): the case is *inherited*, so an Aktenzeichen the reply later
+turns out to print still wins. Only the headers prove "same matter"; the Gmail
+thread fallback never carries a case.
 """
 
 import logging
@@ -36,19 +41,21 @@ from sqlalchemy import and_, literal, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.database import (
+    Case,
     Document,
     DocumentRelationship,
     GmailMessageIndex,
     IngestBatch,
+    User,
 )
 from app.models.enums import (
     DocumentRole,
     RelationshipConfidence,
     RelationshipType,
 )
-from app.repositories.document_relationship import insert_edge_if_absent
+from app.repositories.document_relationship import insert_edge_if_absent, is_rejected
 from app.repositories.ingest_batch import IngestBatchRepository
-from app.services import family_context
+from app.services import access_service, family_context
 from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
 logger = logging.getLogger(__name__)
@@ -182,6 +189,58 @@ def _resolve_parent(db: Session, batch: IngestBatch) -> _Parent | None:
     return None
 
 
+def _inherit_case(
+    db: Session, batch: IngestBatch, lead: Document, parent: _Parent
+) -> None:
+    """File a case-less reply into the case of the ancestor its headers name.
+
+    Never through the Gmail-thread fallback, never over a case the reply has
+    (its own reference, inherited from elsewhere, or set by the user), and only
+    into a case the batch's owner may edit.
+    """
+    if parent.note == _THREAD_NOTE:
+        return
+    ancestor = parent.lead
+    if not family_context.has_case(ancestor):
+        return
+    # A case the reply earned itself (own reference, user) is final; one it
+    # inherited follows the nearest ancestor, so edge and case stay in step.
+    source = family_context.case_source(lead)
+    if source in ("own", "user") or (
+        source == "inherited" and lead.case_id == ancestor.case_id
+    ):
+        return
+    # An edge the user rejected says this reply is not part of that matter.
+    if is_rejected(
+        db,
+        from_document_id=lead.id,
+        to_document_id=ancestor.id,
+        relationship_type=parent.rel_type,
+    ):
+        return
+    owner = db.get(User, batch.owner_id) if batch.owner_id is not None else None
+    editable = access_service.editable_case_ids(db, owner)
+    if editable is not None and ancestor.case_id not in editable:
+        return
+    if db.get(Case, ancestor.case_id) is None:
+        return
+    lead.case_id = ancestor.case_id
+    family_context.mark_case(lead, "inherited")
+    # The ancestor's proceeding is only the reply's when it names none of its own.
+    if (
+        ancestor.proceeding_id is not None
+        and lead.proceeding_id is None
+        and family_context.own_az(lead) is None
+    ):
+        lead.proceeding_id = ancestor.proceeding_id
+    family_context.propagate_batch(db, batch.id)
+    # "No case assigned" was derived from the old state; the document is filed now.
+    from app.services.ingestion.service import refresh_review_reasons
+
+    db.flush()
+    refresh_review_reasons(lead, db, commit=False)
+
+
 def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
     """Make this batch's EMAIL_HEADER edges match its headers. Returns inserts.
 
@@ -232,6 +291,7 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
 
     if lead is None or resolved is None:
         return 0
+    _inherit_case(db, batch, lead, resolved)
     target, rel_type, note = resolved.lead, resolved.rel_type, resolved.note
 
     inserted = insert_edge_if_absent(

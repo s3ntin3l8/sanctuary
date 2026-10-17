@@ -1957,6 +1957,9 @@ class Entity(Base):
         SAEnum(EntityType), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # The address this correspondent writes from, read off the From header of a
+    # mail whose sender matches the name (never invented from the text).
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Source tracking
     source_document_id: Mapped[int | None] = mapped_column(
