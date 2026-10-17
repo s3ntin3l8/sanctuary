@@ -7,6 +7,7 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document
 from app.models.enums import (
     DocumentRole,
@@ -357,7 +358,9 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                     passage_dict = _repair_passage_offsets(doc, passage_dict)
                     validated.append(passage_dict)
                 except Exception as e:
-                    logger.warning(f"Doc {doc.id}: invalid key_passage skipped: {e}")
+                    logger.warning(
+                        f"Doc {doc.id}: invalid key_passage skipped: {describe_exception(e)}"
+                    )
         doc.key_passages = validated or None
 
     # court_relay — set BEFORE cost_delta + action_items so downstream gates
@@ -425,7 +428,9 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                         f"Doc {doc.id}: cost signal materialisation failed: {mat_err}"
                     )
         except Exception as e:
-            logger.warning(f"Doc {doc.id}: invalid cost_delta skipped: {e}")
+            logger.warning(
+                f"Doc {doc.id}: invalid cost_delta skipped: {describe_exception(e)}"
+            )
 
     # ai_summary — must use exact keys that templates expect.
     # Reject all-placeholder responses (AI returned "..." for every field) so

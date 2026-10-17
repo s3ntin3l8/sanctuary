@@ -21,6 +21,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import sanitize_error_text
 from app.core.timezone import ensure_utc, now_utc
 from app.models.enums import PipelineStage, PipelineState, StageStatus
 
@@ -1977,6 +1978,10 @@ def _update_stage(
     set_parts = ["status = :_status"]
     params: dict = {"_status": status.value, "_doc_id": doc_id, "_stage": sk}
     for key, val in extra_sets.items():
+        if key == "error" and isinstance(val, str):
+            # The error is shown in the UI and stored with the stage: whatever
+            # built it, keep it one bounded line without quoted content.
+            val = sanitize_error_text(val)
         if val is None:
             set_parts.append(f"{key} = NULL")
         else:

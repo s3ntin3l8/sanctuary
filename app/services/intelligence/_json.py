@@ -55,7 +55,9 @@ def parse_json_response(raw_text: str) -> dict:
 
     start = raw_text.find("{")
     if start == -1:
-        raise ValueError(f"AI response contains no JSON object: {raw_text[:100]}...")
+        raise ValueError(
+            f"AI response contains no JSON object (length {len(raw_text)})"
+        )
     end = raw_text.rfind("}")
 
     if end > start:
@@ -83,9 +85,10 @@ def parse_json_response(raw_text: str) -> dict:
                 return json.loads(repaired)
             except Exception:
                 pass
-        logger.debug(f"Malformed JSON from AI: {raw_text}")
+        # The response is document-derived: report where it broke, never what it said.
         raise ValueError(
-            f"Failed to parse AI response as JSON. Length: {len(raw_text)}. Preview: {raw_text[:100]}..."
+            f"Failed to parse AI response as JSON. Length: {len(raw_text)}. "
+            f"Error: {e.msg} at position {e.pos}"
         ) from e
 
 

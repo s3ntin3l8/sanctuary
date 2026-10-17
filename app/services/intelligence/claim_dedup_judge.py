@@ -17,6 +17,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.core.timezone import now_utc
 from app.models.database import Claim, ClaimEvidence, ClaimMergeProposal
 from app.models.enums import ClaimEvidenceRole, ProposalConfidence, ProposalStatus
@@ -240,7 +241,7 @@ def _judge_batch(
             if (m.new_claim_id, m.existing_claim_id) in valid_pairs
         ]
     except Exception as exc:  # noqa: BLE001
-        logger.warning("dedup batch call failed: %s", exc)
+        logger.warning("dedup batch call failed: %s", describe_exception(exc))
         return []
 
 
