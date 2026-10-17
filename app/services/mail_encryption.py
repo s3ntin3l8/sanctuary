@@ -38,6 +38,14 @@ def encrypt_existing() -> int:
                 continue
             write_private(path, secrets.encrypt_bytes(data))
             rewritten += 1
+        except secrets.SecretsError:
+            # An unusable key fails every file the same way: say so once and
+            # leave the files alone rather than stop the app from starting.
+            logger.warning(
+                "Stored mail left unencrypted: the encryption key is unusable",
+                exc_info=True,
+            )
+            break
         except OSError:
             logger.warning("Could not encrypt stored mail %s", path.name, exc_info=True)
     if rewritten:

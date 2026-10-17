@@ -71,3 +71,13 @@ def test_startup_pass_is_a_noop_without_a_key(monkeypatch):
     monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY", "")
     assert mail_encryption.encrypt_existing() == 0
     assert (directory / "a.eml").read_bytes() == b"plain"
+
+
+def test_an_invalid_key_does_not_stop_startup(monkeypatch):
+    directory = gmail_cache.cache_dir(UID)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "a.eml").write_bytes(b"plain")
+    (directory / "b.eml").write_bytes(b"plain")
+    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY", "not-a-fernet-key")
+    assert mail_encryption.encrypt_existing() == 0
+    assert (directory / "a.eml").read_bytes() == b"plain"
