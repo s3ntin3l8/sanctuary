@@ -351,6 +351,10 @@ async def _app_lifespan(app: FastAPI):
     with SessionLocal() as secrets_db:
         require_key_if_secrets_stored(secrets_db)
 
+    from app.services.mail_encryption import encrypt_existing
+
+    encrypt_existing()
+
     # Pin the primary admin (by id) for the worker/dev-mode code paths. Idempotent
     # and safe to call always: it pins an existing admin, optionally seeds one from
     # BOOTSTRAP_ADMIN_EMAIL+PASSWORD on a fresh DB (the code-driven provisioning

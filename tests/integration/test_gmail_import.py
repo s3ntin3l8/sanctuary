@@ -614,7 +614,9 @@ def test_messages_and_status_report_what_is_cached(db_session):
     ]
     assert [(m["gmail_id"], m["cached"]) for m in items] == [("a", False), ("b", True)]
     status = client.get("/api/v1/gmail/index/status").json()
-    assert (status["cached_count"], status["cached_bytes"]) == (1, 5)
+    # Bytes on disk: the encrypted size, so larger than the 5 plaintext bytes.
+    assert status["cached_count"] == 1
+    assert status["cached_bytes"] > 5
 
 
 def test_clearing_the_cache_deletes_local_copies_only(db_session):

@@ -67,7 +67,9 @@ def capture(db, *, online: bool = False, replace: bool = False) -> dict:
         )
         if not candidates and batch.owner_id is not None:
             for path in gmail_cache.cache_dir(batch.owner_id).glob("*.eml"):
-                cached_raw = path.read_bytes()
+                cached_raw = gmail_cache.read(batch.owner_id, path.stem)
+                if cached_raw is None:
+                    continue
                 header = BytesHeaderParser(policy=default).parsebytes(cached_raw)
                 if (
                     batch.message_id
