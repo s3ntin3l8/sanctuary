@@ -679,6 +679,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             except ArchiveRejected as exc:
                 entry.update(outcome="unsupported", reason=str(exc))
                 return
+            if not members:
+                entry.update(outcome="unsupported", reason="Archive contains no files")
+                return
             emit_members(members, path)
 
         def emit_members(members, base):

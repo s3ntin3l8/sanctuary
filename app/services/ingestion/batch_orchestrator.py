@@ -496,7 +496,7 @@ def _ingest_email_docs_and_commit(
             if len(content) > MAX_FILE_SIZE:
                 att.update(outcome="unsupported", reason="File is too large")
                 continue
-            magic_ext = magic_extension(content[:8])
+            magic_ext = magic_extension(content[:12])
             if (
                 Path(att["filename"]).suffix.lower() not in ALLOWED_EXTENSIONS
                 and magic_ext == ".pdf"

@@ -33,10 +33,22 @@ def _unescape(value: str) -> str:
     ).strip()
 
 
+def _split_value(line: str) -> tuple[str, str] | None:
+    """Split a content line at the first colon outside a quoted parameter value."""
+    quoted = False
+    for i, char in enumerate(line):
+        if char == '"':
+            quoted = not quoted
+        elif char == ":" and not quoted:
+            return line[:i], line[i + 1 :]
+    return None
+
+
 def _property(line: str) -> tuple[str, dict[str, str], str] | None:
-    head, sep, value = line.partition(":")
-    if not sep:
+    split = _split_value(line)
+    if split is None:
         return None
+    head, value = split
     name, *raw_params = head.split(";")
     params = {}
     for param in raw_params:
@@ -70,7 +82,8 @@ def _person(value: str, params: dict[str, str]) -> str:
 
 
 def ics_to_text(text: str) -> str:
-    """Markdown for each VEVENT; "" when the file holds none."""
+    """Markdown for each VEVENT. A calendar without one (tasks, free/busy) is
+    kept as its raw lines rather than becoming an empty document."""
     events: list[dict] = []
     method = ""
     current: dict | None = None
@@ -108,4 +121,4 @@ def ics_to_text(text: str) -> str:
         if description:
             lines += ["", description]
         blocks.append("\n".join(lines))
-    return "\n\n".join(blocks)
+    return "\n\n".join(blocks) or "\n".join(_unfold(text))

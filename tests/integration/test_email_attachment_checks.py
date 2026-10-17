@@ -387,3 +387,60 @@ def test_an_image_whose_content_contradicts_its_extension_is_refused(db_session)
     )
     outcome, reason = _part_outcomes(batch)["scan.jpg"]
     assert outcome == "unsupported" and "does not match" in reason
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "members",
+    [{}, {"__MACOSX/._a.pdf": b"x", ".DS_Store": b"x"}],
+    ids=["empty", "junk"],
+)
+def test_a_zip_without_files_is_a_visible_review_item(db_session, members):
+    batch = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                _zip_bytes(members),
+                maintype="application",
+                subtype="zip",
+                filename="leer.zip",
+            ),
+            message_id=f"<zip-{len(members)}@example.com>",
+        ),
+    )
+    assert _part_outcomes(batch)["leer.zip"] == (
+        "unsupported",
+        "Archive contains no files",
+    )
+    assert "attachment_unsupported" in batch.source_review_reasons
+
+
+@pytest.mark.integration
+def test_a_webp_attachment_must_really_be_webp(db_session):
+    ok = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"0" * 16,
+                maintype="application",
+                subtype="octet-stream",
+                filename="scan.webp",
+            ),
+            message_id="<webp-ok@example.com>",
+        ),
+    )
+    assert _part_outcomes(ok)["scan.webp"][0] == "ingested"
+    bad = _ingest(
+        db_session,
+        _typed_mail(
+            lambda m: m.add_attachment(
+                b"%PDF-1.4 actually a pdf",
+                maintype="application",
+                subtype="octet-stream",
+                filename="fake.webp",
+            ),
+            message_id="<webp-bad@example.com>",
+        ),
+    )
+    outcome, reason = _part_outcomes(bad)["fake.webp"]
+    assert outcome == "unsupported" and "does not match" in reason

@@ -168,6 +168,9 @@ def magic_extension(header: bytes) -> str | None:
     for magic, ext in MAGIC_BYTES.items():
         if header.startswith(magic):
             return ext
+    # WEBP is a RIFF container: the format name sits at bytes 8-12.
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return ".webp"
     return None
 
 
@@ -175,7 +178,7 @@ def validate_file_magic(file_path: str) -> str | None:
     """Validate file by magic bytes. Returns expected extension or None."""
     try:
         with open(file_path, "rb") as f:
-            return magic_extension(f.read(8))
+            return magic_extension(f.read(12))
     except OSError:
         return None
 

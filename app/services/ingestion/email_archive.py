@@ -72,7 +72,13 @@ def archive_members(data: bytes, depth: int = 0) -> list[dict]:
                     continue
                 try:
                     member["members"] = archive_members(content, depth + 1)
-                    member["outcome"] = "archive"
                 except ArchiveRejected as exc:
                     member.update(outcome="unsupported", reason=str(exc))
+                    continue
+                if member["members"]:
+                    member["outcome"] = "archive"
+                else:
+                    member.update(
+                        outcome="unsupported", reason="Archive contains no files"
+                    )
     return members

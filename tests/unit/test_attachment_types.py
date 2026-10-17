@@ -43,7 +43,21 @@ def test_a_cancelled_or_dateless_event_is_still_readable():
         "END:VEVENT\nMETHOD:CANCEL\n"
     )
     assert "- Beginn: 26.05.2026" in text
-    assert ics_to_text("BEGIN:VCALENDAR\nEND:VCALENDAR") == ""
+
+
+def test_a_calendar_without_events_keeps_its_raw_lines():
+    text = ics_to_text(
+        "BEGIN:VCALENDAR\nBEGIN:VTODO\nSUMMARY:Frist prüfen\nEND:VTODO\nEND:VCALENDAR"
+    )
+    assert "SUMMARY:Frist prüfen" in text
+
+
+def test_a_colon_inside_a_quoted_parameter_does_not_split_the_value():
+    text = ics_to_text(
+        "BEGIN:VEVENT\nSUMMARY:T\n"
+        'ATTENDEE;CN="Kanzlei: Berlin":mailto:x@y.de\nEND:VEVENT\n'
+    )
+    assert "- Teilnehmer: Kanzlei: Berlin <x@y.de>" in text
 
 
 def test_convert_file_reads_an_ics(tmp_path):
@@ -156,3 +170,71 @@ def test_is_zip_needs_a_name_or_type_and_the_magic():
     assert is_zip(None, "application/zip", b"PK\x03\x04rest")
     assert not is_zip("a.zip", "", b"not a zip")
     assert not is_zip("a.docx", "", b"PK\x03\x04rest")
+
+
+def test_an_empty_or_junk_only_zip_has_no_members():
+    assert (
+        archive_members(_zip({"__MACOSX/._a": b"x", ".DS_Store": b"x", "dir/": b""}))
+        == []
+    )
+
+
+def test_a_nested_zip_without_files_is_refused_loudly():
+    outer = _zip({"empty.zip": _zip({".DS_Store": b"x"})})
+    [member] = archive_members(outer)
+    assert (member["outcome"], member["reason"]) == (
+        "unsupported",
+        "Archive contains no files",
+    )
+
+
+def test_webp_needs_the_riff_container_name():
+    assert converters.magic_extension(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == ".webp"
+    assert converters.magic_extension(b"RIFF\x00\x00\x00\x00WAVEfmt ") is None
+
+
+def test_members_of_a_zip_named_in_the_manifest_share_its_group():
+    from app.models.database import Document, IngestBatch
+    from app.services.ingestion.email_sources import bind_manifests, source_groups
+
+    source = {
+        "id": "0",
+        "parts": [
+            {
+                "id": "0.1",
+                "filename": "Anlagen.zip",
+                "outcome": "archive",
+                "document_ids": [],
+            },
+            {
+                "id": "0.1.z0",
+                "filename": "a.pdf",
+                "outcome": "ingested",
+                "document_ids": [10],
+            },
+            {
+                "id": "0.1.z1",
+                "filename": "b.pdf",
+                "outcome": "ingested",
+                "document_ids": [11],
+            },
+        ],
+        "attachment_manifest": [
+            {
+                "filename": "Anlagen.zip",
+                "timestamp": "2026-05-26T06:24:00+00:00",
+                "source_label": "Landgericht",
+                "historical": False,
+                "issue": None,
+            }
+        ],
+    }
+    assert bind_manifests([source]) == []
+    batch = IngestBatch(email_sources=[source])
+    docs = [
+        Document(id=10, email_source_id="0", email_part_id="0.1.z0"),
+        Document(id=11, email_source_id="0", email_part_id="0.1.z1"),
+    ]
+    groups, blocked = source_groups(batch, docs)
+    assert not blocked
+    assert groups[10] == groups[11] == source["attachment_manifest"][0]["group_id"]
