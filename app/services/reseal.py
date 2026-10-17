@@ -68,15 +68,21 @@ def reseal_mail() -> ResealReport:
             data = path.read_bytes()
             if not data:
                 continue
-            if secrets.is_encrypted_bytes(data):
-                resealed = secrets.reseal_bytes(data)
-                if resealed is None:
-                    continue
+            # Deciding "already current" means decrypting the whole file: a daily
+            # full read of the mailbox, traded for also counting what no key opens.
+            was_encrypted = secrets.is_encrypted_bytes(data)
+            resealed = (
+                secrets.reseal_bytes(data)
+                if was_encrypted
+                else secrets.encrypt_bytes(data)
+            )
+            if resealed is None:
+                continue
+            write_private(path, resealed)  # counted only once it is on disk
+            if was_encrypted:
                 report.rotated += 1
             else:
-                resealed = secrets.encrypt_bytes(data)
                 report.encrypted += 1
-            write_private(path, resealed)
         except secrets.SecretsError:
             report.undecryptable += 1
         except OSError:
@@ -165,6 +171,8 @@ def probe(db: Session) -> bool:
     current key; the daily sweep catches everything else."""
     needed = bool(config.SECRETS_ENCRYPTION_KEY_PREVIOUS.strip())
     for path in _mail_files():
+        if path.name.startswith("."):
+            continue  # a leftover temp file, not mail
         try:
             data = path.read_bytes()
         except OSError:
@@ -172,10 +180,10 @@ def probe(db: Session) -> bool:
         if not data:
             continue
         try:
-            needed = needed or not secrets.is_encrypted_bytes(data)
+            needed = not secrets.is_encrypted_bytes(data) or needed
             secrets.reseal_bytes(data)
         except secrets.SecretsError:
-            _log_key_mismatch("stored mail", path.name)
+            _log_key_mismatch("stored mail")
         break
     for model, table in _SETTINGS_TABLES:
         for (settings_json,) in db.query(model.settings_json):
@@ -185,19 +193,20 @@ def probe(db: Session) -> bool:
                 if not isinstance(value, str) or not value or value == _NO_KEY:
                     continue
                 try:
-                    needed = needed or secrets.reseal(value) is not None
-                    needed = needed or not secrets.is_encrypted(value)
+                    # Evaluated first: an unopenable credential must be logged
+                    # even when a sweep is already due.
+                    rotated = secrets.reseal(value) is not None
+                    needed = rotated or not secrets.is_encrypted(value) or needed
                 except secrets.SecretsError:
-                    _log_key_mismatch("stored credentials", f"{table}.{key}")
+                    _log_key_mismatch("stored credentials")
                 return needed
     return needed
 
 
-def _log_key_mismatch(what: str, where: str) -> None:
+def _log_key_mismatch(what: str) -> None:
     logger.error(
-        "%s (%s) are sealed with a key that is not configured. If "
+        "Some %s are sealed with a key that is not configured. If "
         "SECRETS_ENCRYPTION_KEY was changed, set SECRETS_ENCRYPTION_KEY_PREVIOUS "
         "to the old key so they can be read and moved onto the new one.",
-        what.capitalize(),
-        where,
+        what,
     )

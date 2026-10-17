@@ -100,3 +100,25 @@ def test_the_sweep_ignores_leftover_temp_files():
     (directory / ".tmp-abc.eml").write_bytes(b"half written")
     assert reseal.reseal_mail().encrypted == 0
     assert (directory / ".tmp-abc.eml").read_bytes() == b"half written"
+
+
+def test_the_probe_skips_leftover_temp_files(db_session):
+    directory = gmail_cache.cache_dir(UID)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / ".tmp-abc.eml").write_bytes(b"half written")
+    gmail_cache.write(UID, "a", b"Subject: Klage")
+    # The leftover must not make every start look like it needs a sweep.
+    assert not reseal.probe(db_session)
+
+
+def test_a_failed_write_is_not_counted(monkeypatch):
+    directory = gmail_cache.cache_dir(UID)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "a.eml").write_bytes(b"plain")
+
+    def fail(path, data):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(reseal, "write_private", fail)
+    assert not reseal.reseal_mail().changed
+    assert (directory / "a.eml").read_bytes() == b"plain"

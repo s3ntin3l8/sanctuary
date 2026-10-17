@@ -208,6 +208,15 @@ def test_the_probe_names_the_missing_previous_key(db_session, monkeypatch, caplo
     assert any(
         "SECRETS_ENCRYPTION_KEY_PREVIOUS" in r.getMessage() for r in caplog.records
     )
+    # Also when a sweep is already due because a retired key is configured.
+    caplog.clear()
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY_PREVIOUS", Fernet.generate_key().decode()
+    )
+    with caplog.at_level("ERROR", logger="app.services.reseal"):
+        assert reseal.probe(db_session)
+    assert any("not configured" in r.getMessage() for r in caplog.records)
+    monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY_PREVIOUS", "")
     sealed = _admin_settings(db_session).settings_json["gmail_credentials_json"]
     report = reseal.reseal_db_secrets(db_session)
     # The credential nobody can open is counted and left exactly as it was.
