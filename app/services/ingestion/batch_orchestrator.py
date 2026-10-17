@@ -20,6 +20,11 @@ from app.repositories.ingest_batch import (
     IngestBatchRepository,
     is_no_document_tombstone,
 )
+from app.services.ingestion.archive_guard import (
+    ARCHIVE_EXTENSIONS,
+    ArchiveRejected,
+    check_zip,
+)
 from app.services.ingestion.email_parser import parse_rfc822
 from app.services.ingestion.extractors import (
     BEA_MANIFEST_CONFIDENCE,
@@ -514,6 +519,12 @@ def _ingest_email_docs_and_commit(
                     reason=f"File content does not match its extension ({magic_ext})",
                 )
                 continue
+            if ext in ARCHIVE_EXTENSIONS:
+                try:
+                    check_zip(content)
+                except ArchiveRejected as exc:
+                    att.update(outcome="unsupported", reason=str(exc))
+                    continue
             att_hash = hashlib.sha256(content).hexdigest()
             existing_doc = (
                 db.query(Document)

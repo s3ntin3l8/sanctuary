@@ -21,6 +21,7 @@ from app.services import (
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.gmail import (
     GmailMessageGone,
+    GmailMessageTooLarge,
     GmailReconnectRequired,
     build_query,
     connect_gmail,
@@ -180,6 +181,11 @@ def _ingest_messages(
         except GmailMessageGone:
             db.rollback()
             logger.info("Gmail sync: message %s no longer exists, skipping", msg_id)
+        except GmailMessageTooLarge:
+            db.rollback()
+            logger.warning(
+                "Gmail sync: message %s exceeds the size limit, skipping", msg_id
+            )
         except Exception:
             db.rollback()
             failed_ids.append(msg_id)
@@ -741,6 +747,9 @@ def _import_one(
     except GmailMessageGone:
         db.rollback()
         logger.info("Gmail import: %s no longer exists, skipping", gmail_id)
+    except GmailMessageTooLarge:
+        db.rollback()
+        logger.warning("Gmail import: %s exceeds the size limit, skipping", gmail_id)
     except Exception:
         db.rollback()
         work["failed"].append(gmail_id)

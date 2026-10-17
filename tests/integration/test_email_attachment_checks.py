@@ -77,6 +77,60 @@ def test_an_oversized_attachment_is_not_ingested(db_session, monkeypatch):
 
 
 @pytest.mark.integration
+def test_a_decompression_bomb_attachment_is_not_ingested(db_session):
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", b"\0" * (3 * 1024 * 1024))
+    batch = ingest_raw_email(
+        db_session,
+        _mail([("bomb.docx", buffer.getvalue())]),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+    assert db_session.query(Document).filter_by(ingest_batch_id=batch.id).count() == 0
+    outcome, reason = _part_outcomes(batch)["bomb.docx"]
+    assert outcome == "unsupported"
+    assert "compression ratio" in reason
+    assert "attachment_unsupported" in batch.source_review_reasons
+
+
+@pytest.mark.integration
+def test_an_oversized_attachment_is_refused_before_it_is_decoded(
+    db_session, monkeypatch
+):
+    from email.message import EmailMessage
+
+    from app import config
+
+    monkeypatch.setattr(config, "MAX_FILE_SIZE_MB", 1)
+    decoded = []
+    original = EmailMessage.get_payload
+
+    def spy(self, i=None, decode=False):
+        if decode:
+            decoded.append(self.get_filename())
+        return original(self, i, decode)
+
+    monkeypatch.setattr(EmailMessage, "get_payload", spy)
+    batch = ingest_raw_email(
+        db_session,
+        _mail([("big.pdf", b"%PDF" + b"0" * (1_500_000))]),
+        source_type=IngestBatchSourceType.EMAIL,
+    )
+    assert "big.pdf" not in decoded
+    assert _part_outcomes(batch)["big.pdf"] == ("unsupported", "File is too large")
+    part = next(
+        p
+        for source in batch.email_sources
+        for p in source["parts"]
+        if p.get("filename") == "big.pdf"
+    )
+    assert part["size"] > 1_000_000
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "headers",
     [

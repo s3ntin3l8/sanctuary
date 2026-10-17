@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 from app.services.ingestion import gmail
 from app.services.ingestion.gmail import (
     GmailMessageGone,
+    GmailMessageTooLarge,
     GmailReconnectRequired,
     execute_with_retry,
     fetch_raw_message,
@@ -75,3 +76,43 @@ def test_a_deleted_message_is_reported_gone():
     get.return_value.execute.side_effect = _http_error(404)
     with pytest.raises(GmailMessageGone):
         fetch_raw_message(service, "g1")
+
+
+def _raw_response(raw: bytes) -> dict:
+    import base64
+
+    return {
+        "id": "g1",
+        "threadId": "t1",
+        "internalDate": "1780000000000",
+        "raw": base64.urlsafe_b64encode(raw).decode(),
+    }
+
+
+def test_an_oversized_message_is_refused_before_it_is_decoded(monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "MAX_EMAIL_SIZE_MB", 1)
+    service = MagicMock()
+    get = service.users.return_value.messages.return_value.get
+    get.return_value.execute.return_value = _raw_response(b"x" * (2 * 1024 * 1024))
+    with patch("base64.urlsafe_b64decode") as decode:
+        with pytest.raises(GmailMessageTooLarge):
+            fetch_raw_message(service, "g1")
+    decode.assert_not_called()
+
+
+def test_a_message_within_the_limit_still_reports_its_attachments():
+    raw = (
+        b"From: a@example.com\r\nSubject: s\r\nMessage-ID: <m@x>\r\n"
+        b"Content-Type: multipart/mixed; boundary=B\r\n\r\n"
+        b"--B\r\nContent-Type: text/plain\r\n\r\nhi\r\n"
+        b"--B\r\nContent-Type: application/pdf\r\n"
+        b'Content-Disposition: attachment; filename="a.pdf"\r\n\r\n%PDF\r\n--B--\r\n'
+    )
+    service = MagicMock()
+    get = service.users.return_value.messages.return_value.get
+    get.return_value.execute.return_value = _raw_response(raw)
+    result = fetch_raw_message(service, "g1")
+    assert result == raw
+    assert result.metadata["has_attachments"] is True

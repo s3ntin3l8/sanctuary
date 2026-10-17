@@ -34,6 +34,10 @@ class GmailMessageGone(Exception):
     """The message was deleted in Gmail after it was listed: nothing to retry."""
 
 
+class GmailMessageTooLarge(Exception):
+    """The raw message exceeds MAX_EMAIL_SIZE_MB: it is never decoded or parsed."""
+
+
 class GmailScopeError(GmailReconnectRequired):
     """The token carries scopes beyond gmail.readonly."""
 
@@ -184,8 +188,9 @@ class GmailRaw(bytes):
 def fetch_raw_message(service: Any, message_id: str) -> bytes:
     import base64
     from email import message_from_bytes
-    from email.parser import BytesHeaderParser
     from email.policy import default
+
+    from app.config import MAX_EMAIL_SIZE_MB
 
     try:
         message = execute_with_retry(
@@ -195,19 +200,23 @@ def fetch_raw_message(service: Any, message_id: str) -> bytes:
         if _http_status(exc) == 404:
             raise GmailMessageGone(message_id) from exc
         raise
+    limit = MAX_EMAIL_SIZE_MB * 1024 * 1024
+    # Judged on the still-encoded payload so an oversized message is never
+    # decoded, let alone parsed.
+    if len(message["raw"]) * 3 // 4 > limit:
+        raise GmailMessageTooLarge(message_id)
     raw = GmailRaw(base64.urlsafe_b64decode(message["raw"]))
-    headers = BytesHeaderParser(policy=default).parsebytes(raw)
+    mime = message_from_bytes(raw, policy=default)
     metadata = parse_metadata(
         {
             **message,
             "id": message.get("id", message_id),
             "payload": {
-                "mimeType": headers.get_content_type(),
-                "headers": [{"name": k, "value": str(v)} for k, v in headers.items()],
+                "mimeType": mime.get_content_type(),
+                "headers": [{"name": k, "value": str(v)} for k, v in mime.items()],
             },
         }
     )
-    mime = message_from_bytes(raw, policy=default)
     metadata["has_attachments"] = any(
         part.get_content_disposition() == "attachment"
         or bool(part.get_filename())
