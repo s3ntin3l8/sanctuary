@@ -620,11 +620,11 @@ def _apply_manifest_receipt(db: Session, sources: list[dict]) -> None:
             if entry.get("doc_id") is not None:
                 doc_ids = [entry["doc_id"]]
             else:
-                prefix = entry["part_id"] + ".z"
+                prefixes = (entry["part_id"] + ".z", entry["part_id"] + ".t")
                 doc_ids = [
                     doc_id
                     for part in source.get("parts", [])
-                    if part["id"].startswith(prefix)
+                    if part["id"].startswith(prefixes)
                     for doc_id in part.get("document_ids", [])
                 ]
             for doc_id in doc_ids:
