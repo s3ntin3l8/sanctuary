@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import tnefparse
 
 from app.services.ingestion import converters, email_msg
 from app.services.ingestion.email_archive import is_tnef, tnef_members
@@ -227,22 +228,66 @@ def test_a_windows_1252_title_is_decoded_not_fatal():
 
 
 def test_one_bad_member_fails_only_itself():
-
     data = _tnef({"a.pdf": b"%PDF-1.4 a", "b.pdf": b"%PDF-1.4 b"})
-    real = tnef_members.__globals__["_tnef_name"]
+    real = tnefparse.TNEF
 
-    def flaky(attachment, index):
-        if index == 0:
-            raise RuntimeError("boom")
-        return real(attachment, index)
+    class Flaky:
+        def __init__(self, attachment, broken):
+            self._attachment, self._broken = attachment, broken
 
-    with patch("app.services.ingestion.email_archive._tnef_name", side_effect=flaky):
+        @property
+        def data(self):
+            if self._broken:
+                raise RuntimeError("boom")
+            return self._attachment.data
+
+        def __getattr__(self, name):
+            return getattr(self._attachment, name)
+
+    def parse(raw, do_checksum=False):
+        parsed = real(raw, do_checksum=do_checksum)
+        parsed.attachments = [
+            Flaky(a, broken=(i == 0)) for i, a in enumerate(parsed.attachments)
+        ]
+        return parsed
+
+    with patch("tnefparse.TNEF", side_effect=parse):
         bad, good = tnef_members(data)
     assert (bad["outcome"], bad["reason"]) == (
         "failed",
         "Unreadable winmail.dat member",
     )
     assert (good["name"], good["outcome"]) == ("b.pdf", "pending")
+
+
+def test_a_name_that_cannot_be_read_keeps_the_content():
+    data = _tnef({"a.pdf": b"%PDF-1.4 a"})
+    with patch(
+        "app.services.ingestion.email_archive._tnef_name", side_effect=RuntimeError("x")
+    ):
+        [member] = tnef_members(data)
+    assert (member["name"], member["data"], member["outcome"]) == (
+        "attachment_0",
+        b"%PDF-1.4 a",
+        "pending",
+    )
+
+
+def test_an_empty_member_is_kept_so_ingest_can_flag_it():
+    [member] = tnef_members(_tnef({"leer.pdf": b""}))
+    assert (member["name"], member["size"], member["outcome"]) == (
+        "leer.pdf",
+        0,
+        "pending",
+    )
+    # ...and the winmail.dat is then not mistaken for the body's rich-text copy
+    parsed = parse_rfc822(
+        _mail_with(_tnef({"leer.pdf": b""}), "winmail.dat", "ms-tnef")
+    )
+    assert (
+        next(p for p in parsed["parts"] if p["filename"] == "winmail.dat")["outcome"]
+        == "archive"
+    )
 
 
 def test_a_zip_inside_a_winmail_dat_is_expanded():
@@ -326,3 +371,16 @@ def test_the_nesting_limit_is_named_as_such():
         parsed = parse_rfc822(_mail_with(OLE, "Ladung.msg", "vnd.ms-outlook"))
     part = next(p for p in parsed["parts"] if p["filename"] == "Ladung.msg")
     assert part["reason"] == "Attached email nesting limit reached"
+
+
+def test_a_broken_attachment_without_data_is_a_visible_empty_part():
+    # extract-msg's Broken/UnsupportedAttachment return data=None, they do not raise.
+    unsupported = SimpleNamespace(data=None, longFilename="kaputt.pdf")
+    empty = SimpleNamespace(data=b"", longFilename="leer.pdf")
+    fake = _fake_message(attachments=[unsupported, empty])
+    with patch("extract_msg.openMsg", return_value=fake):
+        msg = email.message_from_bytes(
+            email_msg.msg_to_rfc822(OLE), policy=policy.default
+        )
+    by_name = {a.get_filename(): a.get_content() for a in msg.iter_attachments()}
+    assert by_name == {"kaputt.pdf": b"", "leer.pdf": b""}

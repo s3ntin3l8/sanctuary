@@ -80,7 +80,9 @@ def _to_email(message, depth: int) -> EmailMessage:
                 out.add_attachment(_to_email(data, depth + 1))
                 continue
             if not isinstance(data, bytes) or not data:
-                continue
+                # A broken or unsupported attachment has no data (it does not
+                # raise) and an empty one has none either: both stay visible.
+                raise ValueError("no readable bytes")
             mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
             maintype, _, subtype = mime.partition("/")
             out.add_attachment(

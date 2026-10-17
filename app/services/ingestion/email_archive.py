@@ -131,7 +131,6 @@ def tnef_members(data: bytes, budget: list[int] | None = None) -> list[dict]:
     for index, attachment in enumerate(attachments):
         name = f"attachment_{index}"
         try:
-            name = _tnef_name(attachment, index)
             content = bytes(attachment.data or b"")
         except Exception:  # noqa: BLE001 - one bad member fails only itself
             members.append(
@@ -145,8 +144,12 @@ def tnef_members(data: bytes, budget: list[int] | None = None) -> list[dict]:
                 }
             )
             continue
-        if not content:
-            continue
+        try:
+            name = _tnef_name(attachment, index)
+        except Exception:  # noqa: BLE001 - keep the content under a default name
+            pass
+        # A 0-byte member is kept: ingest labels it "empty", a visible review
+        # item, instead of the winmail.dat looking like it had no attachment.
         member = {
             "name": name,
             "size": len(content),
