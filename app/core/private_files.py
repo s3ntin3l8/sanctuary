@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def write_private(path: Path, data: bytes) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=path.suffix)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)

@@ -123,3 +123,18 @@ def test_an_existing_file_with_loose_permissions_is_tightened(tmp_path):
     target.chmod(0o644)
     append_line_locked(target, "new\n")
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_the_temp_file_never_looks_like_the_file_being_written(tmp_path):
+    """A pass globbing ``*.md`` / ``*.jsonl`` must not pick up a live temp file."""
+    target = tmp_path / "doc.md"
+    seen: list[str] = []
+    real_replace = os.replace
+
+    def replace(src, dst):
+        seen.append(os.path.basename(src))
+        real_replace(src, dst)
+
+    with patch("os.replace", replace):
+        write_private(target, b"x")
+    assert seen and not seen[0].endswith((".md", ".jsonl", ".eml"))
