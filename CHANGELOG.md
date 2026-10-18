@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.6.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.5.0...v0.6.0) (2026-10-18)
+
+
+### Features
+
+* **ai:** full prompt capture is an admin opt-in, encrypted, kept 7 days ([#400](https://github.com/s3ntin3l8/sanctuary/issues/400)) ([80eda42](https://github.com/s3ntin3l8/sanctuary/commit/80eda4291884bbc3a843b9f787bab09e517241bb))
+* **ingest:** convert more email attachment types (no new dependencies) ([#391](https://github.com/s3ntin3l8/sanctuary/issues/391)) ([611697a](https://github.com/s3ntin3l8/sanctuary/commit/611697a34adeaa5fcaa32cdddaafa318e8960ea4))
+* **ingest:** exhibit labels and enclosure order from Anlage lists and filenames ([#394](https://github.com/s3ntin3l8/sanctuary/issues/394)) ([f5ffed6](https://github.com/s3ntin3l8/sanctuary/commit/f5ffed63da832d160e06fb7d33efe80de4d883e8))
+* **ingest:** hold packet-like email attachments for splitting before any AI stage ([#411](https://github.com/s3ntin3l8/sanctuary/issues/411)) ([3956894](https://github.com/s3ntin3l8/sanctuary/commit/3956894fb8d51b9514f251a6553670f1253d16e5))
+* **ingest:** legal receipt time from beA manifests; original sender/date of inline forwards ([#383](https://github.com/s3ntin3l8/sanctuary/issues/383)) ([6f3d4d6](https://github.com/s3ntin3l8/sanctuary/commit/6f3d4d6907ba5522fe1d4584bb194a22cda53608))
+* **ingest:** own mail is OWN by its From address; case follows the headers; entities carry an address ([#393](https://github.com/s3ntin3l8/sanctuary/issues/393)) ([2235d86](https://github.com/s3ntin3l8/sanctuary/commit/2235d86e8e52ad03222d46c29e7049eb64967acf))
+* **ingest:** read Outlook .msg, winmail.dat and HEIC attachments ([#396](https://github.com/s3ntin3l8/sanctuary/issues/396)) ([fee4e73](https://github.com/s3ntin3l8/sanctuary/commit/fee4e73b47860ad602170f0e8fa213304e865cee))
+* **security:** mandatory encryption key, rotation via SECRETS_ENCRYPTION_KEY_PREVIOUS ([#399](https://github.com/s3ntin3l8/sanctuary/issues/399)) ([6b9b457](https://github.com/s3ntin3l8/sanctuary/commit/6b9b457eba65d31c70b9693e4f201776e4bfd91b))
+
+
+### Bug Fixes
+
+* **ai:** appends to ai_debug files survive a concurrent prune ([#406](https://github.com/s3ntin3l8/sanctuary/issues/406)) ([4947109](https://github.com/s3ntin3l8/sanctuary/commit/49471097a1b30aa75a31b4118b2cb2b93799f4f3))
+* **ai:** local-timezone dates in every prompt and agent surface; drop call_json_ai base_url ([#409](https://github.com/s3ntin3l8/sanctuary/issues/409)) ([c038636](https://github.com/s3ntin3l8/sanctuary/commit/c038636791867ec1ccf7fbaa3491eaa9076eaca7))
+* **deploy:** publish Postgres/Redis on loopback only and require a DB password ([#401](https://github.com/s3ntin3l8/sanctuary/issues/401)) ([7bfcf37](https://github.com/s3ntin3l8/sanctuary/commit/7bfcf379ece144175b90c6713d2ca1b05577b732))
+* **ingest:** ignore small image attachments (logos, icons) ([#413](https://github.com/s3ntin3l8/sanctuary/issues/413)) ([f4423a8](https://github.com/s3ntin3l8/sanctuary/commit/f4423a807193bd9a3dcc56851d9fefafd77aaaca))
+* **ingest:** size and decompression limits for mail and zip-based attachments ([#386](https://github.com/s3ntin3l8/sanctuary/issues/386)) ([11ca74e](https://github.com/s3ntin3l8/sanctuary/commit/11ca74e8452f7d9a750600f354693cb1f53403f5)), closes [#371](https://github.com/s3ntin3l8/sanctuary/issues/371)
+* **logging:** keep document text out of stored errors and warning logs ([#403](https://github.com/s3ntin3l8/sanctuary/issues/403)) ([356addc](https://github.com/s3ntin3l8/sanctuary/commit/356addcb38b6610e4a3dbcb38513ec5ac42d814d))
+* **ocr:** no exception text in a failed page's placeholder ([#408](https://github.com/s3ntin3l8/sanctuary/issues/408)) ([09b655a](https://github.com/s3ntin3l8/sanctuary/commit/09b655a4eae78dbb8b6f033e29fcab3a0b7d7a7d))
+* render prompt dates in the configured timezone; gmail replay follow-ups ([#382](https://github.com/s3ntin3l8/sanctuary/issues/382)) ([c62bb02](https://github.com/s3ntin3l8/sanctuary/commit/c62bb027825de69a2fb602945316d8329a521f64)), closes [#374](https://github.com/s3ntin3l8/sanctuary/issues/374) [#380](https://github.com/s3ntin3l8/sanctuary/issues/380)
+* **security:** encrypt the raw mail cache and stored .eml at rest ([#387](https://github.com/s3ntin3l8/sanctuary/issues/387)) ([5d86a3c](https://github.com/s3ntin3l8/sanctuary/commit/5d86a3c7baa3b4aaf78a99df86da6e2c5d52e54e))
+* **spa:** show dates in the configured timezone ([#412](https://github.com/s3ntin3l8/sanctuary/issues/412)) ([c519cac](https://github.com/s3ntin3l8/sanctuary/commit/c519cac5f35b890831061941ad3ff5d12efcbea0))
+
 ## [0.5.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.4.0...v0.5.0) (2026-10-17)
 
 
