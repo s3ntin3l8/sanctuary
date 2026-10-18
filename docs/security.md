@@ -92,9 +92,13 @@ names `SECRETS_ENCRYPTION_KEY_PREVIOUS`.
 
 Prompts contain document text, so full dumps are **off by default** (Settings → AI →
 Logs, admin). While on, each AI call is recorded as one encrypted line and deleted after
-7 days; the call list (no text) is always kept for 30 days. Stored error messages (pipeline stage errors, the call index's `error` field) and
-warning logs carry the exception type and a bounded, sanitised message (field paths for
-validation errors), not quoted document or model text.
+7 days; the call list (no text) is always kept for 30 days.
+
+Error text: a pipeline stage error is cut to one bounded line without quoted model
+input when it is written, and the call index's `error` field is sanitised at its
+callers. Warning and error logs are **not** filtered: many still print the raw
+exception, which for a failed JSON or validation parse can quote the model's answer.
+Treat the server log as sensitive too (the encrypted volume covers it).
 
 ## Upgrading
 
