@@ -17,12 +17,15 @@ pipeline would point the dependency backwards.
 """
 
 import json
+import logging
 from datetime import datetime
 
 from app.config import DATA_DIR
 from app.core.private_files import append_line_locked
 from app.services.intelligence.prompts import PROMPT_VERSION
 from app.services.timezone_service import get_user_tz
+
+logger = logging.getLogger(__name__)
 
 
 def record_run(
@@ -84,4 +87,9 @@ def record_run(
     # Resolved at call time (not module import time) so DATA_DIR overrides —
     # e.g. tests/conftest.py's isolate_data_dir fixture — take effect.
     index_file = DATA_DIR / "ai_debug" / "runs.jsonl"
-    append_line_locked(index_file, line)
+    try:
+        append_line_locked(index_file, line)
+    except OSError:
+        # Telemetry, often called from a ``finally``: never replace the call's
+        # own exception.
+        logger.warning("Could not append to the AI run index", exc_info=True)

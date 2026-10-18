@@ -27,7 +27,12 @@ UNREADABLE = (
 
 def append_block(path: Path, block: str) -> None:
     """Record one call's markdown block, encrypted, as a single line."""
-    append_line_locked(path, secrets.encrypt(block) + "\n")
+    try:
+        append_line_locked(path, secrets.encrypt(block) + "\n")
+    except OSError:
+        # Telemetry, called from a ``finally``: it must not replace the AI
+        # call's own exception.
+        logger.warning("Could not record AI call in %s", path.name, exc_info=True)
 
 
 def _plain(line: str) -> str:

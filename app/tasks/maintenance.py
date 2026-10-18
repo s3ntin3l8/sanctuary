@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.core.private_files import write_private
+from app.core.private_files import is_current, write_private
 from app.services import ai_debug_store
 from app.tasks.celery_app import celery_app
 
@@ -26,6 +26,8 @@ def _prune_log_file(log_file: Path, cutoff: datetime) -> tuple[int, int]:
     with open(log_file, "r+", encoding="utf-8", errors="replace") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
+            if not is_current(f.fileno(), log_file):
+                return 0, 0  # replaced or removed while we waited: next run
             kept = []
             pruned = 0
             for line, block in ai_debug_store.read_blocks(f.read()):
@@ -74,6 +76,8 @@ def _prune_jsonl(jsonl_file: Path, cutoff: datetime) -> tuple[int, int]:
     with open(jsonl_file, "r+", encoding="utf-8", errors="replace") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
+            if not is_current(f.fileno(), jsonl_file):
+                return 0, 0  # replaced or removed while we waited: next run
             lines = f.readlines()
             kept = []
             pruned = 0

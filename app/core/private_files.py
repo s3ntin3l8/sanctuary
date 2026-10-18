@@ -48,6 +48,17 @@ def _fsync_dir(directory: Path) -> None:
 _APPEND_ATTEMPTS = 5
 
 
+def is_current(fd: int, path: Path) -> bool:
+    """Whether ``path`` still names the file ``fd`` refers to. A holder of the
+    lock of a file that was replaced or deleted meanwhile has a stale view."""
+    try:
+        current = os.stat(path)
+    except FileNotFoundError:
+        return False
+    locked = os.fstat(fd)
+    return (current.st_dev, current.st_ino) == (locked.st_dev, locked.st_ino)
+
+
 def append_line_locked(path: Path, line: str) -> None:
     """Append ``line`` to ``path`` (0600, directory 0700) under an exclusive lock.
 
@@ -62,13 +73,9 @@ def append_line_locked(path: Path, line: str) -> None:
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
-                current = os.stat(path)
-            except FileNotFoundError:
+            if not is_current(fd, path):
                 continue
-            locked = os.fstat(fd)
-            if (current.st_dev, current.st_ino) != (locked.st_dev, locked.st_ino):
-                continue
+            os.fchmod(fd, 0o600)  # mode above only applies to a new file
             data = memoryview(line.encode("utf-8"))
             while data:
                 data = data[os.write(fd, data) :]

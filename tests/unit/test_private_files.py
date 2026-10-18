@@ -115,3 +115,11 @@ def test_an_append_gives_up_when_the_file_never_stays_put(tmp_path, monkeypatch)
     monkeypatch.setattr(fcntl, "flock", flock)
     with pytest.raises(OSError):
         append_line_locked(target, "new\n")
+
+
+def test_an_existing_file_with_loose_permissions_is_tightened(tmp_path):
+    target = tmp_path / "runs.jsonl"
+    target.write_text("old\n")
+    target.chmod(0o644)
+    append_line_locked(target, "new\n")
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600

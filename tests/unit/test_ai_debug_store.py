@@ -140,3 +140,33 @@ def test_a_call_appended_while_the_pruner_rewrites_the_file_is_kept(
     monkeypatch.undo()
     text = ai_debug_store.read_text(path)
     assert "KEEP" in text and "LATE" in text and "OLD" not in text
+
+
+def test_a_pruner_that_locked_a_replaced_file_leaves_it_alone(tmp_path, monkeypatch):
+    import fcntl
+
+    now = datetime.now(UTC)
+    path = tmp_path / "doc_1.md"
+    ai_debug_store.append_block(path, _block("old", now - timedelta(days=8), "OLD"))
+    real_flock, fired = fcntl.flock, []
+
+    def flock(fd, op):
+        real_flock(fd, op)
+        if not fired:  # another pass replaced the file, then a call was appended
+            fired.append(1)
+            path.unlink()
+            ai_debug_store.append_block(path, _block("live", now, "LIVE"))
+
+    monkeypatch.setattr(fcntl, "flock", flock)
+    assert _prune_log_file(path, now - timedelta(days=7)) == (0, 0)
+    monkeypatch.undo()
+    assert "LIVE" in ai_debug_store.read_text(path)
+
+
+def test_a_failing_write_does_not_raise_into_the_ai_call(tmp_path, monkeypatch, caplog):
+    def boom(path, line):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ai_debug_store, "append_line_locked", boom)
+    ai_debug_store.append_block(tmp_path / "doc_1.md", "x")
+    assert "Could not record AI call" in caplog.text
