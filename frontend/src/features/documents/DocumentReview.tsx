@@ -15,7 +15,7 @@ import {
   useSummaryAction,
   useUpdateMetadata,
 } from '../../api/triage'
-import { formatIsoDate, formatShortDate } from '../../format'
+import { formatIsoDate, formatShortDate } from '../../time'
 import { leaveTo } from '../../navigation'
 import { AgentBadge } from '../../ui/AgentBadge'
 import { Badge, type Tone } from '../../ui/Badge'

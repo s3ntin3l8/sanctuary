@@ -1,7 +1,7 @@
 import { Link } from 'react-router'
 
 import type { Schemas } from '../../api/client'
-import { formatAgo } from '../../format'
+import { formatAgo } from '../../time'
 import { Icon } from '../../ui/Icon'
 import { Panel } from '../../ui/Panel'
 

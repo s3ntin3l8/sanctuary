@@ -7,7 +7,8 @@ import {
   useGmailNew,
   useStartGmailImport,
 } from '../../api/gmailImport'
-import { formatIsoDate, pluralize } from '../../format'
+import { pluralize } from '../../format'
+import { formatIsoDate } from '../../time'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'

@@ -10067,6 +10067,10 @@
       "ShellView": {
         "description": "Everything the persistent app shell (rail, profile menu) renders.",
         "properties": {
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
           "triage_count": {
             "title": "Triage Count",
             "type": "integer"
@@ -10077,7 +10081,8 @@
         },
         "required": [
           "user",
-          "triage_count"
+          "triage_count",
+          "timezone"
         ],
         "title": "ShellView",
         "type": "object"

@@ -16,7 +16,8 @@ import {
   useRetryBundle,
   useTriage,
 } from '../../api/triage'
-import { formatShortDate, pluralize } from '../../format'
+import { pluralize } from '../../format'
+import { formatShortDate } from '../../time'
 import { Badge } from '../../ui/Badge'
 import { Button, buttonClass } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'

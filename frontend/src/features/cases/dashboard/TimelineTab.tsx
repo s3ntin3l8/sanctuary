@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useOpenDocument } from '../../documents/useOpenDocument'
 
 import { type CaseDetail, type TimelineView, useCaseTimeline } from '../../../api/caseDetail'
-import { formatEur, formatShortDate } from '../../../format'
+import { formatEur } from '../../../format'
+import { civilDay, formatShortDate } from '../../../time'
 import { Chip } from '../../../ui/Chip'
 import { Icon } from '../../../ui/Icon'
 import { QueryState } from '../../../ui/QueryState'
@@ -50,7 +51,7 @@ export function TimelineTab({ detail }: { detail: CaseDetail }) {
     [t, actor, kind, future],
   )
   if (!t) return <QueryState error={query.error} pending={query.isPending} />
-  const today = t.today.slice(0, 10)
+  const today = civilDay(t.today)
   const rows = annotate(events, today)
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5 text-[12px]">
@@ -156,10 +157,11 @@ function annotate(events: TimelineView['events'], today: string) {
   let month = ''
   let todayShown = false
   return events.map((e) => {
-    const m = e.date.slice(0, 7)
+    const day = civilDay(e.date)
+    const m = day.slice(0, 7)
     const header = m !== month
     month = m
-    const marker = !todayShown && e.date.slice(0, 10) > today
+    const marker = !todayShown && day > today
     if (marker) todayShown = true
     return { e, m, header, marker }
   })

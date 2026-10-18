@@ -4,7 +4,8 @@ import { Link } from 'react-router'
 import { useRetryFailed, useRetryStage, useWorkerQueue } from '../api/shell'
 import type { Schemas } from '../api/client'
 import { GmailImportStatus } from '../features/import/GmailImportStatus'
-import { formatAgo, pluralize } from '../format'
+import { pluralize } from '../format'
+import { formatAgo, toMillis } from '../time'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
@@ -256,9 +257,9 @@ function QueueList({
   return (
     <ul className="divide-y divide-line2">
       {items.map((item) => {
-        const wait = item.next_at ? new Date(item.next_at).getTime() - now : null
+        const wait = item.next_at ? toMillis(item.next_at) - now : null
         const detail = [
-          item.started_at && `running ${formatSpan(now - new Date(item.started_at).getTime())}`,
+          item.started_at && `running ${formatSpan(now - toMillis(item.started_at))}`,
           item.attempt != null &&
             item.max_attempts != null &&
             `attempt ${item.attempt}/${item.max_attempts}`,

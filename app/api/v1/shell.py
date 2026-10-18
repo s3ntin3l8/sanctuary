@@ -9,6 +9,7 @@ from app.dependencies import get_current_user, get_db
 from app.helpers import triage_inbox_count
 from app.models.database import User
 from app.schemas.user import CurrentUser, ShellView
+from app.services import timezone_service
 
 router = APIRouter(tags=["shell"])
 
@@ -20,4 +21,5 @@ def shell(db: Session = Depends(get_db), user: User = Depends(get_current_user))
             id=user.id, email=user.email, display_name=user.display_name, role=user.role
         ),
         triage_count=triage_inbox_count(db, user.id),
+        timezone=timezone_service.get_user_tz().key,
     )

@@ -11,7 +11,8 @@ import {
   useEditCost,
   useLedgerAction,
 } from '../../api/costs'
-import { formatEur, formatShortDate } from '../../format'
+import { formatEur } from '../../format'
+import { civilDay, dayToApi, formatShortDate } from '../../time'
 import { Badge, type Tone } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Field, inputClass } from '../../ui/Field'
@@ -285,7 +286,7 @@ function Row({ cost, canEdit }: { cost: CostRow; canEdit: boolean }) {
 
 // The date input is day-granular; compare stored timestamps on the same footing.
 function date0(iso: string) {
-  return new Date(iso.slice(0, 10)).toISOString()
+  return dayToApi(civilDay(iso))
 }
 
 function EditCostModal({
@@ -309,7 +310,7 @@ function EditCostModal({
     }
     const date = (k: string) => {
       const v = String(d.get(k) ?? '').trim()
-      return v ? new Date(v).toISOString() : null
+      return v ? dayToApi(v) : null
     }
     // Only send what changed: the server treats a present null as "clear".
     const full: Schemas['CostFieldUpdate'] = {
@@ -439,7 +440,7 @@ function EditCostModal({
             <input
               name="due_at"
               type="date"
-              defaultValue={cost.due_at ? cost.due_at.slice(0, 10) : ''}
+              defaultValue={cost.due_at ? civilDay(cost.due_at) : ''}
               className={inputClass}
             />
           </Field>
@@ -493,7 +494,7 @@ function AddCostForm({ onClose }: { onClose: () => void }) {
         status: 'offen',
         streitwert: str('streitwert') ? Number(str('streitwert')) : null,
         gebuehren_faktor: str('gebuehren_faktor') ? Number(str('gebuehren_faktor')) : null,
-        due_at: str('due_at') ? new Date(str('due_at')).toISOString() : null,
+        due_at: str('due_at') ? dayToApi(str('due_at')) : null,
         notes: str('notes') || null,
         is_reimbursable: reimbursable,
       },

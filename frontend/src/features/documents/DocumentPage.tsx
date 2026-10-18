@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
 import { originalUrl, type Reader, useCreatePin, useDocumentReader } from '../../api/documents'
-import { formatShortDate } from '../../format'
+import { formatShortDate } from '../../time'
 import { hasModifier, isTypingTarget, overlayOpen } from '../../shell/keys'
 import { usePageShortcuts, useShortcuts } from '../../shell/shortcuts'
 import { useReact } from '../../api/triage'

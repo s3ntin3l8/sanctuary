@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router'
 
 import { useShell, useWorkerQueue } from '../api/shell'
+import { setDisplayTimeZone } from '../time'
 import { useToast } from '../ui/toast'
 import { currentTheme, toggleTheme } from '../theme'
 import { CommandPalette } from './CommandPalette'
@@ -13,7 +14,10 @@ import { CountBadge, RailButton } from './RailButton'
 
 /** The 56px icon rail plus the global overlays, wrapping every signed-in page. */
 export function Shell() {
-  const shell = useShell().data
+  const shellQuery = useShell()
+  const shell = shellQuery.data
+  // Read before any page renders, so no date is ever printed in the wrong zone.
+  if (shell) setDisplayTimeZone(shell.timezone)
   const [palette, setPalette] = useState(false)
   const [theme, setThemeState] = useState(currentTheme)
   const toast = useToast()
@@ -90,7 +94,8 @@ export function Shell() {
         <ProfileMenu />
       </nav>
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <Outlet />
+        {/* A changed workspace timezone remounts the page so every date is re-read. */}
+        {shellQuery.isPending ? null : <Outlet key={shell?.timezone} />}
       </main>
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
     </div>

@@ -19,3 +19,4 @@ class ShellView(BaseModel):
 
     user: CurrentUser
     triage_count: int
+    timezone: str

@@ -7,7 +7,8 @@ import {
   useReenrich,
   useRefreshBrief,
 } from '../../../api/caseDetail'
-import { formatDueRelative, formatEur, formatShortDate } from '../../../format'
+import { formatEur } from '../../../format'
+import { formatDueRelative, formatShortDate } from '../../../time'
 import { Button } from '../../../ui/Button'
 import { AgentBadge } from '../../../ui/AgentBadge'
 import { Icon } from '../../../ui/Icon'

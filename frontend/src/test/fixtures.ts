@@ -32,6 +32,7 @@ export const caseCard: Schemas['CaseCard'] = {
 export const shellView: Schemas['ShellView'] = {
   user: { id: 1, email: 'k.vogt@ra-vogt.de', display_name: 'Katharina Vogt', role: 'admin' },
   triage_count: 7,
+  timezone: 'UTC',
 }
 
 export const emptyQueue: Schemas['QueueView'] = {

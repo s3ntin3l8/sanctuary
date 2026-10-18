@@ -440,11 +440,12 @@ class CaseTimelineService:
     def _build_month_buckets(self, events: list[TimelineEvent]) -> list[dict]:
         bucket_map: dict[str, dict] = {}
         for ev in events:
-            key = ev.date.strftime("%Y-%m")
+            day = local_day(ev.date)
+            key = day.strftime("%Y-%m")
             if key not in bucket_map:
                 bucket_map[key] = {
                     "key": key,
-                    "label": ev.date.strftime("%b %Y"),
+                    "label": day.strftime("%b %Y"),
                     "total": 0,
                     "critical": 0,
                     "future": 0,
@@ -470,7 +471,7 @@ class CaseTimelineService:
         for ev in events:
             if ev.is_future:
                 continue
-            key = ev.date.strftime("%Y-%m")
+            key = local_day(ev.date).strftime("%Y-%m")
             if key in last_by_month:
                 delta = int((ev.date - last_by_month[key]).total_seconds() / 86400)
                 if delta >= 14:
