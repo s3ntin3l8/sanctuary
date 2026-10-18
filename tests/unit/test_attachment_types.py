@@ -459,4 +459,6 @@ def test_an_empty_attached_mail_does_not_turn_the_body_into_transport():
     msg["Message-ID"] = "<bodyempty@example.com>"
     msg.set_content("Bitte prüfen.")
     msg.add_attachment(empty.as_bytes(), maintype="message", subtype="rfc822")
-    assert not parse_rfc822(msg.as_bytes())["has_attachments"]
+    parsed = parse_rfc822(msg.as_bytes())
+    assert not parsed["has_attachments"]
+    assert parsed["body"].strip() == "Bitte prüfen."
