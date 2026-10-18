@@ -407,7 +407,7 @@ def test_the_nesting_limit_fails_only_the_offending_attachment():
             for source in parsed["sources"]
             for p in source["parts"]
         )
-        == email_msg._MAX_EMBEDDED + 1
+        == email_msg._MAX_EMBEDDED
     )
 
 
@@ -433,11 +433,11 @@ def test_a_msg_inside_a_nested_rfc822_mail_continues_the_depth():
     depths = []
 
     with patch("app.services.ingestion.email_parser.msg_to_rfc822") as convert:
-        convert.side_effect = lambda data, depth: (
+        convert.side_effect = lambda data, depth, nonce: (
             depths.append(depth) or b"From: a@b.de\r\n\r\nx"
         )
         parse_rfc822(outer.as_bytes())
-    assert depths == [1]  # one mail encloses it: not a fresh budget of 0
+    assert depths == [2]  # the nested mail is level 1, the .msg inside it level 2
 
 
 def test_a_broken_placeholder_keeps_the_attachments_type():

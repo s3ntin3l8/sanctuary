@@ -11,7 +11,8 @@ from email.utils import format_datetime
 OLE_MAGIC = b"\xd0\xcf\x11\xe0"
 _MAX_EMBEDDED = 5  # mails inside mails (.msg or RFC 822) are refused beyond this
 # Marks the placeholder of an embedded message beyond the limit, so ingest can
-# tell it from an attachment that was merely empty.
+# tell it from an attachment that was merely empty. Its value is a per-parse
+# nonce: a header on an incoming mail cannot carry it.
 NESTING_LIMIT_HEADER = "X-Sanctuary-Nesting-Limit"
 
 
@@ -37,7 +38,7 @@ def _line(value: object) -> str:
     return " ".join(str(value or "").replace("\0", "").split())
 
 
-def _to_email(message, depth: int) -> EmailMessage:
+def _to_email(message, depth: int, nonce: str) -> EmailMessage:
     if depth > _MAX_EMBEDDED:
         raise MsgNestingLimit("Outlook message nesting limit reached")
     out = EmailMessage()
@@ -85,12 +86,10 @@ def _to_email(message, depth: int) -> EmailMessage:
             data = attachment.data
             if hasattr(data, "attachments"):  # an embedded Outlook message
                 try:
-                    out.add_attachment(_to_email(data, depth + 1))
+                    out.add_attachment(_to_email(data, depth + 1, nonce))
                 except MsgNestingLimit:
                     # Only this attachment is lost: the body and siblings stay.
-                    _placeholder(
-                        out, name, "application/vnd.ms-outlook", nesting_limit=True
-                    )
+                    _placeholder(out, name, "application/vnd.ms-outlook", nonce)
                 continue
             if not isinstance(data, bytes) or not data:
                 # A broken or unsupported attachment has no data (it does not
@@ -110,24 +109,23 @@ def _to_email(message, depth: int) -> EmailMessage:
     return out
 
 
-def _placeholder(
-    out: EmailMessage, name: str, mime: str, *, nesting_limit: bool = False
-) -> None:
+def _placeholder(out: EmailMessage, name: str, mime: str, nonce: str = "") -> None:
     """An empty attachment standing in for one that could not be read; it keeps
     the original type so the review shows what kind of file was lost."""
     maintype, _, subtype = mime.partition("/")
     out.add_attachment(
         b"", maintype=maintype, subtype=subtype or "octet-stream", filename=name
     )
-    if nesting_limit:
-        list(out.iter_attachments())[-1][NESTING_LIMIT_HEADER] = "1"
+    if nonce:  # a nesting-limit placeholder
+        list(out.iter_attachments())[-1][NESTING_LIMIT_HEADER] = nonce
 
 
-def msg_to_rfc822(data: bytes, depth: int = 0) -> bytes:
+def msg_to_rfc822(data: bytes, depth: int = 0, nonce: str = "") -> bytes:
     """RFC 822 bytes of an Outlook message; raises ``MsgUnreadable``.
 
     ``depth`` is how many mails already enclose it, so one budget covers
-    messages nested through RFC 822 and through Outlook alike."""
+    messages nested through RFC 822 and through Outlook alike. ``nonce`` marks
+    the placeholders of messages beyond the limit (see ``NESTING_LIMIT_HEADER``)."""
     import extract_msg
     from extract_msg.enums import ErrorBehavior
 
@@ -146,7 +144,7 @@ def msg_to_rfc822(data: bytes, depth: int = 0) -> bytes:
     try:
         if not hasattr(message, "attachments"):
             raise MsgUnreadable("Not an Outlook mail message")
-        return _to_email(message, depth).as_bytes()
+        return _to_email(message, depth, nonce).as_bytes()
     except MsgUnreadable:
         raise
     except Exception as exc:

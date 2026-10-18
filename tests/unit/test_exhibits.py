@@ -77,10 +77,8 @@ def test_a_list_gives_labels_in_the_senders_order():
 
 
 def test_ag_and_asg_on_a_list_line_need_the_word_anlage():
-    note = (
-        "AG 3: Urteil\nASG 2: Beschluss\nAnlage AG 3: Urteil\nAnlage ASG 2: Beschluss\n"
-    )
-    assert parse_anlage_list(note) == [
+    assert parse_anlage_list("AG 3: Urteil\nASG 2: Beschluss\n") == []
+    assert parse_anlage_list("Anlage AG 3: Urteil\nAnlage ASG 2: Beschluss\n") == [
         ListItem("AG 3", "Urteil", 1),
         ListItem("ASG 2", "Beschluss", 2),
     ]

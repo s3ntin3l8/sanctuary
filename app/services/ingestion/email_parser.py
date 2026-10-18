@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import quopri
 import re
+import secrets
 import unicodedata
 from datetime import UTC, datetime, timedelta, timezone
 from email.policy import default
@@ -550,6 +551,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
     sources: list[dict] = []
     # Unpacked zip bytes held for the whole mail, on top of what it already is.
     decompression_budget = [config.MAX_EMAIL_SIZE_MB * 1024 * 1024]
+    # Only a placeholder made by this parse carries it: the mail's own headers
+    # cannot claim a nesting failure.
+    nesting_nonce = secrets.token_hex(16)
 
     def read_source(
         msg,
@@ -707,9 +711,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             emit_members(members, path)
 
         def record_msg(part, path, data, depth):
-            """An attached Outlook message is read as the mail it is."""
+            """An attached Outlook message is read as the mail it is, one level
+            below the mail that carries it (as ``read_source`` counts it)."""
             try:
-                rfc822 = msg_to_rfc822(data, depth)
+                rfc822 = msg_to_rfc822(data, depth + 1, nesting_nonce)
             except MsgNestingLimit:
                 record(part, path, data, "failed").update(
                     reason="Attached email nesting limit reached"
@@ -802,7 +807,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     record_msg(part, path, data, depth)
                 elif is_tnef(part.get_filename(), part.get_content_type(), data):
                     record_tnef(part, path, data)
-                elif not data and part.get(NESTING_LIMIT_HEADER):
+                elif not data and part.get(NESTING_LIMIT_HEADER) == nesting_nonce:
                     record(part, path, data, "failed").update(
                         reason="Attached email nesting limit reached"
                     )

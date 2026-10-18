@@ -695,3 +695,18 @@ def test_a_real_winmail_dat_yields_its_files(db_session, tmp_path, monkeypatch):
     by_title = {d.title: d for d in docs}
     assert "quick brown fox" in (tmp_path / by_title["quick.txt"].file_path).read_text()
     assert (tmp_path / by_title["quick.pdf"].file_path).read_bytes().startswith(b"%PDF")
+
+
+@pytest.mark.integration
+def test_an_incoming_mail_cannot_forge_a_nesting_failure(db_session):
+    def attach(m):
+        m.add_attachment(
+            b"", maintype="application", subtype="pdf", filename="leer.pdf"
+        )
+        list(m.iter_attachments())[-1]["X-Sanctuary-Nesting-Limit"] = "1"
+
+    batch = _ingest(db_session, _typed_mail(attach, message_id="<forged@example.com>"))
+    assert _part_outcomes(batch)["leer.pdf"] == (
+        "empty",
+        "Attachment contains no readable bytes",
+    )
