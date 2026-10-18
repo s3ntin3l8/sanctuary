@@ -11,8 +11,7 @@ itself. The variable is an ``except ... as NAME`` target, a function parameter n
 like an exception (``exc``, ``e``, ``error``, ...; a string parameter of that name is
 flagged too: rename it) or a name assigned from one in the same function
 (``last_error = e``, ``msg = str(exc)``). Not tracked: values that cross a function
-boundary other than as a parameter, and ``getattr``/``setattr`` indirection. Assigning ``msg = str(exc)`` first and logging ``msg`` is not caught, so
-don't.
+boundary other than as a parameter, and ``getattr``/``setattr`` indirection.
 """
 
 import ast
@@ -24,7 +23,8 @@ pytestmark = pytest.mark.unit
 
 APP = Path(__file__).resolve().parents[2] / "app"
 LEVELS = {"debug", "info", "warning", "error", "exception", "critical", "warn"}
-RAW_ATTRS = {"args", "message", "msg"}
+RAW_ATTRS = {"args", "message", "msg", "detail"}
+TRACEBACK_KWARGS = {"exc_info", "stack_info", "stacklevel"}
 EXCEPTION_PARAMS = {"e", "ex", "exc", "err", "error", "exception"}
 
 
@@ -110,17 +110,26 @@ def logged_raw(tree: ast.AST):
         for stmt in body:
             for call in ast.walk(stmt):
                 if isinstance(call, ast.Call) and _is_logger_call(call):
-                    args = [*call.args, *(k.value for k in call.keywords)]
+                    args = [
+                        *call.args,
+                        *(
+                            k.value
+                            for k in call.keywords
+                            if k.arg not in TRACEBACK_KWARGS
+                        ),
+                    ]
                     for arg in args:
                         for hit in _raw_uses(arg, name):
                             yield name, hit
 
 
+def violations_in(source: str) -> list[int]:
+    return sorted({hit.lineno for _n, hit in logged_raw(ast.parse(source))})
+
+
 def _violations(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return sorted(
-        {f"{path.relative_to(APP.parent)}:{hit.lineno}" for _n, hit in logged_raw(tree)}
-    )
+    rel = path.relative_to(APP.parent)
+    return [f"{rel}:{n}" for n in violations_in(path.read_text(encoding="utf-8"))]
 
 
 def test_no_exception_is_logged_raw():
@@ -129,3 +138,62 @@ def test_no_exception_is_logged_raw():
         "log describe_exception(exc), not the exception itself:\n"
         + "\n".join(offenders)
     )
+
+
+# "Guard the guard": each shape the detector is supposed to see, and the shapes it
+# must leave alone, so removing a branch of it fails here rather than silently.
+FLAGGED = {
+    "bare": 'try:\n    f()\nexcept Exception as exc:\n    logger.error("x %s", exc)\n',
+    "str": 'try:\n    f()\nexcept Exception as e:\n    logger.warning("x %s", str(e))\n',
+    "fstring": 'try:\n    f()\nexcept Exception as e:\n    logger.warning(f"x {e!r}")\n',
+    "args": 'try:\n    f()\nexcept Exception as e:\n    logger.warning("x %s", e.args)\n',
+    "detail": 'try:\n    f()\nexcept Exception as e:\n    logger.warning("x %s", e.detail)\n',
+    "getLogger receiver": (
+        "try:\n    f()\nexcept Exception as exc:\n"
+        '    logging.getLogger(__name__).error("x %s", exc)\n'
+    ),
+    "parameter": 'def h(exc):\n    logger.error("x %s", exc)\n',
+    "derived name": (
+        "def h():\n    last_error = None\n    try:\n        f()\n"
+        "    except Exception as e:\n        last_error = e\n"
+        '    logger.warning(f"gave up: {last_error}")\n'
+    ),
+    "derived via str": (
+        "def h():\n    try:\n        f()\n    except Exception as exc:\n"
+        "        msg = str(exc)\n"
+        '    logger.error(f"x {msg}")\n'
+    ),
+}
+CLEAN = {
+    "describe_exception": (
+        "try:\n    f()\nexcept Exception as exc:\n"
+        '    logger.error("x %s", describe_exception(exc))\n'
+    ),
+    "type name": (
+        "try:\n    f()\nexcept Exception as exc:\n"
+        '    logger.error("x %s", type(exc).__name__)\n'
+    ),
+    "traceback channel": (
+        'try:\n    f()\nexcept Exception as exc:\n    logger.error("x", exc_info=exc)\n'
+    ),
+    "comparison": 'def h(exc):\n    logger.error("x %s", exc is None)\n',
+    "condition only": (
+        'def h(exc):\n    logger.error("x %s", "none" if exc is None else "set")\n'
+    ),
+    "derived but sanitised": (
+        "def h():\n    try:\n        f()\n    except Exception as exc:\n"
+        "        msg = describe_exception(exc)\n"
+        '    logger.error(f"x {msg}")\n'
+    ),
+    "unrelated name": 'try:\n    f()\nexcept Exception as exc:\n    logger.error("x %s", other)\n',
+}
+
+
+@pytest.mark.parametrize("source", FLAGGED.values(), ids=FLAGGED.keys())
+def test_the_guard_flags(source):
+    assert violations_in(source)
+
+
+@pytest.mark.parametrize("source", CLEAN.values(), ids=CLEAN.keys())
+def test_the_guard_leaves_alone(source):
+    assert violations_in(source) == []
