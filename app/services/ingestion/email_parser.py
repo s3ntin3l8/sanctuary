@@ -223,6 +223,20 @@ _DECORATIVE_REASON = "Small image (logo or icon)"
 _DECORATIVE_CONTAINER_REASON = "Contains only small images (logos or icons)"
 
 
+def _part_has_content(part: dict, sources: list[dict]) -> bool:
+    """Whether a part keeps its source alive; an attached mail only does if it
+    carries a body or a kept part of its own."""
+    if part["outcome"] in ("ignored_inline", "signature"):
+        return False
+    if part["outcome"] != "nested_source":
+        return True
+    nested = next((s for s in sources if s["id"] == f"{part['id']}.m0"), None)
+    return nested is None or bool(
+        nested.get("body", "").strip()
+        or any(_part_has_content(p, sources) for p in nested["parts"])
+    )
+
+
 def _opaque_kind(part) -> str | None:
     """ "signature" for a detached signature, "encrypted" for a body we cannot read."""
     content_type = part.get_content_type()
@@ -860,9 +874,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         if (
             decorative
             and not body.strip()
-            and all(
-                p["outcome"] in ("ignored_inline", "signature") for p in source["parts"]
-            )
+            and not any(_part_has_content(p, sources) for p in source["parts"])
         ):
             for entry, was in decorative:
                 entry.update(outcome=was, reason=None)

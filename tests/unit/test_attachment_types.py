@@ -410,3 +410,37 @@ def test_a_lone_zip_of_small_images_without_a_body_is_kept():
     outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
     assert outcomes == {"A.zip": "archive", "logo.png": "pending"}
     assert [a["filename"] for a in parsed["attachments"]] == ["logo.png"]
+
+
+def test_a_lone_small_image_next_to_a_signature_file_is_kept():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless(
+            (_image((200, 80)), "image", "png", "snapshot.png"),
+            (b"sig", "application", "pgp-signature", "signature.asc"),
+        )
+    )
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes["snapshot.png"] == "pending"
+    assert outcomes["signature.asc"] == "signature"
+
+
+def test_a_lone_small_image_next_to_an_empty_attached_mail_is_kept():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    empty = EmailMessage()
+    empty["From"] = "a@example.com"
+    empty["Subject"] = "leer"
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<emptynested@example.com>"
+    msg.add_attachment(
+        _image((200, 80)), maintype="image", subtype="png", filename="snapshot.png"
+    )
+    msg.add_attachment(empty.as_bytes(), maintype="message", subtype="rfc822")
+    parsed = parse_rfc822(msg.as_bytes())
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes["snapshot.png"] == "pending"
