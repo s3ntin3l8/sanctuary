@@ -340,3 +340,24 @@ def test_a_small_image_in_a_zip_is_ignored():
     assert outcomes["logo.png"] == "ignored_inline"
     assert outcomes["K1.pdf"] == "pending"
     assert [a["filename"] for a in parsed["attachments"]] == ["K1.pdf"]
+
+
+def test_a_zip_holding_only_a_logo_is_ignored_as_a_whole():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<ziplogo@example.com>"
+    msg.set_content("Anlagen")
+    msg.add_attachment(
+        _zip({"logo.png": _image((120, 60))}),
+        maintype="application",
+        subtype="zip",
+        filename="Anlagen.zip",
+    )
+    parsed = parse_rfc822(msg.as_bytes())
+    assert {p["outcome"] for p in parsed["parts"]} == {"ignored_inline"}
+    assert parsed["attachments"] == []
+    assert not parsed["has_attachments"]  # the mail's text stays its body

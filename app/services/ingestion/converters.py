@@ -203,6 +203,7 @@ def is_decorative_image(data: bytes) -> bool:
     from PIL import Image
 
     try:
+        # BytesIO over bytes shares the buffer (no copy); open() reads the header only.
         with Image.open(io.BytesIO(data)) as image:
             return max(image.size) < config.MIN_IMAGE_SIDE_PX
     except Exception:

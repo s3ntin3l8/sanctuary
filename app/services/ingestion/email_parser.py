@@ -710,7 +710,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             if not members:
                 entry.update(outcome="unsupported", reason="Archive contains no files")
                 return
-            emit_members(members, path)
+            if not emit_members(members, path):
+                entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
 
         def record_msg(part, path, data, depth):
             """An attached Outlook message is read as the mail it is, one level
@@ -751,10 +752,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     reason="Unreadable winmail.dat"
                 )
                 return
-            record(part, path, data, "archive" if members else "ignored_inline")
-            emit_members(members, path, "t")
+            entry = record(part, path, data, "archive" if members else "ignored_inline")
+            if members and not emit_members(members, path, "t"):
+                entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
 
         def emit_members(members, base, tag="z"):
+            """Record a container's files; False when every one was ignored as a
+            logo or icon, so the container itself carries nothing."""
+            kept = False
             for i, member in enumerate(members):
                 path = f"{base}.{tag}{i}"
                 entry = {
@@ -777,7 +782,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
                 if entry["outcome"] == "pending":
                     source["attachments"].append(entry)
-                emit_members(member["members"], path, "z")
+                if member["members"] and not emit_members(member["members"], path, "z"):
+                    entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
+                kept = kept or entry["outcome"] != "ignored_inline"
+            return kept
 
         walk(msg, source_id, source_bytes)
         html_body = "\n".join(html)
