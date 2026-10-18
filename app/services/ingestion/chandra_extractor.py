@@ -404,7 +404,7 @@ def extract_with_chandra(
             return (
                 idx,
                 "",
-                f"<!-- chandra page {idx} failed: {exc} -->",
+                f"<!-- chandra page {idx} failed: {type(exc).__name__} -->",
                 time.perf_counter() - page_started,
                 exc,
             )
