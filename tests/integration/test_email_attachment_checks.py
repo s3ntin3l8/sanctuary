@@ -617,8 +617,13 @@ def test_an_attached_outlook_message_and_its_files_become_documents(db_session):
 
 
 @pytest.mark.integration
-def test_a_heic_attachment_is_ingested(db_session):
+def test_a_heic_attachment_is_ingested(db_session, monkeypatch):
     import io
+
+    from app import config
+
+    # The 16x16 stand-in must not count as a logo.
+    monkeypatch.setattr(config, "MIN_IMAGE_SIDE_PX", 8)
 
     import pillow_heif
     from PIL import Image

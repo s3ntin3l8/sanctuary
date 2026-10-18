@@ -18,6 +18,7 @@ from app import config
 from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
 from app.services.ingestion.archive_guard import ArchiveRejected
+from app.services.ingestion.converters import is_decorative_image
 from app.services.ingestion.email_archive import (
     TnefUnreadable,
     archive_members,
@@ -218,6 +219,22 @@ _SIGNATURE_TYPES = {
 }
 _OPAQUE_TYPES = {"application/pkcs7-mime", "application/x-pkcs7-mime"}
 _ENCRYPTED_REASON = "Encrypted or opaque message part cannot be read"
+_DECORATIVE_REASON = "Small image (logo or icon)"
+_DECORATIVE_CONTAINER_REASON = "Contains only small images (logos or icons)"
+
+
+def _part_has_content(part: dict, sources: list[dict]) -> bool:
+    """Whether a part keeps its source alive; an attached mail only does if it
+    carries a body or a kept part of its own."""
+    if part["outcome"] in ("ignored_inline", "signature"):
+        return False
+    if part["outcome"] != "nested_source":
+        return True
+    nested = next((s for s in sources if s["id"] == f"{part['id']}.m0"), None)
+    return nested is None or bool(
+        nested.get("body", "").strip()
+        or any(_part_has_content(p, sources) for p in nested["parts"])
+    )
 
 
 def _opaque_kind(part) -> str | None:
@@ -672,6 +689,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 elif part.get_content_type() == "text/plain":
                     plain.append(_decode_text(part))
 
+        # Parts ignored as logos or icons with the outcome they would have had:
+        # with no other content in the source they are restored (see below).
+        decorative: list[tuple[dict, str]] = []
+
+        def ignore_decorative(entry, was, reason):
+            decorative.append((entry, was))
+            entry.update(outcome="ignored_inline", reason=reason)
+
         def record(part, path, data, outcome="pending"):
             original = part.get_filename()
             suffix = (
@@ -708,7 +733,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             if not members:
                 entry.update(outcome="unsupported", reason="Archive contains no files")
                 return
-            emit_members(members, path)
+            if not emit_members(members, path):
+                ignore_decorative(entry, "archive", _DECORATIVE_CONTAINER_REASON)
 
         def record_msg(part, path, data, depth):
             """An attached Outlook message is read as the mail it is, one level
@@ -749,10 +775,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     reason="Unreadable winmail.dat"
                 )
                 return
-            record(part, path, data, "archive" if members else "ignored_inline")
-            emit_members(members, path, "t")
+            entry = record(part, path, data, "archive" if members else "ignored_inline")
+            if members and not emit_members(members, path, "t"):
+                ignore_decorative(entry, "archive", _DECORATIVE_CONTAINER_REASON)
 
         def emit_members(members, base, tag="z"):
+            """Record a container's files; False when every one was ignored as a
+            logo or icon, so the container itself carries nothing."""
+            kept = False
             for i, member in enumerate(members):
                 path = f"{base}.{tag}{i}"
                 entry = {
@@ -769,9 +799,16 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     "content": member["data"],
                 }
                 source["parts"].append(entry)
-                if member["outcome"] == "pending":
+                if member["outcome"] == "pending" and is_decorative_image(
+                    member["data"]
+                ):
+                    ignore_decorative(entry, "pending", _DECORATIVE_REASON)
+                if entry["outcome"] == "pending":
                     source["attachments"].append(entry)
-                emit_members(member["members"], path, "z")
+                if member["members"] and not emit_members(member["members"], path, "z"):
+                    ignore_decorative(entry, "archive", _DECORATIVE_CONTAINER_REASON)
+                kept = kept or entry["outcome"] != "ignored_inline"
+            return kept
 
         walk(msg, source_id, source_bytes)
         html_body = "\n".join(html)
@@ -811,6 +848,12 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     record(part, path, data, "failed").update(
                         reason="Attached email nesting limit reached"
                     )
+                elif is_decorative_image(data):
+                    ignore_decorative(
+                        record(part, path, data, "ignored_inline"),
+                        "pending",
+                        _DECORATIVE_REASON,
+                    )
                 else:
                     entry = record(part, path, data)
                     # An invitation travels as a sibling of the mail's own text
@@ -826,6 +869,17 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             body = markdownify(
                 html_body, heading_style="ATX", strip=["div"], escape_underscores=False
             )
+        # A logo only counts as one next to something else: a mail whose sole
+        # payload is a small image keeps it, so it is read and reviewable.
+        if (
+            decorative
+            and not body.strip()
+            and not any(_part_has_content(p, sources) for p in source["parts"])
+        ):
+            for entry, was in decorative:
+                entry.update(outcome=was, reason=None)
+                if was == "pending":
+                    source["attachments"].append(entry)
         source["attachment_manifest"] = _parse_attachment_manifest(body)
         source["email_note"] = _extract_email_note(body)
         # The note is one flattened line; the list needs the mail's own lines.
@@ -834,12 +888,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         source["inline_forward"] = (
             parse_inline_forward(body, source["subject"]) if body else None
         )
-        # An attached message counts as an attachment of this source as well.
-        # A detached signature is not an attachment: it must not turn the
-        # mail's own body into mere transport.
+        # An attached message counts as an attachment of this source as well,
+        # unless it carries nothing. A detached signature is not an attachment:
+        # it must not turn the mail's own body into mere transport.
         source["has_attachments"] = any(
-            p["outcome"] not in ("ignored_inline", "signature")
-            and not p.get("inline_alternative")
+            _part_has_content(p, sources) and not p.get("inline_alternative")
             for p in source["parts"]
         )
         return source

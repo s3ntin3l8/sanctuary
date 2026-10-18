@@ -259,3 +259,206 @@ def test_a_budget_spans_nested_archives():
     [deep] = inner_member["members"]
     assert (deep["outcome"], deep["data"]) == ("unsupported", b"")
     assert (sibling["outcome"], sibling["data"]) == ("unsupported", b"")
+
+
+# --- Small images (logos, icons) -----------------------------------------------
+
+
+def _image(size, fmt="PNG"):
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, "white").save(buffer, fmt)
+    return buffer.getvalue()
+
+
+def test_a_small_image_is_decorative():
+    assert converters.is_decorative_image(_image((200, 80)))
+    assert converters.is_decorative_image(_image((150, 150), "JPEG"))
+
+
+def test_a_page_sized_image_is_not_decorative():
+    assert not converters.is_decorative_image(_image((1200, 1600)))
+    assert not converters.is_decorative_image(_image((1240, 1754)))
+
+
+def test_unreadable_or_non_image_bytes_are_not_decorative():
+    assert not converters.is_decorative_image(b"\x89PNG\r\n\x1a\n" + b"garbage")
+    assert not converters.is_decorative_image(b"%PDF-1.4 small")
+    assert not converters.is_decorative_image(b"")
+
+
+def _mail_with_image(data: bytes, filename: str = "logo.png") -> bytes:
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<img@example.com>"
+    msg["Subject"] = "Frist"
+    msg.set_content("Bitte bis Freitag antworten.")
+    msg.add_attachment(data, maintype="image", subtype="png", filename=filename)
+    return msg.as_bytes()
+
+
+def test_a_small_attached_logo_is_ignored_and_the_body_stays_a_body():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(_mail_with_image(_image((200, 80))))
+    part = next(p for p in parsed["parts"] if p["filename"] == "logo.png")
+    assert part["outcome"] == "ignored_inline"
+    assert part["reason"] == "Small image (logo or icon)"
+    assert parsed["attachments"] == []
+    assert not parsed["has_attachments"]
+
+
+def test_a_page_sized_image_attachment_stays_pending():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(_mail_with_image(_image((1240, 1754)), "scan.png"))
+    part = next(p for p in parsed["parts"] if p["filename"] == "scan.png")
+    assert part["outcome"] == "pending"
+    assert [a["filename"] for a in parsed["attachments"]] == ["scan.png"]
+
+
+def test_a_small_image_in_a_zip_is_ignored():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<zip@example.com>"
+    msg.set_content("Anlagen")
+    msg.add_attachment(
+        _zip({"logo.png": _image((120, 60)), "K1.pdf": b"%PDF-1.4 k1"}),
+        maintype="application",
+        subtype="zip",
+        filename="Anlagen.zip",
+    )
+    parsed = parse_rfc822(msg.as_bytes())
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes["logo.png"] == "ignored_inline"
+    assert outcomes["K1.pdf"] == "pending"
+    assert [a["filename"] for a in parsed["attachments"]] == ["K1.pdf"]
+
+
+def test_a_zip_holding_only_a_logo_is_ignored_as_a_whole():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<ziplogo@example.com>"
+    msg.set_content("Anlagen")
+    msg.add_attachment(
+        _zip({"logo.png": _image((120, 60))}),
+        maintype="application",
+        subtype="zip",
+        filename="Anlagen.zip",
+    )
+    parsed = parse_rfc822(msg.as_bytes())
+    assert {p["outcome"] for p in parsed["parts"]} == {"ignored_inline"}
+    assert parsed["attachments"] == []
+    assert not parsed["has_attachments"]  # the mail's text stays its body
+
+
+def _bodyless(*attachments):
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<nobody@example.com>"
+    for data, maintype, subtype, filename in attachments:
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
+    return msg.as_bytes()
+
+
+def test_a_lone_small_image_without_any_other_content_is_kept():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless((_image((200, 80)), "image", "png", "snapshot.png"))
+    )
+    [part] = parsed["parts"]
+    assert (part["outcome"], part["reason"]) == ("pending", None)
+    assert [a["filename"] for a in parsed["attachments"]] == ["snapshot.png"]
+
+
+def test_a_logo_next_to_a_pdf_is_still_ignored_without_a_body():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless(
+            (_image((200, 80)), "image", "png", "logo.png"),
+            (b"%PDF-1.4 x", "application", "pdf", "Brief.pdf"),
+        )
+    )
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes == {"logo.png": "ignored_inline", "Brief.pdf": "pending"}
+    assert [a["filename"] for a in parsed["attachments"]] == ["Brief.pdf"]
+
+
+def test_a_lone_zip_of_small_images_without_a_body_is_kept():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless(
+            (_zip({"logo.png": _image((120, 60))}), "application", "zip", "A.zip")
+        )
+    )
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes == {"A.zip": "archive", "logo.png": "pending"}
+    assert [a["filename"] for a in parsed["attachments"]] == ["logo.png"]
+
+
+def test_a_lone_small_image_next_to_a_signature_file_is_kept():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless(
+            (_image((200, 80)), "image", "png", "snapshot.png"),
+            (b"sig", "application", "pgp-signature", "signature.asc"),
+        )
+    )
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes["snapshot.png"] == "pending"
+    assert outcomes["signature.asc"] == "signature"
+
+
+def test_a_lone_small_image_next_to_an_empty_attached_mail_is_kept():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    empty = EmailMessage()
+    empty["From"] = "a@example.com"
+    empty["Subject"] = "leer"
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<emptynested@example.com>"
+    msg.add_attachment(
+        _image((200, 80)), maintype="image", subtype="png", filename="snapshot.png"
+    )
+    msg.add_attachment(empty.as_bytes(), maintype="message", subtype="rfc822")
+    parsed = parse_rfc822(msg.as_bytes())
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes["snapshot.png"] == "pending"
+
+
+def test_an_empty_attached_mail_does_not_turn_the_body_into_transport():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    empty = EmailMessage()
+    empty["From"] = "a@example.com"
+    empty["Subject"] = "leer"
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<bodyempty@example.com>"
+    msg.set_content("Bitte prüfen.")
+    msg.add_attachment(empty.as_bytes(), maintype="message", subtype="rfc822")
+    parsed = parse_rfc822(msg.as_bytes())
+    assert not parsed["has_attachments"]
+    assert parsed["body"].strip() == "Bitte prüfen."

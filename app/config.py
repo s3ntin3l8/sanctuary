@@ -43,6 +43,9 @@ MCP_MAX_UPLOAD_MB = int(os.getenv("MCP_MAX_UPLOAD_MB", "25"))
 # Largest single document (upload, scan, email attachment) and largest raw email.
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 MAX_EMAIL_SIZE_MB = int(os.getenv("MAX_EMAIL_SIZE_MB", "100"))
+# An image attached to a mail whose longest side is below this is a logo or icon
+# (a readable page of text is never that small) and is ignored, not OCR'd.
+MIN_IMAGE_SIDE_PX = int(os.getenv("MIN_IMAGE_SIDE_PX", "600"))
 # docx/pptx/xlsx are zip archives: refuse a decompression bomb before it is
 # unpacked (declared entry count, total uncompressed size, per-entry ratio).
 MAX_ARCHIVE_ENTRIES = int(os.getenv("MAX_ARCHIVE_ENTRIES", "5000"))
