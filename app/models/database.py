@@ -184,6 +184,11 @@ class Document(Base):
     # Set by the explicit "Confirm bundle" action; clears `pending_confirmation`
     # for good (a later relationship decision or re-enrich must not undo it).
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # An email attachment that looks like several letters waits for the user's
+    # split-or-keep decision, and its whole batch waits with it (see
+    # app/services/ingestion/packet_hold.py). A column rather than `meta` because
+    # EXTRACT replaces `meta` wholesale; cleared with the extraction stamp.
+    held_for_split_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Pipeline tracking
     pipeline_state: Mapped[PipelineState] = mapped_column(

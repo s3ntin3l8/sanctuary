@@ -253,6 +253,18 @@ export const useSetEngine = () =>
   useMutation<S['ExtractionEngineUpdate'], ApiError, S['ExtractionEngineUpdate']>({
     mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/ai/extraction-engine', { body })),
   })
+/** Turning the hold off releases every held packet, so the triage views change too. */
+export function useSetHoldPackets() {
+  const queryClient = useQueryClient()
+  return useMutation<S['HoldPacketsUpdate'], ApiError, S['HoldPacketsUpdate']>({
+    mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/ai/hold-packets', { body })),
+    onSuccess: () => {
+      for (const key of ['triage', 'document', 'worker-queue']) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
+    },
+  })
+}
 export const useSetConcurrency = (kind: 'worker' | 'ocr') =>
   useMutation<S['ConcurrencyResult'], ApiError, S['ConcurrencyUpdate']>({
     mutationFn: (body) =>

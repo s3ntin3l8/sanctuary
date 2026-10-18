@@ -233,6 +233,7 @@ class AiSettingsView(BaseModel):
     instances: list[AiInstance]
     roles: list[AiRole]
     extraction_engine: Literal["chandra", "docling"]
+    hold_packets: bool
     tesseract_available: bool
     worker_concurrency: int
     ocr_concurrency: int
@@ -278,6 +279,10 @@ class ConcurrencyResult(BaseModel):
 
 class ExtractionEngineUpdate(BaseModel):
     engine: Literal["chandra", "docling"]
+
+
+class HoldPacketsUpdate(BaseModel):
+    enabled: bool
 
 
 class DebugCaptureUpdate(BaseModel):

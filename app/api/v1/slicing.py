@@ -22,6 +22,7 @@ from app.schemas.slicing import (
     ProposedCut,
     SlicingConfirm,
     SlicingConfirmed,
+    SlicingKept,
     SlicingPage,
     SlicingView,
 )
@@ -120,6 +121,8 @@ def _view(source: IngestBatch | Document) -> SlicingView:
         progress_done=progress.get("done"),
         progress_total=progress.get("total"),
         progress_phase=progress.get("phase"),
+        held_for_split=isinstance(source, Document)
+        and source.held_for_split_at is not None,
     )
 
 
@@ -386,3 +389,18 @@ def confirm_document_slicing(
     for doc_id in doc_ids:
         dispatch_task(process_document_task, doc_id)
     return SlicingConfirmed(document_ids=doc_ids)
+
+
+@router.post("/documents/{doc_id}/keep", response_model=SlicingKept)
+@limiter.limit("30/minute")
+def keep_document_whole(
+    request: Request,
+    db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access(edit=True)),
+):
+    """Keep a packet-like PDF as one document: ends its hold so the email's pipeline
+    goes on, and remembers the choice so a re-extraction never holds it again."""
+    from app.services.ingestion import packet_hold
+
+    packet_hold.release(db, doc, kept=True)
+    return SlicingKept(document_id=doc.id)

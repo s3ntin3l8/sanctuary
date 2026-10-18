@@ -178,6 +178,7 @@ export const aiSettings: Schemas['AiSettingsView'] = {
     },
   ],
   extraction_engine: 'chandra',
+  hold_packets: true,
   tesseract_available: true,
   worker_concurrency: 2,
   ocr_concurrency: 4,
@@ -259,6 +260,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       sub_group_id: null,
       reference_inherited: false,
       exhibit_label: null,
+      held_for_split: false,
     },
     {
       id: 2211,
@@ -276,6 +278,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       sub_group_id: null,
       reference_inherited: false,
       exhibit_label: null,
+      held_for_split: false,
     },
     {
       id: 2212,
@@ -293,6 +296,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
       sub_group_id: null,
       reference_inherited: false,
       exhibit_label: 'B 1',
+      held_for_split: false,
     },
   ],
   sub_groups: [
@@ -375,6 +379,7 @@ export const documentReview: Schemas['DocumentReview'] = {
   original_filename: 'Klageerwiderung.pdf',
   page_count: 12,
   packet_starts: [],
+  held_for_split: false,
   case_id: '_TRIAGE',
   case: null,
   proceeding: null,

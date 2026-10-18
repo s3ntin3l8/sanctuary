@@ -83,7 +83,9 @@ def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
 
     Readiness condition: every document in the batch has EXTRACT completed,
     failed, or skipped (a failed EXTRACT doesn't block the barrier — it just
-    means that doc's own METADATA claim will no-op when dispatched).
+    means that doc's own METADATA claim will no-op when dispatched). A document
+    held for a split decision (``Document.held_for_split_at``, see
+    ingestion/packet_hold.py) holds the whole batch until it is released.
     """
     result = db.execute(
         text(
@@ -101,6 +103,11 @@ def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
                       AND dps.stage = 'extract'
                       AND dps.status IN ('completed', 'failed', 'skipped')
                   )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM documents
+                WHERE ingest_batch_id = :batch_id
+                  AND held_for_split_at IS NOT NULL
               )
             """
         ),
@@ -145,6 +152,11 @@ def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
               AND NOT EXISTS (
                 SELECT 1 FROM documents
                 WHERE case_id = :case_id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM documents held
+                    WHERE held.ingest_batch_id = documents.ingest_batch_id
+                      AND held.held_for_split_at IS NOT NULL
+                  )
                   AND NOT EXISTS (
                     SELECT 1 FROM document_pipeline_stages dps
                     WHERE dps.document_id = documents.id

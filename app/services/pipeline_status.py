@@ -573,7 +573,8 @@ def clear_extraction_stamp(doc) -> None:
 
     ``process_document_task`` skips OCR when ``meta`` carries ``extractor`` +
     ``chunks`` (a guard against duplicate dispatches). A user-requested retry
-    must pass that guard, so every EXTRACT reset clears the stamp first.
+    must pass that guard, so every EXTRACT reset clears the stamp first. It also
+    ends the packet hold (``Document.held_for_split_at``).
     """
     meta = dict(doc.meta or {})
     removed = [
@@ -589,6 +590,9 @@ def clear_extraction_stamp(doc) -> None:
     ]
     if any(v is not None for v in removed):
         doc.meta = meta
+    # The packet hold belongs to the extraction that found the packet starts;
+    # EXTRACT decides again (respecting the user's "keep as one").
+    doc.held_for_split_at = None
 
 
 def reset_stage(
@@ -796,10 +800,14 @@ def relationship_gate_case_id(db: Session, doc) -> str | None:
 def relationships_gate_open(db: Session, doc_id: int) -> bool:
     """True when no earlier document of the same case still has ENRICH ahead of it.
 
-    A batch that awaits the user's slice review can't finish by waiting, so its
-    documents don't hold the gate. Past ``RELATIONSHIPS_GATE_MAX_WAIT`` since this
-    document's own ENRICH completed, the gate opens regardless.
+    A batch that awaits the user's slice review, or holds a packet for a split
+    decision, can't finish by waiting, so its documents don't hold the gate. Past
+    ``RELATIONSHIPS_GATE_MAX_WAIT`` since this document's own ENRICH completed, the
+    gate opens regardless.
     """
+    from sqlalchemy import exists
+    from sqlalchemy.orm import aliased
+
     from app.models.database import (
         Document,
         DocumentPipelineStage,
@@ -814,6 +822,7 @@ def relationships_gate_open(db: Session, doc_id: int) -> bool:
     if case_id is None:
         return True
 
+    held = aliased(Document)
     blocked = (
         db.query(DocumentPipelineStage.document_id)
         .join(Document, Document.id == DocumentPipelineStage.document_id)
@@ -825,6 +834,10 @@ def relationships_gate_open(db: Session, doc_id: int) -> bool:
             DocumentPipelineStage.status.in_(_ENRICH_IN_FLIGHT),
             (IngestBatch.status.is_(None))
             | (IngestBatch.status != IngestBatchStatus.AWAITING_SLICING),
+            ~exists().where(
+                held.ingest_batch_id == Document.ingest_batch_id,
+                held.held_for_split_at.is_not(None),
+            ),
         )
         .first()
         is not None
@@ -1484,6 +1497,11 @@ def recover_unclaimed_ready_metadata_phases(db: Session) -> dict:
                       AND dps.status IN ('completed', 'failed', 'skipped')
                   )
               )
+              AND NOT EXISTS (
+                SELECT 1 FROM documents held
+                WHERE held.ingest_batch_id = b.id
+                  AND held.held_for_split_at IS NOT NULL
+              )
             """
         )
     ).fetchall()
@@ -1596,9 +1614,9 @@ def recover_stuck_pending_dispatches(
     completed/skipped, looking up each retry_task in STAGE_REGISTRY. Sibling
     stages (RELATIONSHIPS / CLAIMS / ENTITIES) are judged independently, so a
     held RELATIONSHIPS never hides a lost CLAIMS dispatch. RELATIONSHIPS is
-    still filtered by ``relationships_gate_open``, EXTRACT by the
-    ingest-worker-alive check. The retry_task is idempotent over already-completed
-    upstream stages.
+    still filtered by ``relationships_gate_open``, METADATA of a batch holding a
+    packet by ``packet_hold``, EXTRACT by the ingest-worker-alive check. The
+    retry_task is idempotent over already-completed upstream stages.
 
     A doc qualifies when:
       * pipeline_state in (PENDING, PARTIAL)
@@ -1626,8 +1644,10 @@ def recover_stuck_pending_dispatches(
     from datetime import timedelta
 
     from app.models.database import Document
+    from app.services.ingestion import packet_hold
 
     cutoff = now_utc() - timedelta(seconds=max_age_seconds)
+    held_batches = packet_hold.held_batch_ids(db)
 
     candidates = (
         db.query(Document)
@@ -1709,6 +1729,14 @@ def recover_stuck_pending_dispatches(
             if (
                 head_spec.stage == PipelineStage.RELATIONSHIPS
                 and not relationships_gate_open(db, doc.id)
+            ):
+                continue
+
+            # A packet held for the user's split decision holds its whole batch
+            # at the OCR->chat barrier: METADATA waits on purpose.
+            if (
+                head_spec.stage == PipelineStage.METADATA
+                and doc.ingest_batch_id in held_batches
             ):
                 continue
 

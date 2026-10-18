@@ -289,7 +289,7 @@ def test_the_queue_says_why_a_held_document_is_waiting(db_session, sample_case):
     def item(doc_id):
         doc = db_session.get(Document, doc_id)
         return _queue_item(
-            {"type": "doc", "doc": doc, "stage": PipelineStage.RELATIONSHIPS}
+            {"type": "doc", "doc": doc, "stage": PipelineStage.RELATIONSHIPS}, set()
         )
 
     assert item(held).note == "Waiting for earlier documents of the case"

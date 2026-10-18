@@ -3,10 +3,15 @@
 The Chandra extractor keeps one chunk per page (``meta.chunks[].meta.page``).
 Splitting a document into parts would otherwise OCR the same pages again, so a
 part is handed the source's reading of its own pages.
+
+The Docling engine keeps no per-page chunks, but writes ``--- PAGE N ---``
+markers into the content; those answer ``page_texts`` (and so the packet hint
+and hold) when they are complete.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.models.database import Document
@@ -33,9 +38,42 @@ def _usable_chunks(doc: Document) -> dict[int, dict[str, Any]]:
     return usable
 
 
+_PAGE_MARK = re.compile(r"(?m)^--- PAGE (\d+) ---$")
+_PLACEHOLDER = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _marked_pages(doc: Document) -> dict[int, str]:
+    """Page texts cut from the ``--- PAGE N ---`` markers of the content.
+
+    Only when the markers are exactly 1..``meta.pages``: a PDF whose pages the
+    markers do not account for is not read page by page, and a wrong page split
+    would hold or hint wrongly. Pages that are empty or only an image
+    placeholder are left out.
+    """
+    pages = (doc.meta or {}).get("pages")
+    if not doc.content or not isinstance(pages, int):
+        return {}
+    parts = _PAGE_MARK.split(doc.content)
+    numbers = [int(n) for n in parts[1::2]]
+    if numbers != list(range(1, pages + 1)):
+        return {}
+    texts = {}
+    for number, text in zip(numbers, parts[2::2], strict=True):
+        text = _PLACEHOLDER.sub("", text).strip()
+        if text:
+            texts[number] = text
+    return texts
+
+
 def page_texts(doc: Document) -> dict[int, str]:
-    """1-based page -> OCR text, for the pages that were read successfully."""
-    return {page: chunk["text"] for page, chunk in _usable_chunks(doc).items()}
+    """1-based page -> text, for the pages that were read successfully."""
+    chunked = any(
+        isinstance((chunk.get("meta") or {}).get("page"), int)
+        for chunk in (doc.meta or {}).get("chunks") or []
+    )
+    if chunked:
+        return {page: chunk["text"] for page, chunk in _usable_chunks(doc).items()}
+    return _marked_pages(doc)
 
 
 def extraction_for_pages(doc: Document, pages: list[int]) -> dict[str, Any] | None:

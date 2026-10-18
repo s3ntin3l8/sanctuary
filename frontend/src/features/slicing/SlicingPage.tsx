@@ -3,6 +3,7 @@ import { useParams } from 'react-router'
 
 import {
   slicingBase,
+  useKeepDocumentWhole,
   useSlicing,
   useSlicingConfirm,
   useSlicingRetry,
@@ -31,6 +32,7 @@ export function SlicingPage() {
   const query = useSlicing(scope)
   const confirm = useSlicingConfirm(scope)
   const retry = useSlicingRetry(scope)
+  const keep = useKeepDocumentWhole()
   const toast = useToast()
   const [cuts, setCuts] = useState<Map<number, Kind> | null>(null)
   // null = the pages the server marked blank; edited once the user toggles a page.
@@ -179,6 +181,21 @@ export function SlicingPage() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {scope.kind === 'document' && view.held_for_split && (
+            <Button
+              variant="secondary"
+              disabled={keep.isPending}
+              title="Keep this PDF as one document; the email's processing continues"
+              onClick={() =>
+                keep.mutate(scope.id, {
+                  onSuccess: () => leaveTo(backTo),
+                  onError: (e) => toast(e.message, 'error'),
+                })
+              }
+            >
+              <Icon name="check" size={16} /> Keep as one
+            </Button>
+          )}
           {view.status === 'ready' && (
             <>
               <Button

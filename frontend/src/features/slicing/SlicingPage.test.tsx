@@ -250,3 +250,40 @@ test('a document that carries your own work is not replaced, and says why', asyn
   expect(await screen.findByText(/your own work attached: pins/)).toBeVisible()
   expect(navigation.leaveTo).not.toHaveBeenCalled()
 })
+
+test('a held packet can be kept as one document from its split review', async () => {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  const fetch = stubApi({
+    'GET /api/v1/slicing/documents/113': {
+      body: { ...view, batch_id: null, document_id: 113, held_for_split: true },
+    },
+    'POST /api/v1/slicing/documents/113/keep': { body: { document_id: 113 } },
+  })
+  renderAt(
+    '/document/113/slice',
+    <Routes>
+      <Route path="/document/:docId/slice" element={<SlicingPage />} />
+    </Routes>,
+  )
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /Keep as one/ }))
+  await waitFor(() => expect(navigation.leaveTo).toHaveBeenCalledWith('/document/113'))
+  const post = fetch.mock.calls.map(([x]) => x).find((x) => x.method === 'POST')
+  expect(new URL(post?.url ?? '').pathname).toBe('/api/v1/slicing/documents/113/keep')
+})
+
+test('a document that is not held offers no keep button', async () => {
+  stubApi({
+    'GET /api/v1/slicing/documents/113': {
+      body: { ...view, batch_id: null, document_id: 113, held_for_split: false },
+    },
+  })
+  renderAt(
+    '/document/113/slice',
+    <Routes>
+      <Route path="/document/:docId/slice" element={<SlicingPage />} />
+    </Routes>,
+  )
+  await screen.findByText('Split d-113')
+  expect(screen.queryByRole('button', { name: /Keep as one/ })).toBeNull()
+})

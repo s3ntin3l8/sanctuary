@@ -9,7 +9,7 @@ from app.config import EXTRACT_TASK_SOFT_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
 from app.core.safe_error import describe_exception
 from app.dependencies import get_db_session
 from app.models.database import Document
-from app.models.enums import PipelineStage
+from app.models.enums import PipelineStage, StageStatus
 from app.services.intelligence._ai_call import is_transient_ai_http_error
 from app.services.model_gate import ModelGateTimeout
 from app.services.pipeline_status import (
@@ -258,6 +258,7 @@ def metadata_task(self, doc_id: int):
     LLM calls in flight at the same time without blocking the ingest slot
     that does Docling/OCR.
     """
+    from app.services.ingestion import packet_hold
     from app.services.pipeline_status import (
         claim_stage_for_dispatch,
         mark_completed,
@@ -275,6 +276,20 @@ def metadata_task(self, doc_id: int):
         metadata_done = (
             stages.get(PipelineStage.METADATA.value, {}).get("status") == "completed"
         )
+        if stages.get(PipelineStage.METADATA.value, {}).get(
+            "status"
+        ) == StageStatus.PENDING.value and packet_hold.batch_is_held(
+            db, doc.ingest_batch_id
+        ):
+            # A packet in this email awaits the user's split decision: every
+            # dispatch path (retries, sweeps) stops here and leaves METADATA
+            # PENDING; releasing the hold re-opens the barrier.
+            logger.info(
+                "Doc #%d: METADATA waits for a split decision in batch %s",
+                doc_id,
+                doc.ingest_batch_id,
+            )
+            return {"status": "held_for_split", "doc_id": doc_id}
         if not metadata_done:
             # Atomic CAS: only the worker that flips METADATA from PENDING→RUNNING
             # proceeds. Defends against the race between process_document_task's

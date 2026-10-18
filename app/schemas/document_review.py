@@ -174,6 +174,8 @@ class DocumentReview(BaseModel):
     page_count: int
     # Pages after the first where another letter seems to start (a packet to split).
     packet_starts: list[int] = []
+    # The document is held for the decision to split or keep it whole.
+    held_for_split: bool = False
     case_id: str | None
     case: CaseRef | None
     proceeding: ProceedingRef | None

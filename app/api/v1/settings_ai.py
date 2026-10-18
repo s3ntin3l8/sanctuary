@@ -33,6 +33,7 @@ from app.schemas.settings import (
     DebugLogView,
     EmbedIndex,
     ExtractionEngineUpdate,
+    HoldPacketsUpdate,
     ModelsView,
     ReindexJob,
     Role,
@@ -79,11 +80,13 @@ from app.services.embeddings import verify_embedding_dim
 from app.services.user_settings_service import (
     get_ai_debug_capture,
     get_extraction_engine,
+    get_hold_packets,
     get_ocr_concurrency,
     get_reindex_job,
     get_worker_concurrency,
     set_ai_debug_capture,
     set_extraction_engine,
+    set_hold_packets,
     set_ocr_concurrency,
     set_reindex_running,
     set_worker_concurrency,
@@ -172,6 +175,7 @@ def ai_settings(db: Session = Depends(get_db)):
         instances=[_instance(i) for i in list_instances(db)],
         roles=[_role(r, resolved[r]) for r in ROLES],
         extraction_engine=get_extraction_engine(db),  # type: ignore[arg-type]
+        hold_packets=get_hold_packets(db),
         tesseract_available=shutil.which("tesseract") is not None,
         worker_concurrency=get_worker_concurrency(db),
         ocr_concurrency=get_ocr_concurrency(db),
@@ -398,6 +402,17 @@ def reindex_status(db: Session = Depends(get_db)):
 @router.put("/extraction-engine", response_model=ExtractionEngineUpdate)
 def set_engine(body: ExtractionEngineUpdate, db: Session = Depends(get_db)):
     set_extraction_engine(db, body.engine)
+    return body
+
+
+@router.put("/hold-packets", response_model=HoldPacketsUpdate)
+def hold_packets(body: HoldPacketsUpdate, db: Session = Depends(get_db)):
+    """Switch the packet hold. Turning it off releases every document held."""
+    from app.services.ingestion import packet_hold
+
+    set_hold_packets(db, body.enabled)
+    if not body.enabled:
+        packet_hold.release_all(db)
     return body
 
 

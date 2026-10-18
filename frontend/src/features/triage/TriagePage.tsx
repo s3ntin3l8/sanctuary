@@ -29,7 +29,12 @@ import { BundleStateBar } from '../../ui/PipelineBar'
 import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
-import { DocumentReview, ORIGINATOR_COLOR } from '../documents/DocumentReview'
+import {
+  DocumentReview,
+  KeepWholeButton,
+  ORIGINATOR_COLOR,
+  SplitButton,
+} from '../documents/DocumentReview'
 import { BundleTree } from './BundleTree'
 import { ConfirmBundleModal, type ConfirmTarget } from './ConfirmBundleModal'
 import { IngestModal } from './IngestModal'
@@ -690,6 +695,9 @@ function BundleRow({
     action: 'dismiss' | 'delete'
   } | null>(null)
   const processing = b.status === 'processing'
+  // A packet-like PDF waits for the user to split it or keep it whole; the email waits with it.
+  const heldDocs = b.documents.filter((d) => d.held_for_split)
+  const soleHeld = heldDocs.length === 1 ? heldDocs[0] : undefined
   const sourceIcon = { email: 'mail', scan: 'scanner', manual: 'upload_file' }[b.source_type]
   const confidence = b.sub_groups[0]?.case_confidence ?? null
   const confirmable = b.doc_count > 0 && !processing && b.status !== 'stuck'
@@ -849,8 +857,22 @@ function BundleRow({
               <Icon name="alt_route" size={16} />
             </Button>
           )}
-          {processing && <Icon name="hourglass_top" size={16} className="text-warning" />}
-          {!processing && (
+          {heldDocs.length > 0 ? (
+            <>
+              <Badge tone="warning" pill>
+                awaiting split
+              </Badge>
+              {soleHeld && (
+                <>
+                  <SplitButton docId={soleHeld.id} />
+                  <KeepWholeButton docId={soleHeld.id} />
+                </>
+              )}
+            </>
+          ) : (
+            processing && <Icon name="hourglass_top" size={16} className="text-warning" />
+          )}
+          {(!processing || heldDocs.length > 0) && (
             <span className="relative">
               <button
                 ref={menuTrigger}

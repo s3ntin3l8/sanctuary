@@ -732,6 +732,10 @@
             "title": "Extraction Engine",
             "type": "string"
           },
+          "hold_packets": {
+            "title": "Hold Packets",
+            "type": "boolean"
+          },
           "instances": {
             "items": {
               "$ref": "#/components/schemas/AiInstance"
@@ -773,6 +777,7 @@
           "instances",
           "roles",
           "extraction_engine",
+          "hold_packets",
           "tesseract_available",
           "worker_concurrency",
           "ocr_concurrency",
@@ -4411,6 +4416,11 @@
             "title": "Has Original",
             "type": "boolean"
           },
+          "held_for_split": {
+            "default": false,
+            "title": "Held For Split",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -4817,6 +4827,11 @@
             },
             "title": "Grounds",
             "type": "array"
+          },
+          "held_for_split": {
+            "default": false,
+            "title": "Held For Split",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
@@ -7164,6 +7179,19 @@
           }
         },
         "title": "GroupTarget",
+        "type": "object"
+      },
+      "HoldPacketsUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "HoldPacketsUpdate",
         "type": "object"
       },
       "HomeActionItem": {
@@ -10193,6 +10221,19 @@
         "title": "SlicingConfirmed",
         "type": "object"
       },
+      "SlicingKept": {
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "title": "SlicingKept",
+        "type": "object"
+      },
       "SlicingPage": {
         "properties": {
           "blank": {
@@ -10363,6 +10404,11 @@
               }
             ],
             "title": "Error"
+          },
+          "held_for_split": {
+            "default": false,
+            "title": "Held For Split",
+            "type": "boolean"
           },
           "page_count": {
             "title": "Page Count",
@@ -11438,6 +11484,10 @@
             ],
             "title": "Exhibit Label"
           },
+          "held_for_split": {
+            "title": "Held For Split",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -11519,7 +11569,8 @@
           "is_proof",
           "sub_group_id",
           "reference_inherited",
-          "exhibit_label"
+          "exhibit_label",
+          "held_for_split"
         ],
         "title": "TriageDocument",
         "type": "object"
@@ -16937,6 +16988,48 @@
         ]
       }
     },
+    "/api/v1/settings/ai/hold-packets": {
+      "put": {
+        "description": "Switch the packet hold. Turning it off releases every document held.",
+        "operationId": "v1_hold_packets_api_v1_settings_ai_hold_packets_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldPacketsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldPacketsUpdate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Hold Packets",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/settings/ai/instances": {
       "post": {
         "operationId": "v1_create_instance_api_v1_settings_ai_instances_post",
@@ -18459,6 +18552,49 @@
           }
         },
         "summary": "V1 Confirm Document Slicing",
+        "tags": [
+          "slicing"
+        ]
+      }
+    },
+    "/api/v1/slicing/documents/{doc_id}/keep": {
+      "post": {
+        "description": "Keep a packet-like PDF as one document: ends its hold so the email's pipeline\ngoes on, and remembers the choice so a re-extraction never holds it again.",
+        "operationId": "v1_keep_document_whole_api_v1_slicing_documents__doc_id__keep_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlicingKept"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Keep Document Whole",
         "tags": [
           "slicing"
         ]

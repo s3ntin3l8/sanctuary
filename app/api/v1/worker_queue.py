@@ -21,6 +21,7 @@ from app.schemas.worker_queue import (
 )
 from app.services import gmail_import_status
 from app.services.ai_inflight import count_inflight, list_inflight
+from app.services.ingestion import packet_hold
 from app.services.pipeline_status import RELATIONSHIPS_HOLD_REASON, stages_dict
 from app.services.system_status import system_snapshot
 from app.services.triage_bundles import get_slicing_queue
@@ -58,7 +59,7 @@ def _stage_timing(docs: list[Document], stage: str | None) -> dict:
     return {}
 
 
-def _queue_item(item: dict) -> QueueItem:
+def _queue_item(item: dict, held_batches: set[int]) -> QueueItem:
     if item["type"] == "batch":
         batch = item["batch"]
         return QueueItem(
@@ -76,6 +77,13 @@ def _queue_item(item: dict) -> QueueItem:
         and stages_dict(doc).get(PipelineStage.RELATIONSHIPS.value, {}).get("reason")
         == RELATIONSHIPS_HOLD_REASON
     )
+    note = None
+    if doc.held_for_split_at is not None:
+        note = "Awaiting your split decision"
+    elif doc.ingest_batch_id in held_batches:
+        note = "Waiting for a split decision in this email"
+    elif held:
+        note = "Waiting for earlier documents of the case"
     return QueueItem(
         kind="doc",
         stage=item["stage"],
@@ -83,7 +91,7 @@ def _queue_item(item: dict) -> QueueItem:
         doc_id=doc.id,
         batch_id=doc.ingest_batch_id,
         doc_count=1,
-        note="Waiting for earlier documents of the case" if held else None,
+        note=note,
         **_stage_timing([doc], item["stage"]),
     )
 
@@ -115,8 +123,9 @@ def _slicing_item(batch: IngestBatch) -> tuple[bool, QueueItem]:
 def queue_view(db: Session, user: User) -> QueueView:
     running, pending, failed = _get_queue_docs(db, owner_id=user.id)
     raw_items = _build_queue_items(running, pending)
-    executing = [_queue_item(i) for i in raw_items if i["executing"]]
-    queued = [_queue_item(i) for i in raw_items if not i["executing"]]
+    held_batches = packet_hold.held_batch_ids(db)
+    executing = [_queue_item(i, held_batches) for i in raw_items if i["executing"]]
+    queued = [_queue_item(i, held_batches) for i in raw_items if not i["executing"]]
     # A scan waiting for the user's cuts stays visible (and keeps the rail badge
     # lit) until it is confirmed, so closing the upload dialog never loses it.
     for preparing, item in map(_slicing_item, get_slicing_queue(db, owner_id=user.id)):

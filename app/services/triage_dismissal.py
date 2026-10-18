@@ -53,7 +53,11 @@ def _has_in_flight_stage(
 def dismiss_bundle(
     db: Session, batch_id: int | None = None, doc_id: int | None = None
 ) -> bool:
-    """Mark a batch or loose document (and children) as DISMISSED."""
+    """Mark a batch or loose document (and children) as DISMISSED.
+
+    Dismissing a document ends its packet hold (the rest of the email goes on);
+    a dismissed batch stays as it is, its held packet included.
+    """
     if batch_id:
         batch = db.get(IngestBatch, batch_id)
         if batch:
@@ -82,6 +86,10 @@ def dismiss_bundle(
                 {"status": ActionItemStatus.DISMISSED}, synchronize_session=False
             )
             db.commit()
+            # A dismissed packet no longer awaits a decision; its siblings go on.
+            from app.services.ingestion import packet_hold
+
+            packet_hold.release(db, doc)
             return True
     return False
 
