@@ -399,8 +399,14 @@ def keep_document_whole(
     doc: Document = Depends(require_document_access(edit=True)),
 ):
     """Keep a packet-like PDF as one document: ends its hold so the email's pipeline
-    goes on, and remembers the choice so a re-extraction never holds it again."""
+    goes on, and remembers the choice so a re-extraction never holds it again.
+    Refused (409 ``not_held``) when the document is not held, so a stale click
+    cannot mark a document the user never reviewed."""
     from app.services.ingestion import packet_hold
 
+    if doc.held_for_split_at is None:
+        raise ApiError(
+            409, "not_held", "This document is not waiting for a split decision."
+        )
     packet_hold.release(db, doc, kept=True)
     return SlicingKept(document_id=doc.id)

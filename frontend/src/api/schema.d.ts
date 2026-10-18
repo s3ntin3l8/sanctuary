@@ -2615,6 +2615,8 @@ export interface paths {
          * V1 Keep Document Whole
          * @description Keep a packet-like PDF as one document: ends its hold so the email's pipeline
          *     goes on, and remembers the choice so a re-extraction never holds it again.
+         *     Refused (409 ``not_held``) when the document is not held, so a stale click
+         *     cannot mark a document the user never reviewed.
          */
         post: operations["v1_keep_document_whole_api_v1_slicing_documents__doc_id__keep_post"];
         delete?: never;

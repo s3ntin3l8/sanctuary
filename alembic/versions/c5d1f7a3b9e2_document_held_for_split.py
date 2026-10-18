@@ -22,7 +22,14 @@ def upgrade() -> None:
     op.add_column(
         "documents", sa.Column("held_for_split_at", sa.DateTime(), nullable=True)
     )
+    op.create_index(
+        "ix_documents_held_for_split_at",
+        "documents",
+        ["held_for_split_at"],
+        postgresql_where=sa.text("held_for_split_at IS NOT NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_documents_held_for_split_at", table_name="documents")
     op.drop_column("documents", "held_for_split_at")

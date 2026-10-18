@@ -263,6 +263,7 @@ def metadata_task(self, doc_id: int):
         claim_stage_for_dispatch,
         mark_completed,
         mark_failed_with_cascade,
+        reset_stage,
     )
 
     db = get_db_session()
@@ -276,14 +277,18 @@ def metadata_task(self, doc_id: int):
         metadata_done = (
             stages.get(PipelineStage.METADATA.value, {}).get("status") == "completed"
         )
-        if stages.get(PipelineStage.METADATA.value, {}).get(
-            "status"
-        ) == StageStatus.PENDING.value and packet_hold.batch_is_held(
-            db, doc.ingest_batch_id
-        ):
+        metadata_status = stages.get(PipelineStage.METADATA.value, {}).get("status")
+        if metadata_status in (
+            StageStatus.PENDING.value,
+            StageStatus.RUNNING.value,
+            StageStatus.RETRYING.value,
+        ) and packet_hold.batch_is_held(db, doc.ingest_batch_id):
             # A packet in this email awaits the user's split decision: every
-            # dispatch path (retries, sweeps) stops here and leaves METADATA
-            # PENDING; releasing the hold re-opens the barrier.
+            # dispatch path (first run, Celery retries, sweeps) stops here. A
+            # stage already in flight is put back to PENDING so the release
+            # (resume_batch / the recovery sweep) re-dispatches it.
+            if metadata_status != StageStatus.PENDING.value:
+                reset_stage(doc_id, PipelineStage.METADATA, db, force=True)
             logger.info(
                 "Doc #%d: METADATA waits for a split decision in batch %s",
                 doc_id,
@@ -313,6 +318,13 @@ def metadata_task(self, doc_id: int):
                 _run_phase1_summary(doc_id)
             except ModelGateTimeout as exc:
                 _retry_or_fail_after_gate_timeout(self, doc_id, exc)
+            db.expire_all()
+            if packet_hold.batch_is_held(db, doc.ingest_batch_id):
+                # A re-extraction found a packet while this run was in flight:
+                # what it just read was the packet taken as one letter, so
+                # redo it after the decision instead of fanning out.
+                reset_stage(doc_id, PipelineStage.METADATA, db, force=True)
+                return {"status": "held_for_split", "doc_id": doc_id}
 
         # Re-read after _run_phase1_summary, which manages its own DB sessions.
         db.refresh(doc)

@@ -188,6 +188,53 @@ def test_metadata_task_leaves_a_held_batch_pending(db_session):
     assert _stage(db_session, sibling.id, "metadata").status == "pending"
 
 
+@pytest.mark.parametrize("status", ["running", "retrying"])
+def test_metadata_in_flight_is_put_back_when_a_reextract_holds_the_batch(
+    db_session, status
+):
+    batch = _batch(db_session)
+    _doc(db_session, batch, held=True)
+    sibling = _doc(db_session, batch)
+    db_session.query(DocumentPipelineStage).filter_by(
+        document_id=sibling.id, stage="metadata"
+    ).update({"status": status})
+    db_session.commit()
+
+    with patch("app.tasks.document_processing._run_phase1_summary") as run:
+        result = metadata_task.run(sibling.id)
+
+    assert result["status"] == "held_for_split"
+    run.assert_not_called()
+    assert _stage(db_session, sibling.id, "metadata").status == "pending"
+
+    # Released: the barrier re-dispatches it (and the sweep would too).
+    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        packet_hold.release_all(db_session)
+    assert sibling.id in [c.args[1] for c in dispatch.call_args_list]
+
+
+def test_a_run_that_finishes_after_a_hold_appeared_is_redone_later(db_session):
+    batch = _batch(db_session)
+    packet = _doc(db_session, batch)
+    sibling = _doc(db_session, batch)
+
+    def hold_meanwhile(doc_id):
+        d = db_session.get(Document, packet.id)
+        d.held_for_split_at = datetime.now(UTC)
+        db_session.query(DocumentPipelineStage).filter_by(
+            document_id=doc_id, stage="metadata"
+        ).update({"status": "completed"})
+        db_session.commit()
+
+    with patch(
+        "app.tasks.document_processing._run_phase1_summary", side_effect=hold_meanwhile
+    ):
+        result = metadata_task.run(sibling.id)
+
+    assert result["status"] == "held_for_split"
+    assert _stage(db_session, sibling.id, "metadata").status == "pending"
+
+
 # --- clearing the stamp -----------------------------------------------------------------
 
 

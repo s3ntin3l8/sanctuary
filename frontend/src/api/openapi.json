@@ -18559,7 +18559,7 @@
     },
     "/api/v1/slicing/documents/{doc_id}/keep": {
       "post": {
-        "description": "Keep a packet-like PDF as one document: ends its hold so the email's pipeline\ngoes on, and remembers the choice so a re-extraction never holds it again.",
+        "description": "Keep a packet-like PDF as one document: ends its hold so the email's pipeline\ngoes on, and remembers the choice so a re-extraction never holds it again.\nRefused (409 ``not_held``) when the document is not held, so a stale click\ncannot mark a document the user never reviewed.",
         "operationId": "v1_keep_document_whole_api_v1_slicing_documents__doc_id__keep_post",
         "parameters": [
           {

@@ -179,6 +179,10 @@ def test_keep_as_one_releases_the_email_and_is_remembered(
     assert db_session.get(IngestBatch, batch.id).metadata_phase_queued_at is not None
     assert pipeline.release.call_count == 2
 
+    # Only a held document can be kept: a stale click is refused.
+    again = client.post(f"/api/v1/slicing/documents/{packet.id}/keep")
+    assert again.status_code == 409 and again.json()["code"] == "not_held"
+
     # A re-extraction decides again, but never holds a document the user kept.
     clear_extraction_stamp(packet)
     db_session.commit()

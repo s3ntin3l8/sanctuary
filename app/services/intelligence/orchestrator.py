@@ -133,6 +133,13 @@ def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
     we'll retry" (still in flight). The latter must NOT trigger the brief
     or it fires with empty claims data. See _GATE_BLOCK_SKIP_REASONS above.
 
+    Documents of a batch held for a split decision (``held_for_split_at`` on any
+    document of that batch, see ingestion/packet_hold.py) are exempt from the
+    readiness check as a whole: their CLAIMS cannot finish until the user
+    decides, and the case must not wait on that. The exemption ends with the
+    hold, so once the batch is released and its CLAIMS pend again the case
+    waits for them like any other (the brief self-heals on the next wave).
+
     Mirrors claim_batch_for_analysis: single UPDATE ... WHERE brief_queued_at
     IS NULL collapses near-simultaneous dispatches when N docs in the same
     case complete CLAIMS within a few seconds of each other. The brief task
