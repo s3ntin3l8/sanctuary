@@ -71,7 +71,7 @@ def test_a_missing_page_reading_is_skipped_not_guessed():
 
 
 def _doc(meta, file_path="/data/x.pdf"):
-    return SimpleNamespace(meta=meta, file_path=file_path)
+    return SimpleNamespace(meta=meta, file_path=file_path, content=None)
 
 
 def _chunks(texts):

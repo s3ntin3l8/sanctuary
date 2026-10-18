@@ -9,7 +9,7 @@ from app.config import EXTRACT_TASK_SOFT_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
 from app.core.safe_error import describe_exception
 from app.dependencies import get_db_session
 from app.models.database import Document
-from app.models.enums import PipelineStage
+from app.models.enums import PipelineStage, StageStatus
 from app.services.intelligence._ai_call import is_transient_ai_http_error
 from app.services.model_gate import ModelGateTimeout
 from app.services.pipeline_status import (
@@ -258,10 +258,12 @@ def metadata_task(self, doc_id: int):
     LLM calls in flight at the same time without blocking the ingest slot
     that does Docling/OCR.
     """
+    from app.services.ingestion import packet_hold
     from app.services.pipeline_status import (
         claim_stage_for_dispatch,
         mark_completed,
         mark_failed_with_cascade,
+        reset_stage,
     )
 
     db = get_db_session()
@@ -275,6 +277,24 @@ def metadata_task(self, doc_id: int):
         metadata_done = (
             stages.get(PipelineStage.METADATA.value, {}).get("status") == "completed"
         )
+        metadata_status = stages.get(PipelineStage.METADATA.value, {}).get("status")
+        if metadata_status in (
+            StageStatus.PENDING.value,
+            StageStatus.RUNNING.value,
+            StageStatus.RETRYING.value,
+        ) and packet_hold.batch_is_held(db, doc.ingest_batch_id):
+            # A packet in this email awaits the user's split decision: every
+            # dispatch path (first run, Celery retries, sweeps) stops here. A
+            # stage already in flight is put back to PENDING so the release
+            # (resume_batch / the recovery sweep) re-dispatches it.
+            if metadata_status != StageStatus.PENDING.value:
+                reset_stage(doc_id, PipelineStage.METADATA, db, force=True)
+            logger.info(
+                "Doc #%d: METADATA waits for a split decision in batch %s",
+                doc_id,
+                doc.ingest_batch_id,
+            )
+            return {"status": "held_for_split", "doc_id": doc_id}
         if not metadata_done:
             # Atomic CAS: only the worker that flips METADATA from PENDING→RUNNING
             # proceeds. Defends against the race between process_document_task's
@@ -298,6 +318,13 @@ def metadata_task(self, doc_id: int):
                 _run_phase1_summary(doc_id)
             except ModelGateTimeout as exc:
                 _retry_or_fail_after_gate_timeout(self, doc_id, exc)
+            db.expire_all()
+            if packet_hold.batch_is_held(db, doc.ingest_batch_id):
+                # A re-extraction found a packet while this run was in flight:
+                # what it just read was the packet taken as one letter, so
+                # redo it after the decision instead of fanning out.
+                reset_stage(doc_id, PipelineStage.METADATA, db, force=True)
+                return {"status": "held_for_split", "doc_id": doc_id}
 
         # Re-read after _run_phase1_summary, which manages its own DB sessions.
         db.refresh(doc)

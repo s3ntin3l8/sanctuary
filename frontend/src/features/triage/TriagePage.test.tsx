@@ -686,3 +686,95 @@ test('a single later start is worded as one more letter', async () => {
     'more than one letter: another starts on page 3',
   )
 })
+
+function heldView(heldIds: number[]) {
+  const documents = triageBundle.documents.map((d) =>
+    heldIds.includes(d.id) ? { ...d, held_for_split: true } : d,
+  )
+  return {
+    ...triageView,
+    bundles: [
+      {
+        ...triageBundle,
+        status: 'processing' as const,
+        pipeline: { ...triageBundle.pipeline, active_label: 'Awaiting split' },
+        documents,
+      },
+    ],
+  }
+}
+
+test('a bundle with a held packet shows "awaiting split" with Split and Keep as one', async () => {
+  vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
+  const fetch = stub({
+    'GET /api/v1/triage': { body: heldView([2211]) },
+    'POST /api/v1/slicing/documents/2211/keep': { body: { document_id: 2211 } },
+    'POST /api/v1/slicing/documents/2211': { body: {} },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  const row = (await screen.findByText('Klageerwiderung')).closest('li')
+  if (!row) throw new Error('row')
+  expect(within(row).getByText('awaiting split')).toBeVisible()
+  // No hourglass, and the bundle can still be archived or deleted while it waits.
+  expect(within(row).queryByText('hourglass_top')).toBeNull()
+  expect(within(row).getByRole('button', { name: 'More actions' })).toBeVisible()
+
+  await user.click(within(row).getByRole('button', { name: 'Keep as one' }))
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'POST' && r.url.endsWith('/slicing/documents/2211/keep'),
+      ),
+    ).toBe(true),
+  )
+  await user.click(within(row).getByRole('button', { name: 'Split' }))
+  await waitFor(() => expect(navigation.leaveTo).toHaveBeenCalledWith('/document/2211/slice'))
+})
+
+test('with two held packets the row asks for no decision itself', async () => {
+  stub({ 'GET /api/v1/triage': { body: heldView([2211, 2212]) } })
+  renderAt('/triage', <TriagePage />)
+  const row = (await screen.findByText('Klageerwiderung')).closest('li')
+  if (!row) throw new Error('row')
+  expect(within(row).getByText('awaiting split')).toBeVisible()
+  expect(within(row).queryByRole('button', { name: 'Keep as one' })).toBeNull()
+  expect(within(row).queryByRole('button', { name: 'Split' })).toBeNull()
+})
+
+test('a held packet explains the wait in its review and can be kept whole', async () => {
+  const fetch = stub({
+    'GET /api/v1/triage': { body: heldView([2211]) },
+    'GET /api/v1/documents/2211/review': {
+      body: { ...documentReview, packet_starts: [3], held_for_split: true },
+    },
+    'POST /api/v1/slicing/documents/2211/keep': { body: { document_id: 2211 } },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  const hint = await screen.findByTestId('packet-hint')
+  expect(hint).toHaveTextContent('Nothing in this email is read by the AI until you split it')
+  await user.click(within(hint).getByRole('button', { name: /Keep as one/ }))
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'POST' && r.url.endsWith('/slicing/documents/2211/keep'),
+      ),
+    ).toBe(true),
+  )
+})
+
+test('an unheld packet hint offers only the split', async () => {
+  stub({
+    'GET /api/v1/documents/2211/review': {
+      body: { ...documentReview, packet_starts: [3] },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  const hint = await screen.findByTestId('packet-hint')
+  expect(hint).toHaveTextContent('The AI reads it as one document until it is split.')
+  expect(within(hint).queryByRole('button', { name: /Keep as one/ })).toBeNull()
+})

@@ -11,6 +11,7 @@ import {
   useRoleHealth,
   useSetConcurrency,
   useSetEngine,
+  useSetHoldPackets,
   useSetRole,
   useTestInstance,
   useUpdateInstance,
@@ -24,6 +25,7 @@ import { Modal } from '../../ui/Modal'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
 import { QueryState } from '../../ui/QueryState'
+import { Toggle } from '../../ui/Toggle'
 import { useToast } from '../../ui/toast'
 
 type Instance = Schemas['AiInstance']
@@ -69,6 +71,7 @@ export function AiPage() {
       <EmbeddingIndex settings={settings} />
       <ExtractionEngine
         engine={settings.extraction_engine}
+        holdPackets={settings.hold_packets}
         tesseractAvailable={settings.tesseract_available}
       />
       <Workers settings={settings} />
@@ -470,13 +473,17 @@ function EmbeddingIndex({ settings }: { settings: Schemas['AiSettingsView'] }) {
 
 function ExtractionEngine({
   engine,
+  holdPackets,
   tesseractAvailable,
 }: {
   engine: Schemas['AiSettingsView']['extraction_engine']
+  holdPackets: boolean
   tesseractAvailable: boolean
 }) {
   const set = useSetEngine()
+  const setHold = useSetHoldPackets()
   const [current, setCurrent] = useState(engine)
+  const [hold, setHoldState] = useState(holdPackets)
   const toast = useToast()
   return (
     <SettingsCard
@@ -531,6 +538,33 @@ function ExtractionEngine({
           when Chandra fails, cannot read scanned pages.
         </p>
       )}
+      <div className="flex items-center gap-3 border-t border-line2 pt-3 text-[12.5px]">
+        <div className="flex-1">
+          <div className="font-semibold">Hold email PDFs that look like several letters</div>
+          <div className="text-[11px] text-muted">
+            The email waits for you to split the PDF or keep it as one before the AI reads anything.
+            Off: the PDF is only flagged, and the AI reads it as one document.
+          </div>
+        </div>
+        <Toggle
+          checked={hold}
+          label="Hold email PDFs that look like several letters"
+          disabled={setHold.isPending}
+          onChange={(next) => {
+            setHoldState(next)
+            setHold.mutate(
+              { enabled: next },
+              {
+                onSuccess: () => toast(next ? 'Packets are held for splitting' : 'Holds released'),
+                onError: (err) => {
+                  setHoldState(!next)
+                  toast(err.message, 'error')
+                },
+              },
+            )
+          }}
+        />
+      </div>
     </SettingsCard>
   )
 }

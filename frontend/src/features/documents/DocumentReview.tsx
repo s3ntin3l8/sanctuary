@@ -6,6 +6,7 @@ import {
   useActionStatus,
   useDocumentReview,
   useDraftDecision,
+  useKeepDocumentWhole,
   useReact,
   useEvidenceDecision,
   useRelationshipDecision,
@@ -177,15 +178,18 @@ function PacketHint({ review }: { review: Review }) {
         {starts.length === 1
           ? `This PDF seems to hold more than one letter: another starts on page ${starts[0]}.`
           : `This PDF seems to hold several letters: more start on pages ${starts.join(', ')}.`}{' '}
-        The AI reads it as one document until it is split.
+        {review.held_for_split
+          ? 'Nothing in this email is read by the AI until you split it or keep it as one.'
+          : 'The AI reads it as one document until it is split.'}
       </p>
       <SplitButton docId={review.id} />
+      {review.held_for_split && <KeepWholeButton docId={review.id} />}
     </section>
   )
 }
 
 /** Several letters in one PDF (a scanned packet that arrived by email): open the cut review. */
-function SplitButton({ docId }: { docId: number }) {
+export function SplitButton({ docId }: { docId: number }) {
   const start = useStartDocumentSlicing()
   const toast = useToast()
   return (
@@ -202,6 +206,23 @@ function SplitButton({ docId }: { docId: number }) {
       }
     >
       <Icon name="content_cut" size={12} /> Split
+    </Button>
+  )
+}
+
+/** A held packet that is one document after all: release it, and the email's processing goes on. */
+export function KeepWholeButton({ docId }: { docId: number }) {
+  const keep = useKeepDocumentWhole()
+  const toast = useToast()
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={keep.isPending}
+      title="Keep this PDF as one document and continue processing"
+      onClick={() => keep.mutate(docId, { onError: (e) => toast(e.message, 'error') })}
+    >
+      <Icon name="check" size={12} /> Keep as one
     </Button>
   )
 }

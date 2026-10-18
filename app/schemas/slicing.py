@@ -39,6 +39,8 @@ class SlicingView(BaseModel):
     progress_done: int | None = None
     progress_total: int | None = None
     progress_phase: Literal["ocr", "ai"] | None = None
+    # The document (and its email) waits for the decision to split or keep it whole.
+    held_for_split: bool = False
 
 
 class SliceCut(BaseModel):
@@ -57,3 +59,7 @@ class SlicingConfirm(BaseModel):
 
 class SlicingConfirmed(BaseModel):
     document_ids: list[int]
+
+
+class SlicingKept(BaseModel):
+    document_id: int

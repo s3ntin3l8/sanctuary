@@ -313,6 +313,8 @@ def list_action_items(
 class TriageDocument(BaseModel):
     pipeline_state: str
     needs_review: bool
+    # Waiting for the user to split it or keep it whole (agents cannot decide this).
+    held_for_split: bool
     significance: str | None
     document: DocumentRef
 
@@ -357,6 +359,7 @@ def list_triage_inbox(
                 TriageDocument(
                     pipeline_state=d.pipeline_state.value,
                     needs_review=bool(d.needs_review),
+                    held_for_split=d.held_for_split_at is not None,
                     significance=d.significance_tier.value
                     if d.significance_tier
                     else None,

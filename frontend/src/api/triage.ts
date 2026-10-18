@@ -556,3 +556,17 @@ export function useStartDocumentSlicing() {
     mutationFn: (docId) => unwrap(api.POST('/api/v1/slicing/documents/{doc_id}', docPath(docId))),
   })
 }
+
+/** Keep a held packet as one document: ends the hold so the email's processing goes on. */
+export function useKeepDocumentWhole() {
+  const queryClient = useQueryClient()
+  return useMutation<S['SlicingKept'], ApiError, number>({
+    mutationFn: (docId) =>
+      unwrap(api.POST('/api/v1/slicing/documents/{doc_id}/keep', docPath(docId))),
+    onSuccess: () => {
+      for (const key of ['triage', 'document', 'slicing', 'shell', 'worker-queue']) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
+    },
+  })
+}

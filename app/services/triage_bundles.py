@@ -144,6 +144,8 @@ class BundleView:
         """Human label for current pipeline activity, or None if nothing in flight."""
         from app.services.pipeline_status import STAGE_REGISTRY
 
+        if any(d.held_for_split_at is not None for d in self.documents):
+            return "Awaiting split"
         order_map = {spec.stage.value: spec.order for spec in STAGE_REGISTRY.values()}
         running: list[str] = []
         pending: list[str] = []

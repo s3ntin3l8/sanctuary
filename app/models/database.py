@@ -119,6 +119,13 @@ class Document(Base):
         Index("ix_documents_case_created", "case_id", "ingest_date"),
         Index("ix_documents_needs_review_created", "needs_review", "ingest_date"),
         Index("ix_documents_pipeline_state", "pipeline_state"),
+        # Only the few packets awaiting a split decision: the barrier and the
+        # sweeps look batches up by it.
+        Index(
+            "ix_documents_held_for_split_at",
+            "held_for_split_at",
+            postgresql_where=_sa_text("held_for_split_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -184,6 +191,11 @@ class Document(Base):
     # Set by the explicit "Confirm bundle" action; clears `pending_confirmation`
     # for good (a later relationship decision or re-enrich must not undo it).
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # An email attachment that looks like several letters waits for the user's
+    # split-or-keep decision, and its whole batch waits with it (see
+    # app/services/ingestion/packet_hold.py). A column rather than `meta` because
+    # EXTRACT replaces `meta` wholesale; cleared with the extraction stamp.
+    held_for_split_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Pipeline tracking
     pipeline_state: Mapped[PipelineState] = mapped_column(

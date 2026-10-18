@@ -83,7 +83,9 @@ def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
 
     Readiness condition: every document in the batch has EXTRACT completed,
     failed, or skipped (a failed EXTRACT doesn't block the barrier — it just
-    means that doc's own METADATA claim will no-op when dispatched).
+    means that doc's own METADATA claim will no-op when dispatched). A document
+    held for a split decision (``Document.held_for_split_at``, see
+    ingestion/packet_hold.py) holds the whole batch until it is released.
     """
     result = db.execute(
         text(
@@ -101,6 +103,11 @@ def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
                       AND dps.stage = 'extract'
                       AND dps.status IN ('completed', 'failed', 'skipped')
                   )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM documents
+                WHERE ingest_batch_id = :batch_id
+                  AND held_for_split_at IS NOT NULL
               )
             """
         ),
@@ -126,6 +133,13 @@ def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
     we'll retry" (still in flight). The latter must NOT trigger the brief
     or it fires with empty claims data. See _GATE_BLOCK_SKIP_REASONS above.
 
+    Documents of a batch held for a split decision (``held_for_split_at`` on any
+    document of that batch, see ingestion/packet_hold.py) are exempt from the
+    readiness check as a whole: their CLAIMS cannot finish until the user
+    decides, and the case must not wait on that. The exemption ends with the
+    hold, so once the batch is released and its CLAIMS pend again the case
+    waits for them like any other (the brief self-heals on the next wave).
+
     Mirrors claim_batch_for_analysis: single UPDATE ... WHERE brief_queued_at
     IS NULL collapses near-simultaneous dispatches when N docs in the same
     case complete CLAIMS within a few seconds of each other. The brief task
@@ -145,6 +159,11 @@ def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
               AND NOT EXISTS (
                 SELECT 1 FROM documents
                 WHERE case_id = :case_id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM documents held
+                    WHERE held.ingest_batch_id = documents.ingest_batch_id
+                      AND held.held_for_split_at IS NOT NULL
+                  )
                   AND NOT EXISTS (
                     SELECT 1 FROM document_pipeline_stages dps
                     WHERE dps.document_id = documents.id

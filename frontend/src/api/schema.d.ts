@@ -1998,6 +1998,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/ai/hold-packets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * V1 Hold Packets
+         * @description Switch the packet hold. Turning it off releases every document held.
+         */
+        put: operations["v1_hold_packets_api_v1_settings_ai_hold_packets_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ai/instances": {
         parameters: {
             query?: never;
@@ -2576,6 +2596,29 @@ export interface paths {
          * @description Replace the document by its parts. Refused when it carries your own work.
          */
         post: operations["v1_confirm_document_slicing_api_v1_slicing_documents__doc_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/documents/{doc_id}/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Keep Document Whole
+         * @description Keep a packet-like PDF as one document: ends its hold so the email's pipeline
+         *     goes on, and remembers the choice so a re-extraction never holds it again.
+         *     Refused (409 ``not_held``) when the document is not held, so a stale click
+         *     cannot mark a document the user never reviewed.
+         */
+        post: operations["v1_keep_document_whole_api_v1_slicing_documents__doc_id__keep_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3418,6 +3461,8 @@ export interface components {
              * @enum {string}
              */
             extraction_engine: "chandra" | "docling";
+            /** Hold Packets */
+            hold_packets: boolean;
             /** Instances */
             instances: components["schemas"]["AiInstance"][];
             /** Ocr Concurrency */
@@ -4532,6 +4577,11 @@ export interface components {
             grounds: components["schemas"]["GroundView"][];
             /** Has Original */
             has_original: boolean;
+            /**
+             * Held For Split
+             * @default false
+             */
+            held_for_split: boolean;
             /** Id */
             id: number;
             /** Ingest Date */
@@ -4621,6 +4671,11 @@ export interface components {
             evidence_proposals: components["schemas"]["EvidenceProposalView"][];
             /** Grounds */
             grounds: components["schemas"]["GroundView"][];
+            /**
+             * Held For Split
+             * @default false
+             */
+            held_for_split: boolean;
             /** Id */
             id: number;
             /** Ingest Date */
@@ -5377,6 +5432,11 @@ export interface components {
         GroupTarget: {
             /** Lead Doc Id */
             lead_doc_id?: number | null;
+        };
+        /** HoldPacketsUpdate */
+        HoldPacketsUpdate: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** HomeActionItem */
         HomeActionItem: {
@@ -6340,6 +6400,11 @@ export interface components {
             /** Document Ids */
             document_ids: number[];
         };
+        /** SlicingKept */
+        SlicingKept: {
+            /** Document Id */
+            document_id: number;
+        };
         /** SlicingPage */
         SlicingPage: {
             /**
@@ -6388,6 +6453,11 @@ export interface components {
             document_id?: number | null;
             /** Error */
             error: string | null;
+            /**
+             * Held For Split
+             * @default false
+             */
+            held_for_split: boolean;
             /** Page Count */
             page_count: number;
             /** Pages */
@@ -6701,6 +6771,8 @@ export interface components {
             depth: number;
             /** Exhibit Label */
             exhibit_label: string | null;
+            /** Held For Split */
+            held_for_split: boolean;
             /** Id */
             id: number;
             /** Is Proof */
@@ -10557,6 +10629,39 @@ export interface operations {
             };
         };
     };
+    v1_hold_packets_api_v1_settings_ai_hold_packets_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HoldPacketsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldPacketsUpdate"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_create_instance_api_v1_settings_ai_instances_post: {
         parameters: {
             query?: never;
@@ -11671,6 +11776,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SlicingConfirmed"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_keep_document_whole_api_v1_slicing_documents__doc_id__keep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingKept"];
                 };
             };
             /** @description Error */

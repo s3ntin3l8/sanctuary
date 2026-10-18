@@ -660,6 +660,28 @@ def set_extraction_engine(db, engine: str) -> None:
     db.commit()
 
 
+def get_hold_packets(db) -> bool:
+    """True while a packet-like email attachment waits for a split decision (default on)."""
+    data = _get_or_create_app(db).settings_json or {}
+    return bool(data.get("ingestion", {}).get("hold_packets", True))
+
+
+def set_hold_packets(db, value: bool) -> None:
+    """Persist the packet-hold switch and emit an audit event."""
+    settings = _get_or_create_app(db)
+    data = dict(settings.settings_json or {})
+    ingestion = dict(data.get("ingestion", {}))
+    ingestion["hold_packets"] = value
+    data["ingestion"] = ingestion
+    settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.SETTINGS_INGESTION_CHANGED,
+        payload={"hold_packets": value},
+    )
+    db.commit()
+
+
 AI_CONCURRENCY_MIN = 1
 AI_CONCURRENCY_MAX = 16
 DEFAULT_AI_CONCURRENCY = 2

@@ -26,6 +26,7 @@ from app.models.schemas import (
     ExtractionConfidenceSchema,
 )
 from app.repositories.ingest_batch import IngestBatchRepository
+from app.services.ingestion import packet_hold
 from app.services.ingestion.converters import (
     ALLOWED_EXTENSIONS,
     MAX_FILE_SIZE,
@@ -491,13 +492,15 @@ def process_uploaded_document(doc: Document, db: Session):
     elif not doc.title:
         doc.title = extract_clean_title(safe_filename, "")
     # Facts about where the document came from that conversion cannot know:
-    # a person cut it out of a larger PDF; a mail was a pure inline forward; an exhibit label from its mail.
-    for key in ("slice_range", "inline_forward", "exhibit"):
+    # a person cut it out of a larger PDF; a mail was a pure inline forward; an exhibit label from its mail;
+    # the user chose to keep a packet-like PDF as one document.
+    for key in ("slice_range", "inline_forward", "exhibit", "packet_kept"):
         carried = (doc.meta or {}).get(key)
         if carried:
             conversion_metadata[key] = carried
     doc.meta = conversion_metadata
     _flag_packet(doc)
+    packet_hold.apply(doc, db)
 
     _apply_script_extractors(doc, markdown_content or "", db)
 
@@ -513,7 +516,8 @@ def _flag_packet(doc: Document) -> None:
     """Note, in ``meta["packet_starts"]``, the pages where another letter seems to begin.
 
     Only for a PDF nobody has cut yet that was read page by page: the review
-    then offers to split it. Cleared when the extraction is redone.
+    then offers to split it, and an email attachment is held for that decision
+    (``packet_hold.apply``). Cleared when the extraction is redone.
     """
     from app.services.ingestion import page_text
     from app.services.ingestion.slicer import likely_document_starts

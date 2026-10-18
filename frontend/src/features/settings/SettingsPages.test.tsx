@@ -259,6 +259,36 @@ test('ai: warns when the tesseract binary is missing, whichever engine is select
   expect(await screen.findByText(/tesseract binary is not installed/)).toBeVisible()
 })
 
+test('ai: the packet hold switch is on by default, saves, and rolls back on an error', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/ai': { body: aiSettings },
+    'GET /api/v1/settings/ai/health': {
+      body: {
+        chat: { ok: true, provider: 'ollama', detail: '' },
+        embed: { ok: true, provider: 'ollama', detail: '' },
+        ocr: { ok: true, provider: 'ollama', detail: '' },
+      },
+    },
+    'PUT /api/v1/settings/ai/hold-packets': {
+      status: 500,
+      body: { detail: 'boom', code: 'error' },
+    },
+  })
+  renderAt('/settings/ai', <AiPage />)
+  const user = userEvent.setup()
+  const toggle = await screen.findByRole('switch', {
+    name: 'Hold email PDFs that look like several letters',
+  })
+  expect(toggle).toBeChecked()
+  await user.click(toggle)
+  await waitFor(async () =>
+    expect(await postedJson(fetch, 'PUT', '/hold-packets')).toEqual({ enabled: false }),
+  )
+  // The failed save puts the switch back.
+  await waitFor(() => expect(toggle).toBeChecked())
+  expect(await screen.findByText('boom')).toBeVisible()
+})
+
 test('identity: own-side parties split on lines as well as commas', async () => {
   const identity = {
     own_self: 'Björn Hansen',
