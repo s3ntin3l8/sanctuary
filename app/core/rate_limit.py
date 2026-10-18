@@ -18,6 +18,7 @@ from slowapi.util import get_remote_address
 from starlette.types import ASGIApp
 
 from app.config import RATE_LIMIT_STORAGE_URI
+from app.core.safe_error import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,10 @@ def _maybe_warn(exc: Exception) -> None:
     global _last_warn_at
     now = time.monotonic()
     if now - _last_warn_at >= _WARN_INTERVAL:
-        logger.warning("rate_limit: storage unavailable (%s), failing open", exc)
+        logger.warning(
+            "rate_limit: storage unavailable (%s), failing open",
+            describe_exception(exc),
+        )
         _last_warn_at = now
 
 

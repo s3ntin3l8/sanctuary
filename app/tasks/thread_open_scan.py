@@ -1,5 +1,6 @@
 import logging
 
+from app.core.safe_error import describe_exception
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ def thread_open_scan_task():
         updated = scan_and_close_threads(db)
         return {"status": "success", "closed": updated}
     except Exception as e:
-        logger.error(f"Thread-open scan failed: {e}", exc_info=True)
+        logger.error(f"Thread-open scan failed: {describe_exception(e)}", exc_info=True)
         return {"status": "failed", "error": str(e)}
     finally:
         db.close()

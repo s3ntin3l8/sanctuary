@@ -6,6 +6,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.config import EXTRACT_TASK_SOFT_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
+from app.core.safe_error import describe_exception
 from app.dependencies import get_db_session
 from app.models.database import Document
 from app.models.enums import PipelineStage
@@ -166,7 +167,9 @@ def process_document_task(self, doc_id: int):
             if e.detail:
                 error_msg += f" ({e.detail})"
             mark_failed_with_cascade(doc_id, PipelineStage.EXTRACT, db, error=error_msg)
-            logger.warning(f"Document {doc_id} ingestion failed: {e}")
+            logger.warning(
+                f"Document {doc_id} ingestion failed: {describe_exception(e)}"
+            )
             _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
         except SoftTimeLimitExceeded as e:
@@ -177,7 +180,9 @@ def process_document_task(self, doc_id: int):
             # task_time_limit kill. No retry: the soft limit means "wrap up
             # now," so cascade the failure and return cleanly instead.
             db.rollback()
-            logger.error(f"Document {doc_id} soft time limit exceeded: {e}")
+            logger.error(
+                f"Document {doc_id} soft time limit exceeded: {describe_exception(e)}"
+            )
             mark_failed_with_cascade(
                 doc_id,
                 PipelineStage.EXTRACT,
@@ -188,7 +193,10 @@ def process_document_task(self, doc_id: int):
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
         except Exception as e:
             db.rollback()
-            logger.error(f"Document {doc_id} processing failed: {e}", exc_info=True)
+            logger.error(
+                f"Document {doc_id} processing failed: {describe_exception(e)}",
+                exc_info=True,
+            )
 
             if self.request.retries < self.max_retries:
                 countdown = 60 * (self.request.retries + 1)
@@ -410,7 +418,7 @@ def metadata_task(self, doc_id: int):
                     logger.error(
                         "Doc #%d: generate_embedding dispatch raised — marking stage failed: %s",
                         doc_id,
-                        e,
+                        describe_exception(e),
                         exc_info=True,
                     )
                     mark_failed_with_cascade(
@@ -451,7 +459,7 @@ def _retry_or_fail_after_gate_timeout(task, doc_id: int, exc: ModelGateTimeout) 
                 "Doc #%d: METADATA could not get the model slot (%s) — "
                 "retry %d/%d in %ds",
                 doc_id,
-                exc,
+                describe_exception(exc),
                 task.request.retries + 1,
                 task.max_retries,
                 _GATE_RETRY_COUNTDOWN,
@@ -541,7 +549,9 @@ def _run_phase1_summary(doc_id: int) -> None:
                         error=str(e),
                         cascade=METADATA_FAILURE_CASCADE,
                     )
-                    logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
+                    logger.warning(
+                        f"Phase 1 summary failed for doc {doc_id}: {describe_exception(e)}"
+                    )
                     return
                 last_error = e
                 db2.close()
@@ -549,7 +559,7 @@ def _run_phase1_summary(doc_id: int) -> None:
                     wait = _METADATA_BACKOFF[attempt]
                     logger.info(
                         f"Doc {doc_id}: METADATA transient error (attempt {attempt + 1}/{_METADATA_MAX_RETRIES}), "
-                        f"retrying in {wait}s: {e}"
+                        f"retrying in {wait}s: {describe_exception(e)}"
                     )
                     # Flip to RETRYING so the UI shows "Retrying METADATA (N/M) in Ws"
                     # instead of a silent spin.
@@ -583,7 +593,9 @@ def _run_phase1_summary(doc_id: int) -> None:
                     error=str(e),
                     cascade=METADATA_FAILURE_CASCADE,
                 )
-                logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
+                logger.warning(
+                    f"Phase 1 summary failed for doc {doc_id}: {describe_exception(e)}"
+                )
                 return
             finally:
                 db2.close()
@@ -647,7 +659,10 @@ def _run_phase1_summary(doc_id: int) -> None:
             cascade=METADATA_FAILURE_CASCADE,
         )
         logger.warning(
-            f"Doc {doc_id}: METADATA failed after {_METADATA_MAX_RETRIES} attempts: {last_error}"
+            "Doc %s: METADATA failed after %d attempts: %s",
+            doc_id,
+            _METADATA_MAX_RETRIES,
+            describe_exception(last_error) if last_error else "no error recorded",
         )
     finally:
         db2.close()

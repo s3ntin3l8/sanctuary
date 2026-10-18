@@ -4,6 +4,7 @@ import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
+from app.core.safe_error import describe_exception
 from app.models.enums import PipelineStage
 from app.services.pipeline_status import is_db_locked, stages_dict
 from app.tasks.ai_retry import retry_if_transient_ai_error
@@ -108,7 +109,10 @@ def extract_claims_task(self, doc_id: int):
             finally:
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
-        logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
+        logger.error(
+            f"Doc {doc_id} claim extraction task failed: {describe_exception(e)}",
+            exc_info=True,
+        )
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))
@@ -118,7 +122,9 @@ def extract_claims_task(self, doc_id: int):
         trigger_case_brief_if_ready(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-        logger.error("Doc #%d: AI backend unreachable: %s", doc_id, e)
+        logger.error(
+            "Doc #%d: AI backend unreachable: %s", doc_id, describe_exception(e)
+        )
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))
@@ -131,7 +137,9 @@ def extract_claims_task(self, doc_id: int):
         # An Exception subclass — must come before the generic branch below
         # or it would be treated as a retryable system error, racing
         # self.retry()'s countdown against the imminent hard kill.
-        logger.error(f"Doc {doc_id} claims soft time limit exceeded: {e}")
+        logger.error(
+            f"Doc {doc_id} claims soft time limit exceeded: {describe_exception(e)}"
+        )
         db = get_db_session()
         try:
             mark_failed(
@@ -147,7 +155,10 @@ def extract_claims_task(self, doc_id: int):
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         retry_if_transient_ai_error(self, doc_id, PipelineStage.CLAIMS, e)
-        logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
+        logger.error(
+            f"Doc {doc_id} claim extraction task failed: {describe_exception(e)}",
+            exc_info=True,
+        )
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))

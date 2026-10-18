@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.async_utils import run_async
+from app.core.safe_error import describe_exception
 from app.mcp.db import run
 from app.mcp.principal import McpPrincipal
 from app.models.database import (
@@ -232,7 +233,10 @@ def create_claim(
                 if i in by_id and by_id[i].dismissed_at is None
             ]
         except Exception as exc:  # noqa: BLE001
-            logger.info("create_claim: similar-claim lookup skipped: %s", exc)
+            logger.info(
+                "create_claim: similar-claim lookup skipped: %s",
+                describe_exception(exc),
+            )
 
     claim = ClaimService(db).create_user_claim(
         doc,

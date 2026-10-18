@@ -89,7 +89,7 @@ def _ocr_page_text(image: Image.Image) -> str:
     try:
         return ocr_crosscheck.read_text(image)
     except Exception as exc:
-        logger.warning("OCR failed for page: %s", exc)
+        logger.warning("OCR failed for page: %s", describe_exception(exc))
         return ""
 
 
@@ -917,7 +917,11 @@ def _prepare(model: type[IngestBatch] | type[Document], source_id: int) -> None:
 
     except Exception as exc:
         logger.error(
-            "prepare_slicing %s %d failed: %s", label, source_id, exc, exc_info=True
+            "prepare_slicing %s %d failed: %s",
+            label,
+            source_id,
+            describe_exception(exc),
+            exc_info=True,
         )
         try:
             failed = cast("IngestBatch | Document | None", db.get(model, source_id))

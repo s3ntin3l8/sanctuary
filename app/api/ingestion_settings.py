@@ -7,6 +7,7 @@ from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import limiter
+from app.core.safe_error import describe_exception
 from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import User
@@ -92,7 +93,7 @@ async def gmail_oauth_callback(
     except OAuth2Error as exc:
         # Google refused the code (expired, already used, wrong client, bad
         # verifier...). Say so instead of a bare "Bad Request".
-        logger.warning("Gmail OAuth token exchange failed: %s", exc)
+        logger.warning("Gmail OAuth token exchange failed: %s", describe_exception(exc))
         raise HTTPException(
             status_code=400,
             detail=f"Google rejected the sign-in ({exc.error}). "
@@ -101,7 +102,7 @@ async def gmail_oauth_callback(
     except Warning as exc:
         # oauthlib raises a bare Warning when Google returns different scopes
         # than were requested — i.e. more than read-only access.
-        logger.warning("Gmail OAuth scope mismatch: %s", exc)
+        logger.warning("Gmail OAuth scope mismatch: %s", describe_exception(exc))
         raise HTTPException(
             status_code=400,
             detail="Google granted different permissions than requested; "
@@ -111,7 +112,7 @@ async def gmail_oauth_callback(
     try:
         assert_readonly_scopes(creds.granted_scopes)
     except GmailScopeError as exc:
-        logger.warning("Gmail OAuth rejected: %s", exc)
+        logger.warning("Gmail OAuth rejected: %s", describe_exception(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     credentials_json = creds.to_json()

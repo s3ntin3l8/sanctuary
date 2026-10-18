@@ -5,6 +5,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document
 from app.models.enums import DocumentStatus, PipelineStage
 from app.tasks.celery_app import celery_app
@@ -70,7 +71,7 @@ def analyze_batch_task(self, batch_id: int):
         logger.warning(
             "Batch #%d: batch_analysis timeout after retry (%s) — marking failed",
             batch_id,
-            e,
+            describe_exception(e),
         )
         db = SessionLocal()
         try:
@@ -101,7 +102,7 @@ def analyze_batch_task(self, batch_id: int):
             logger.warning(
                 "Batch #%d: AI backend unreachable (%s) — retry %d in %ds",
                 batch_id,
-                e,
+                describe_exception(e),
                 self.request.retries + 1,
                 countdown,
             )
@@ -121,7 +122,9 @@ def analyze_batch_task(self, batch_id: int):
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
         logger.error(
-            "Batch #%d: AI backend unreachable after all retries: %s", batch_id, e
+            "Batch #%d: AI backend unreachable after all retries: %s",
+            batch_id,
+            describe_exception(e),
         )
         db = SessionLocal()
         try:
@@ -150,7 +153,9 @@ def analyze_batch_task(self, batch_id: int):
         # An Exception subclass — must come before the generic branch below
         # or it would be treated as a retryable system error, racing
         # self.retry()'s countdown against the imminent hard kill.
-        logger.error("Batch #%d: soft time limit exceeded: %s", batch_id, e)
+        logger.error(
+            "Batch #%d: soft time limit exceeded: %s", batch_id, describe_exception(e)
+        )
         from app.config import SessionLocal
 
         db = SessionLocal()
@@ -181,7 +186,9 @@ def analyze_batch_task(self, batch_id: int):
             _enrich_if_pending(doc_id)
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
     except Exception as e:
-        logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
+        logger.error(
+            f"Batch {batch_id} analysis failed: {describe_exception(e)}", exc_info=True
+        )
         if self.request.retries < self.max_retries:
             countdown = 60 * (self.request.retries + 1)
             db = SessionLocal()

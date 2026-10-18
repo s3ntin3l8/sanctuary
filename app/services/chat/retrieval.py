@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document, DocumentChunk
 
 logger = logging.getLogger(__name__)
@@ -144,7 +145,9 @@ async def retrieve_top_docs(
         # legitimate degrade-to-recency conditions. Anything else is an
         # unexpected bug and should propagate instead of silently becoming a
         # wrong-looking result.
-        logger.warning(f"Vector retrieval failed ({e}), falling back to recency")
+        logger.warning(
+            f"Vector retrieval failed ({describe_exception(e)}), falling back to recency"
+        )
         recency_query = db.query(Document).filter(Document.case_id == case_id)
         if proceeding_id:
             recency_query = recency_query.filter(

@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, defer
 
+from app.core.safe_error import describe_exception
 from app.models.database import Case, Document
 from app.models.enums import (
     BriefState,
@@ -366,7 +367,10 @@ def generate(case_id: str) -> None:
 
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:
-            logger.error(f"Case {case_id} brief generation failed: {e}", exc_info=True)
+            logger.error(
+                f"Case {case_id} brief generation failed: {describe_exception(e)}",
+                exc_info=True,
+            )
             db.rollback()
             raise
 

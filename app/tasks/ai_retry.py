@@ -4,6 +4,7 @@ import logging
 
 import httpx
 
+from app.core.safe_error import describe_exception
 from app.dependencies import get_db_session
 from app.models.enums import PipelineStage
 from app.services.intelligence._ai_call import is_transient_ai_http_error
@@ -36,7 +37,7 @@ def retry_if_transient_ai_error(
         exc.response.status_code,
         task.request.retries + 1,
         countdown,
-        exc,
+        describe_exception(exc),
     )
     db = get_db_session()
     try:

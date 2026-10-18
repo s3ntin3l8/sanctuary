@@ -22,6 +22,7 @@ import redis
 import redis.asyncio as aioredis
 
 from app.config import REDIS_URL
+from app.core.safe_error import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,10 @@ def _maybe_warn(exc: Exception) -> None:
     global _last_warn_at
     now = time.monotonic()
     if now - _last_warn_at >= _WARN_INTERVAL:
-        logger.warning("ai_inflight: Redis unavailable (%s), counter degraded", exc)
+        logger.warning(
+            "ai_inflight: Redis unavailable (%s), counter degraded",
+            describe_exception(exc),
+        )
         _last_warn_at = now
 
 

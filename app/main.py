@@ -959,8 +959,12 @@ async def not_found_handler(request: Request, exc: Exception) -> Response:
 
 async def server_error_handler(request: Request, exc: Exception) -> Response:
     logger = logging.getLogger(__name__)
-    error_msg = str(exc.detail) if hasattr(exc, "detail") else str(exc)
-    logger.error(f"Server error on {request.url.path}: {error_msg}", exc_info=True)
+    logger.error(
+        "Server error on %s: %s",
+        request.url.path,
+        describe_exception(exc),
+        exc_info=True,
+    )
     if is_api_path(request.url.path):
         return http_error_response(exc, default_status=500)
     return _page_error(500, "Something went wrong", "An unexpected error occurred.")
@@ -969,7 +973,9 @@ async def server_error_handler(request: Request, exc: Exception) -> Response:
 async def secrets_error_handler(request: Request, exc: Exception) -> Response:
     """A missing/wrong SECRETS_ENCRYPTION_KEY is an operator problem the message
     explains (no secret in it) — surface it instead of an opaque 500."""
-    logging.getLogger(__name__).error("Secrets error on %s: %s", request.url.path, exc)
+    logging.getLogger(__name__).error(
+        "Secrets error on %s: %s", request.url.path, describe_exception(exc)
+    )
     if is_api_path(request.url.path):
         return error_response(503, "secrets_key_unavailable", str(exc))
     return _page_error(503, "Encryption key unavailable", str(exc))
@@ -1023,6 +1029,7 @@ from app.api.auth_oidc import router as auth_oidc_router
 from app.api.settings_page import router as settings_page_router
 from app.api.spa_pages import router as spa_pages_router
 from app.api.v1 import router as api_v1_router
+from app.core.safe_error import describe_exception
 
 app.include_router(api_v1_router)
 app.include_router(auth_router)

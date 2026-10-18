@@ -13,6 +13,7 @@ import os
 import re
 import threading
 
+from app.core.safe_error import describe_exception
 from app.services.content_text import strip_image_lines
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ def second_opinion(png_bytes: bytes) -> str | None:
         with Image.open(io.BytesIO(png_bytes)) as img:
             return read_text(img)
     except Exception as exc:  # noqa: BLE001 — a failed cross-check never fails extraction
-        logger.warning("second-opinion OCR failed: %s", exc)
+        logger.warning("second-opinion OCR failed: %s", describe_exception(exc))
         return None
 
 

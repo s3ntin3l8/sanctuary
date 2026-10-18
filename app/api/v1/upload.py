@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.access_guards import check_owned_or_case_access
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
+from app.core.safe_error import describe_exception
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, Document, IngestBatch, User
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
@@ -130,7 +131,12 @@ async def upload(
                     UploadResult(filename=name, status="error", message=str(exc))
                 )
             except Exception as exc:
-                logger.error("Scan upload failed for %s: %s", name, exc, exc_info=True)
+                logger.error(
+                    "Scan upload failed for %s: %s",
+                    name,
+                    describe_exception(exc),
+                    exc_info=True,
+                )
                 results.append(
                     UploadResult(filename=name, status="error", message="Upload failed")
                 )
@@ -193,7 +199,12 @@ async def upload(
                         )
                     )
             except Exception as exc:
-                logger.error("EML ingest failed for %s: %s", name, exc, exc_info=True)
+                logger.error(
+                    "EML ingest failed for %s: %s",
+                    name,
+                    describe_exception(exc),
+                    exc_info=True,
+                )
                 results.append(
                     UploadResult(filename=name, status="error", message="Upload failed")
                 )
@@ -221,7 +232,9 @@ async def upload(
                 UploadResult(filename=name, status=status, message=str(exc.detail))
             )
         except Exception as exc:
-            logger.error("Upload failed for %s: %s", name, exc, exc_info=True)
+            logger.error(
+                "Upload failed for %s: %s", name, describe_exception(exc), exc_info=True
+            )
             results.append(
                 UploadResult(filename=name, status="error", message="Upload failed")
             )

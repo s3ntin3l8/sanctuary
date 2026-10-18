@@ -4,6 +4,7 @@ import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
+from app.core.safe_error import describe_exception
 from app.models.enums import PipelineStage, StageStatus
 from app.services.pipeline_status import is_db_locked, stages_dict
 from app.tasks.ai_retry import retry_if_transient_ai_error
@@ -117,7 +118,7 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
         logger.warning(
             "Doc #%d: relationships timeout after retry (%s) — marking failed",
             doc_id,
-            e,
+            describe_exception(e),
         )
         db = get_db_session()
         try:
@@ -155,7 +156,8 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
         logger.error(
-            f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True
+            f"Doc {doc_id} relationship detection task failed: {describe_exception(e)}",
+            exc_info=True,
         )
         db = get_db_session()
         try:
@@ -173,7 +175,7 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
             logger.warning(
                 "Doc #%d: AI backend unreachable (%s) — retry %d in %ds",
                 doc_id,
-                e,
+                describe_exception(e),
                 self.request.retries + 1,
                 countdown,
             )
@@ -193,7 +195,11 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
             finally:
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
-        logger.error("Doc #%d: AI backend unreachable after all retries: %s", doc_id, e)
+        logger.error(
+            "Doc #%d: AI backend unreachable after all retries: %s",
+            doc_id,
+            describe_exception(e),
+        )
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))
@@ -208,7 +214,9 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
         # An Exception subclass — must come before the generic branch below
         # or it would be treated as a retryable system error, racing
         # self.retry()'s countdown against the imminent hard kill.
-        logger.error(f"Doc {doc_id} relationships soft time limit exceeded: {e}")
+        logger.error(
+            f"Doc {doc_id} relationships soft time limit exceeded: {describe_exception(e)}"
+        )
         db = get_db_session()
         try:
             mark_failed(
@@ -227,7 +235,8 @@ def detect_relationships_task(self, doc_id: int, backfill: bool = True):
     except Exception as e:
         retry_if_transient_ai_error(self, doc_id, PipelineStage.RELATIONSHIPS, e)
         logger.error(
-            f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True
+            f"Doc {doc_id} relationship detection task failed: {describe_exception(e)}",
+            exc_info=True,
         )
         db = get_db_session()
         try:

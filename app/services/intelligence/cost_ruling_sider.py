@@ -24,6 +24,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import CostSignal, Document
 from app.services.ai_config import get_chat_config
 from app.services.case_service import get_case_opposing_parties
@@ -162,7 +163,11 @@ def detect_cost_ruling_role(signal_id: int, db: Session) -> dict | None:
             include_user_context=False,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("cost_ruling_sider failed for signal %s: %s", signal_id, exc)
+        logger.warning(
+            "cost_ruling_sider failed for signal %s: %s",
+            signal_id,
+            describe_exception(exc),
+        )
         return None
 
     if result.client_role == "unknown":

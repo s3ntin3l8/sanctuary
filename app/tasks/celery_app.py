@@ -49,6 +49,35 @@ def _setup_worker_logging(logger, loglevel, **kwargs):
     root.addHandler(fh)
 
 
+class _SanitizeTaskFailure(logging.Filter):
+    """Celery prints a failed task's exception into the message itself: "Task x
+    raised unexpected: %(exc)s" and "Task x retry: %(exc)s" (``celery.app.trace``,
+    a dict argument; the retry line has no ``exc_info``) and "Task handler raised
+    error: %r" (``celery.worker.request``, a tuple). Swap that text for
+    ``describe_exception`` so a failed parse does not print the model answer."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        from app.core.safe_error import describe_exception, sanitize_error_text
+
+        def clean(value: object, fallback: BaseException | None = None) -> object:
+            # celery hands over the exception, its ExceptionInfo, or a rendered str
+            exc = value if isinstance(value, BaseException) else None
+            exc = exc or getattr(value, "exception", None) or fallback
+            if isinstance(exc, BaseException):
+                return describe_exception(exc)
+            return sanitize_error_text(value) if isinstance(value, str) else value
+
+        exc_info = record.exc_info[1] if record.exc_info else None
+        args = record.args
+        if isinstance(args, dict) and "exc" in args:
+            record.args = {**args, "exc": clean(args["exc"], exc_info)}
+        elif isinstance(args, tuple) and record.name == "celery.worker.request":
+            record.args = tuple(clean(a) for a in args)
+        return True
+
+
+for _name in ("celery.app.trace", "celery.worker.request"):
+    logging.getLogger(_name).addFilter(_SanitizeTaskFailure())
 after_setup_logger.connect(_suppress_httpx_noise)
 after_setup_logger.connect(_setup_worker_logging)
 after_setup_task_logger.connect(_suppress_httpx_noise)

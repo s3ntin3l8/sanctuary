@@ -7,6 +7,7 @@ import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import DBAPIError, OperationalError
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document, DocumentChunk
 from app.services.ai_config import get_embed_config
 from app.services.ai_inflight import track_ai_call_async
@@ -318,7 +319,7 @@ def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
     except (httpx.HTTPError, RuntimeError, OperationalError) as e:
         # RuntimeError: detect_provider / get_embedding_params raise this when
         # no AI endpoint responds — see ai_provider.py.
-        logger.warning("nearest_chunks unavailable: %s", e)
+        logger.warning("nearest_chunks unavailable: %s", describe_exception(e))
         return []
 
 
@@ -398,7 +399,9 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
                 # Celery's hard limit doesn't kill it mid-write.
                 raise
             except Exception as e:
-                logger.warning(f"Reindex failed for doc {doc.id}: {e}")
+                logger.warning(
+                    f"Reindex failed for doc {doc.id}: {describe_exception(e)}"
+                )
                 # _embed_document_chunks's DELETE-then-add-then-commit for
                 # this doc may be mid-transaction when it raised — without
                 # rolling back, that orphaned DELETE stays pending and gets
@@ -417,7 +420,9 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
             try:
                 progress_cb(reindexed=reindexed, failed=failed)
             except Exception as cb_err:
-                logger.debug(f"reindex progress_cb failed (continuing): {cb_err}")
+                logger.debug(
+                    f"reindex progress_cb failed (continuing): {describe_exception(cb_err)}"
+                )
 
     return {"total": total, "reindexed": reindexed, "failed": failed}
 

@@ -14,6 +14,7 @@ import logging
 import threading
 from typing import Any
 
+from app.core.safe_error import describe_exception
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,9 @@ def dispatch_task(task: Any, *args: Any, **kwargs: Any) -> None:
             )
         except Exception as exc:  # pragma: no cover - log and swallow
             label = task if isinstance(task, str) else getattr(task, "name", repr(task))
-            logger.error("Dispatch %s failed: %s", label, exc, exc_info=True)
+            logger.error(
+                "Dispatch %s failed: %s", label, describe_exception(exc), exc_info=True
+            )
             _record_dispatch_failure(label, args, exc)
 
     if celery_app.conf.task_always_eager:
@@ -112,4 +115,6 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
         finally:
             db.close()
     except Exception as inner:  # pragma: no cover - last-resort safety
-        logger.error("dispatch failure recorder itself failed: %s", inner)
+        logger.error(
+            "dispatch failure recorder itself failed: %s", describe_exception(inner)
+        )

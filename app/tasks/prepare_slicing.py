@@ -1,5 +1,6 @@
 import logging
 
+from app.core.safe_error import describe_exception
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,11 @@ def prepare_slicing_task(self, batch_id: int):
         prepare(batch_id)
         return {"status": "success", "batch_id": batch_id}
     except Exception as exc:
-        logger.error("prepare_slicing_task batch %d failed: %s", batch_id, exc)
+        logger.error(
+            "prepare_slicing_task batch %d failed: %s",
+            batch_id,
+            describe_exception(exc),
+        )
         if self.request.retries < self.max_retries:
             raise self.retry(
                 exc=exc, countdown=30 * (self.request.retries + 1)
@@ -39,7 +44,11 @@ def prepare_document_slicing_task(self, doc_id: int):
         prepare_document(doc_id)
         return {"status": "success", "doc_id": doc_id}
     except Exception as exc:
-        logger.error("prepare_document_slicing_task doc %d failed: %s", doc_id, exc)
+        logger.error(
+            "prepare_document_slicing_task doc %d failed: %s",
+            doc_id,
+            describe_exception(exc),
+        )
         if self.request.retries < self.max_retries:
             raise self.retry(
                 exc=exc, countdown=30 * (self.request.retries + 1)

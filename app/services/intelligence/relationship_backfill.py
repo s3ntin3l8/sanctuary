@@ -14,6 +14,7 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document, DocumentPipelineStage
 from app.models.enums import PipelineStage, StageStatus
 from app.services.embeddings import nearest_document_ids
@@ -134,7 +135,10 @@ def dispatch_backfill(doc_id: int) -> int:
                 dispatched += 1
             except Exception as e:
                 logger.error(
-                    "Doc #%d: backfill dispatch failed: %s", target, e, exc_info=True
+                    "Doc #%d: backfill dispatch failed: %s",
+                    target,
+                    describe_exception(e),
+                    exc_info=True,
                 )
                 mark_failed(
                     target,

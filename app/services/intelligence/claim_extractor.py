@@ -18,6 +18,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.core.timezone import now_utc
 from app.models.database import (
     Claim,
@@ -330,13 +331,19 @@ def _apply_claims(
             asyncio.run(upsert_claim_embedding(claim_id, db))
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "Doc %s: failed to embed new claim %s: %s", doc.id, claim_id, exc
+                "Doc %s: failed to embed new claim %s: %s",
+                doc.id,
+                claim_id,
+                describe_exception(exc),
             )
         try:
             propose_merges_for_new_claim(reloaded_claim, db)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "Doc %s: dedup judge failed for claim %s: %s", doc.id, claim_id, exc
+                "Doc %s: dedup judge failed for claim %s: %s",
+                doc.id,
+                claim_id,
+                describe_exception(exc),
             )
 
 

@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.paths import resolve_storage_path
+from app.core.safe_error import describe_exception
 from app.models.database import ActionItem, Document, IngestBatch
 from app.models.enums import ActionItemStatus, DocumentStatus, IngestBatchStatus
 
@@ -163,7 +164,7 @@ def delete_bundle(
                 os.remove(raw_source_path)
             except OSError as e:
                 logger.warning(
-                    f"Failed to delete batch raw source {raw_source_path}: {e}"
+                    f"Failed to delete batch raw source {raw_source_path}: {describe_exception(e)}"
                 )
         return True
 

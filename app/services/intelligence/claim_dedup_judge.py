@@ -65,7 +65,11 @@ def _judge_pair(
             include_user_context=False,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("dedup judge call failed for existing %s: %s", existing_id, exc)
+        logger.warning(
+            "dedup judge call failed for existing %s: %s",
+            existing_id,
+            describe_exception(exc),
+        )
         return None
 
 
@@ -333,7 +337,9 @@ async def find_duplicates_for_case(
             try:
                 progress_cb(processed=idx)
             except Exception as cb_err:
-                logger.debug(f"dedup progress_cb failed (continuing): {cb_err}")
+                logger.debug(
+                    f"dedup progress_cb failed (continuing): {describe_exception(cb_err)}"
+                )
 
     if not candidate_pairs:
         return {"scanned": len(claims), "proposals_created": 0, "judge_calls": 0}

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.services.pipeline_status import _GATE_BLOCK_SKIP_REASONS
 
 logger = logging.getLogger(__name__)
@@ -212,7 +213,9 @@ def trigger_case_brief_if_ready(doc_id: int) -> None:
             )
             return
     except Exception as e:
-        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
+        logger.warning(
+            "Could not trigger case brief for doc %d: %s", doc_id, describe_exception(e)
+        )
         return
     finally:
         db.close()
@@ -227,7 +230,9 @@ def trigger_case_brief_if_ready(doc_id: int) -> None:
     except Exception as e:
         # Dispatch failed after the claim succeeded — release the claim so
         # a subsequent trigger (e.g. recovery, manual refresh) can re-fire.
-        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
+        logger.warning(
+            "Could not trigger case brief for doc %d: %s", doc_id, describe_exception(e)
+        )
         db = SessionLocal()
         try:
             release_case_brief_claim(case_id, db)

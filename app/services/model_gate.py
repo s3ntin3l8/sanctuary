@@ -49,6 +49,7 @@ from typing import cast
 import redis
 
 from app.config import AI_READ_TIMEOUT, REDIS_URL
+from app.core.safe_error import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,8 @@ def _maybe_warn(exc: Exception) -> None:
     now = time.monotonic()
     if now - _last_warn_at >= _WARN_INTERVAL:
         logger.warning(
-            "model_gate: Redis unavailable (%s); proceeding without gating", exc
+            "model_gate: Redis unavailable (%s); proceeding without gating",
+            describe_exception(exc),
         )
         _last_warn_at = now
 
