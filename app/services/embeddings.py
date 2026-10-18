@@ -7,6 +7,7 @@ import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import DBAPIError, OperationalError
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document, DocumentChunk
 from app.services.ai_config import get_embed_config
 from app.services.ai_inflight import track_ai_call_async
@@ -37,7 +38,6 @@ _SPLIT_RETRY_MIN_CHARS = 400
 # yields k distinct documents.
 _CHUNK_RETRIEVAL_OVERSAMPLE = 5
 
-from app.core.safe_error import describe_exception
 from app.services.ai_provider import embed_provider
 
 

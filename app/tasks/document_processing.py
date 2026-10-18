@@ -659,7 +659,10 @@ def _run_phase1_summary(doc_id: int) -> None:
             cascade=METADATA_FAILURE_CASCADE,
         )
         logger.warning(
-            f"Doc {doc_id}: METADATA failed after {_METADATA_MAX_RETRIES} attempts: {last_error}"
+            "Doc %s: METADATA failed after %d attempts: %s",
+            doc_id,
+            _METADATA_MAX_RETRIES,
+            describe_exception(last_error) if last_error else "no error recorded",
         )
     finally:
         db2.close()

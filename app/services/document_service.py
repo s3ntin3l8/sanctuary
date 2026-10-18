@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document
 from app.models.enums import AuditEventType
 from app.repositories.document import DocumentRepository
@@ -155,7 +156,7 @@ class DocumentService:
                     import logging
 
                     logging.getLogger(__name__).error(
-                        f"Failed to delete file {file_path}: {e}"
+                        f"Failed to delete file {file_path}: {describe_exception(e)}"
                     )
             # Remove the batch if this was its last document
             if ingest_batch_id:
@@ -196,7 +197,7 @@ class DocumentService:
                                 import logging
 
                                 logging.getLogger(__name__).error(
-                                    f"Failed to delete batch raw source {raw_source}: {e}"
+                                    f"Failed to delete batch raw source {raw_source}: {describe_exception(e)}"
                                 )
             audit_service.record(
                 self.db,

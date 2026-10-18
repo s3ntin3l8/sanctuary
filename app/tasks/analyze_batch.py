@@ -5,6 +5,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document
 from app.models.enums import DocumentStatus, PipelineStage
 from app.tasks.celery_app import celery_app
@@ -382,7 +383,6 @@ def _enrich_if_pending(doc_id: int) -> None:
         db.close()
 
 
-from app.core.safe_error import describe_exception
 from app.tasks.enrich_document import (
     enrich_document_task,
 )

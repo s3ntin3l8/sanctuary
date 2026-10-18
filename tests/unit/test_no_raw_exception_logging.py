@@ -7,8 +7,11 @@ document or a model answer (a parse error quotes it). Logging ``exc`` / ``str(ex
 are sanitised by ``LocalTimeFormatter``).
 
 The check is syntactic: it sees the exception variable used inside the logging call
-itself. The variable is an ``except ... as NAME`` target, or a function parameter
-named like an exception (``exc``, ``e``, ``error``, ...). Assigning ``msg = str(exc)`` first and logging ``msg`` is not caught, so
+itself. The variable is an ``except ... as NAME`` target, a function parameter named
+like an exception (``exc``, ``e``, ``error``, ...; a string parameter of that name is
+flagged too: rename it) or a name assigned from one in the same function
+(``last_error = e``, ``msg = str(exc)``). Not tracked: values that cross a function
+boundary other than as a parameter, and ``getattr``/``setattr`` indirection. Assigning ``msg = str(exc)`` first and logging ``msg`` is not caught, so
 don't.
 """
 
@@ -30,18 +33,24 @@ def _is_logger_call(node: ast.Call) -> bool:
     if not (isinstance(f, ast.Attribute) and f.attr in LEVELS):
         return False
     recv = f.value
+    if isinstance(recv, ast.Call):  # logging.getLogger(__name__).error(...)
+        recv = recv.func
     name = recv.id if isinstance(recv, ast.Name) else getattr(recv, "attr", "")
     return "log" in name.lower()
 
 
 def _raw_uses(node: ast.AST, name: str) -> list[ast.AST]:
     """Occurrences of ``name`` that would print the exception's message."""
+    if isinstance(node, ast.Compare):  # `exc is None` prints nothing
+        return []
+    if isinstance(node, ast.IfExp):  # the condition is not what gets printed
+        return _raw_uses(node.body, name) + _raw_uses(node.orelse, name)
     if isinstance(node, ast.Name):
-        return [node] if node.id == name else []
+        return [node] if node.id == name and isinstance(node.ctx, ast.Load) else []
     if isinstance(node, ast.Call):
         fn = node.func
         callee = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")
-        if callee in {"describe_exception", "type", "isinstance"}:
+        if callee in {"describe_exception", "type", "isinstance", "hasattr"}:
             return []
     if (
         isinstance(node, ast.Attribute)
@@ -55,6 +64,27 @@ def _raw_uses(node: ast.AST, name: str) -> list[ast.AST]:
     return hits
 
 
+def _assigned_from(func: ast.AST, tainted: set[str]) -> set[str]:
+    """Names assigned (anywhere in ``func``) from an expression that uses a
+    tainted name, e.g. ``last_error = e`` or ``msg = str(exc)``; repeated until
+    nothing new turns up."""
+    derived: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Assign | ast.AnnAssign) or node.value is None:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names = {t.id for t in targets if isinstance(t, ast.Name)}
+            if names <= derived | tainted:
+                continue
+            if any(_raw_uses(node.value, n) for n in tainted | derived):
+                derived |= names
+                changed = True
+    return derived
+
+
 def scopes(tree: ast.AST):
     """``(variable, statements)``: where an exception variable is in scope."""
     for node in ast.walk(tree):
@@ -62,9 +92,16 @@ def scopes(tree: ast.AST):
             yield node.name, node.body
         elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             params = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
-            for param in params:
-                if param.arg in EXCEPTION_PARAMS:
-                    yield param.arg, node.body
+            seeds = {p.arg for p in params if p.arg in EXCEPTION_PARAMS}
+            seeds |= {
+                h.name
+                for h in ast.walk(node)
+                if isinstance(h, ast.ExceptHandler) and h.name
+            }
+            for name in seeds & {p.arg for p in params}:
+                yield name, node.body
+            for name in _assigned_from(node, seeds):
+                yield name, node.body
 
 
 def logged_raw(tree: ast.AST):
