@@ -675,6 +675,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 elif part.get_content_type() == "text/plain":
                     plain.append(_decode_text(part))
 
+        # Parts ignored as logos or icons with the outcome they would have had:
+        # with no other content in the source they are restored (see below).
+        decorative: list[tuple[dict, str]] = []
+
+        def ignore_decorative(entry, was, reason):
+            decorative.append((entry, was))
+            entry.update(outcome="ignored_inline", reason=reason)
+
         def record(part, path, data, outcome="pending"):
             original = part.get_filename()
             suffix = (
@@ -712,9 +720,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 entry.update(outcome="unsupported", reason="Archive contains no files")
                 return
             if not emit_members(members, path):
-                entry.update(
-                    outcome="ignored_inline", reason=_DECORATIVE_CONTAINER_REASON
-                )
+                ignore_decorative(entry, "archive", _DECORATIVE_CONTAINER_REASON)
 
         def record_msg(part, path, data, depth):
             """An attached Outlook message is read as the mail it is, one level
@@ -757,9 +763,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 return
             entry = record(part, path, data, "archive" if members else "ignored_inline")
             if members and not emit_members(members, path, "t"):
-                entry.update(
-                    outcome="ignored_inline", reason=_DECORATIVE_CONTAINER_REASON
-                )
+                ignore_decorative(entry, "archive", _DECORATIVE_CONTAINER_REASON)
 
         def emit_members(members, base, tag="z"):
             """Record a container's files; False when every one was ignored as a
@@ -784,13 +788,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 if member["outcome"] == "pending" and is_decorative_image(
                     member["data"]
                 ):
-                    entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
+                    ignore_decorative(entry, "pending", _DECORATIVE_REASON)
                 if entry["outcome"] == "pending":
                     source["attachments"].append(entry)
                 if member["members"] and not emit_members(member["members"], path, "z"):
-                    entry.update(
-                        outcome="ignored_inline", reason=_DECORATIVE_CONTAINER_REASON
-                    )
+                    ignore_decorative(entry, "archive", _DECORATIVE_CONTAINER_REASON)
                 kept = kept or entry["outcome"] != "ignored_inline"
             return kept
 
@@ -833,8 +835,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                         reason="Attached email nesting limit reached"
                     )
                 elif is_decorative_image(data):
-                    record(part, path, data, "ignored_inline").update(
-                        reason=_DECORATIVE_REASON
+                    ignore_decorative(
+                        record(part, path, data, "ignored_inline"),
+                        "pending",
+                        _DECORATIVE_REASON,
                     )
                 else:
                     entry = record(part, path, data)
@@ -851,6 +855,19 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             body = markdownify(
                 html_body, heading_style="ATX", strip=["div"], escape_underscores=False
             )
+        # A logo only counts as one next to something else: a mail whose sole
+        # payload is a small image keeps it, so it is read and reviewable.
+        if (
+            decorative
+            and not body.strip()
+            and all(
+                p["outcome"] in ("ignored_inline", "signature") for p in source["parts"]
+            )
+        ):
+            for entry, was in decorative:
+                entry.update(outcome=was, reason=None)
+                if was == "pending":
+                    source["attachments"].append(entry)
         source["attachment_manifest"] = _parse_attachment_manifest(body)
         source["email_note"] = _extract_email_note(body)
         # The note is one flattened line; the list needs the mail's own lines.

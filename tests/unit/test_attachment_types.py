@@ -361,3 +361,52 @@ def test_a_zip_holding_only_a_logo_is_ignored_as_a_whole():
     assert {p["outcome"] for p in parsed["parts"]} == {"ignored_inline"}
     assert parsed["attachments"] == []
     assert not parsed["has_attachments"]  # the mail's text stays its body
+
+
+def _bodyless(*attachments):
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<nobody@example.com>"
+    for data, maintype, subtype, filename in attachments:
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
+    return msg.as_bytes()
+
+
+def test_a_lone_small_image_without_any_other_content_is_kept():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless((_image((200, 80)), "image", "png", "snapshot.png"))
+    )
+    [part] = parsed["parts"]
+    assert (part["outcome"], part["reason"]) == ("pending", None)
+    assert [a["filename"] for a in parsed["attachments"]] == ["snapshot.png"]
+
+
+def test_a_logo_next_to_a_pdf_is_still_ignored_without_a_body():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless(
+            (_image((200, 80)), "image", "png", "logo.png"),
+            (b"%PDF-1.4 x", "application", "pdf", "Brief.pdf"),
+        )
+    )
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes == {"logo.png": "ignored_inline", "Brief.pdf": "pending"}
+    assert [a["filename"] for a in parsed["attachments"]] == ["Brief.pdf"]
+
+
+def test_a_lone_zip_of_small_images_without_a_body_is_kept():
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    parsed = parse_rfc822(
+        _bodyless(
+            (_zip({"logo.png": _image((120, 60))}), "application", "zip", "A.zip")
+        )
+    )
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes == {"A.zip": "archive", "logo.png": "pending"}
+    assert [a["filename"] for a in parsed["attachments"]] == ["logo.png"]

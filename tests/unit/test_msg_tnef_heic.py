@@ -106,6 +106,26 @@ def test_a_winmail_dat_holding_only_a_signature_image_is_ignored_as_a_whole():
     assert not parsed["has_attachments"]
 
 
+def test_a_lone_winmail_dat_signature_image_without_a_body_is_kept():
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (200, 80), "white").save(buffer, "PNG")
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<lone@example.com>"
+    msg.add_attachment(
+        _tnef({"image001.png": buffer.getvalue()}),
+        maintype="application",
+        subtype="ms-tnef",
+        filename="winmail.dat",
+    )
+    parsed = parse_rfc822(msg.as_bytes())
+    outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
+    assert outcomes == {"winmail.dat": "archive", "image001.png": "pending"}
+    assert [a["filename"] for a in parsed["attachments"]] == ["image001.png"]
+
+
 def test_a_winmail_dat_without_files_is_only_the_rich_text_copy():
     parsed = parse_rfc822(_mail_with(_tnef({}), "winmail.dat", "ms-tnef"))
     [part] = parsed["parts"]
