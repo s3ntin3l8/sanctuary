@@ -444,3 +444,19 @@ def test_a_lone_small_image_next_to_an_empty_attached_mail_is_kept():
     parsed = parse_rfc822(msg.as_bytes())
     outcomes = {p["filename"]: p["outcome"] for p in parsed["parts"]}
     assert outcomes["snapshot.png"] == "pending"
+
+
+def test_an_empty_attached_mail_does_not_turn_the_body_into_transport():
+    from email.message import EmailMessage
+
+    from app.services.ingestion.email_parser import parse_rfc822
+
+    empty = EmailMessage()
+    empty["From"] = "a@example.com"
+    empty["Subject"] = "leer"
+    msg = EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Message-ID"] = "<bodyempty@example.com>"
+    msg.set_content("Bitte prüfen.")
+    msg.add_attachment(empty.as_bytes(), maintype="message", subtype="rfc822")
+    assert not parse_rfc822(msg.as_bytes())["has_attachments"]

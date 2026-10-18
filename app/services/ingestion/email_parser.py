@@ -888,12 +888,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         source["inline_forward"] = (
             parse_inline_forward(body, source["subject"]) if body else None
         )
-        # An attached message counts as an attachment of this source as well.
-        # A detached signature is not an attachment: it must not turn the
-        # mail's own body into mere transport.
+        # An attached message counts as an attachment of this source as well,
+        # unless it carries nothing. A detached signature is not an attachment:
+        # it must not turn the mail's own body into mere transport.
         source["has_attachments"] = any(
-            p["outcome"] not in ("ignored_inline", "signature")
-            and not p.get("inline_alternative")
+            _part_has_content(p, sources) and not p.get("inline_alternative")
             for p in source["parts"]
         )
         return source
