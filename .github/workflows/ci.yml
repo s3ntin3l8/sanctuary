@@ -81,6 +81,8 @@ jobs:
       # Postgres port) — explicit here so this job doesn't depend on the
       # app's own DATABASE_URL default staying in sync.
       DATABASE_URL: "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary"
+      # docker-compose.yml requires it (no default); CI's throwaway db uses this one.
+      POSTGRES_PASSWORD: "sanctuary" # pragma: allowlist secret
       # Without these, get_or_create_bootstrap_admin (app/services/auth_service.py)
       # has no admin to resolve on this fresh DB and no creds to seed one from, so
       # get_current_user (app/dependencies.py) 303-redirects every authenticated

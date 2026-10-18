@@ -95,11 +95,13 @@ def check_pgvector():
     try:
         from sqlalchemy import text
 
-        from app.config import SQLALCHEMY_DATABASE_URL, engine
+        from app.config import engine
 
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-            print(f"    [✓] Connected to {SQLALCHEMY_DATABASE_URL}")
+            print(
+                f"    [✓] Connected to {engine.url.render_as_string(hide_password=True)}"
+            )
             ext = conn.execute(
                 text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
             ).fetchone()

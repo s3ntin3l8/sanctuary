@@ -1,5 +1,7 @@
+import logging
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 
@@ -13,10 +15,27 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary",
-)
+
+def _default_database_url() -> str:
+    """The local Postgres from the same POSTGRES_* variables docker-compose uses, so
+    a generated POSTGRES_PASSWORD needs no second copy in DATABASE_URL."""
+    user = quote(os.getenv("POSTGRES_USER") or "sanctuary", safe="")
+    if not os.getenv("POSTGRES_PASSWORD"):
+        logging.getLogger(__name__).warning(
+            "POSTGRES_PASSWORD is not set: using the local-dev default password. "
+            "docker compose will not start the bundled database without one."
+        )
+    password = quote(os.getenv("POSTGRES_PASSWORD") or "sanctuary", safe="")
+    name = quote(os.getenv("POSTGRES_DB") or "sanctuary", safe="")
+    return f"postgresql+psycopg://{user}:{password}@localhost:5432/{name}"
+
+
+def _database_url() -> str:
+    """An explicit DATABASE_URL wins; otherwise the one built from POSTGRES_*."""
+    return os.getenv("DATABASE_URL") or _default_database_url()
+
+
+SQLALCHEMY_DATABASE_URL = _database_url()
 
 # Application Settings
 # Largest file an MCP agent may upload (base64 in a JSON-RPC body, so keep it modest).

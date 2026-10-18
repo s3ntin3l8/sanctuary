@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-sanctuary}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sanctuary}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}
       - POSTGRES_DB=${POSTGRES_DB:-sanctuary}
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -87,7 +87,7 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     # Reach an Ollama/LMStudio server running on the Docker host.
@@ -126,7 +126,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     extra_hosts:
@@ -156,7 +156,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     extra_hosts:
@@ -183,7 +183,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (make setup generates one)}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:

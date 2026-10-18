@@ -52,7 +52,6 @@ export
 HOST ?= 127.0.0.1
 PORT ?= 8000
 POSTGRES_USER ?= sanctuary
-POSTGRES_PASSWORD ?= sanctuary
 POSTGRES_DB ?= sanctuary
 
 help: ## Show this help message
@@ -74,6 +73,10 @@ setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
 	@grep -q '^SECRETS_ENCRYPTION_KEY=.' .env || { \
 		printf '\nSECRETS_ENCRYPTION_KEY=%s\n' "$$($(PYTHON) -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> .env; \
 		echo "Generated SECRETS_ENCRYPTION_KEY in .env — back it up: losing it makes stored Gmail/AI credentials unreadable."; }
+	@grep -q '^POSTGRES_PASSWORD=.' .env || { \
+		pw="$$($(PYTHON) -c 'import secrets; print(secrets.token_hex(24))')"; \
+		printf '\nPOSTGRES_PASSWORD=%s\n' "$$pw" >> .env; \
+		echo "Generated POSTGRES_PASSWORD in .env (the app builds its default DATABASE_URL from it)."; }
 
 redis: ## Start Redis (Docker)
 	docker compose up redis -d --wait
