@@ -5,6 +5,7 @@ import { expect, test, vi } from 'vitest'
 import * as navigation from '../navigation'
 import { emptyQueue, notificationsView, shellView } from '../test/fixtures'
 import { renderAt, stubApi } from '../test/render'
+import { displayTimeZone, formatShortDate } from '../time'
 import { Shell } from './Shell'
 
 function renderShell() {
@@ -69,4 +70,17 @@ test('⌘K opens the palette and search results navigate', async () => {
   expect(await screen.findByRole('dialog')).toBeVisible()
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('the workspace timezone is applied before the page renders its dates', async () => {
+  stubApi({
+    'GET /api/v1/shell': { body: { ...shellView, timezone: 'Pacific/Auckland' } },
+    'GET /api/v1/notifications': { body: notificationsView },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+  })
+  // 22:00 UTC is already the next day in Auckland.
+  const Page = () => <p>{formatShortDate('2026-06-17T22:00:00')}</p>
+  renderAt('/', <Page />, <Shell />)
+  expect(await screen.findByText('18 Jun')).toBeVisible()
+  expect(displayTimeZone()).toBe('Pacific/Auckland')
 })

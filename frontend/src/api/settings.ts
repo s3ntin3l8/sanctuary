@@ -281,10 +281,17 @@ export const useSaveDashboardCards = () =>
   useReplace<S['AppearanceView'], S['DashboardCards']>('appearance', (body) =>
     unwrap(api.PUT('/api/v1/settings/appearance/dashboard-cards', { body })),
   )
-export const useSaveTimezone = () =>
-  useReplace<S['AppearanceView'], S['TimezoneUpdate']>('appearance', (body) =>
-    unwrap(api.PUT('/api/v1/settings/appearance/timezone', { body })),
-  )
+/** The zone is workspace-wide: the shell carries it and the server dates it computed are stale. */
+export function useSaveTimezone() {
+  const queryClient = useQueryClient()
+  return useMutation<S['AppearanceView'], ApiError, S['TimezoneUpdate']>({
+    mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/appearance/timezone', { body })),
+    onSuccess: (view) => {
+      queryClient.setQueryData(['settings', 'appearance'], view)
+      return queryClient.invalidateQueries()
+    },
+  })
+}
 
 // --- Data --------------------------------------------------------------------
 
