@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.config import CELERY_TASK_TIME_LIMIT
+from app.core.safe_error import sanitize_error_text
 from app.models.database import HomeBriefing, User
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import is_external_endpoint
@@ -194,7 +195,7 @@ def mark_failed(user_id: int, day: date, error: str) -> None:
         row = briefing_row(db, user_id, day)
         if row is not None:
             row.status = "failed"
-            row.error = error[:500]
+            row.error = sanitize_error_text(error, 500)
             db.commit()
     finally:
         db.close()

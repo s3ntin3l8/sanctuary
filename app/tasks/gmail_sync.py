@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import REDIS_URL
+from app.core.safe_error import sanitize_error_text
 from app.core.secrets import SecretsError
 from app.models.database import GmailMessageIndex, UserSettings
 from app.services import (
@@ -308,7 +309,7 @@ def _public_error(exc: Exception) -> str:
     """
     if isinstance(exc, SQLAlchemyError):
         return f"Database error ({type(exc).__name__}) — see the server log"
-    return str(exc)[:500]
+    return sanitize_error_text(str(exc), 500)
 
 
 def _record_failure(

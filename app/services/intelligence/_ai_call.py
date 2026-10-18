@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import AI_READ_TIMEOUT, DATA_DIR
 from app.core.async_utils import run_async
+from app.core.safe_error import describe_exception, sanitize_error_text
 from app.services import ai_debug_store
 from app.services.ai_config import get_chat_config
 from app.services.ai_inflight import track_ai_call
@@ -538,7 +539,7 @@ def _stream_response(
             response_len=len(full_response),
             thinking_len=len(full_thinking),
             status="error" if stream_error else "ok",
-            error=stream_error[:200] if stream_error else None,
+            error=sanitize_error_text(stream_error, 200) if stream_error else None,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_tokens=reasoning_tokens,
@@ -945,7 +946,7 @@ def call_json_ai(
             )
         refusal_hint = ""
         if full_thinking:
-            refusal_hint = f" (Thinking present: {full_thinking[:80]}...)"
+            refusal_hint = f" (thinking present: {len(full_thinking):,} chars)"
         raise ValueError(
             f"Empty AI response for '{pass2_label}'{refusal_hint}. {detail}"
         )
@@ -961,5 +962,5 @@ def call_json_ai(
         # specific schema-violation cause so callers can catch and fall back.
         raise ValueError(
             f"AI response failed schema validation for '{pass2_label}' "
-            f"({schema.__name__}): {e}. {detail}"
+            f"({schema.__name__}): {describe_exception(e)}. {detail}"
         ) from e

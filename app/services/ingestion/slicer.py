@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.async_utils import run_async
 from app.core.paths import resolve_storage_path
+from app.core.safe_error import describe_exception
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchStatus
 from app.services.ai_config import get_chat_config
@@ -920,7 +921,7 @@ def _prepare(model: type[IngestBatch] | type[Document], source_id: int) -> None:
             failed = cast("IngestBatch | Document | None", db.get(model, source_id))
             if failed:
                 meta = dict(failed.meta or {})
-                meta["slicing"] = {"status": "failed", "error": str(exc)}
+                meta["slicing"] = {"status": "failed", "error": describe_exception(exc)}
                 failed.meta = meta
                 db.commit()
         except Exception:

@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services import family_context
@@ -995,7 +996,7 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document | None:
             # stage's document_enricher — a later METADATA retry (e.g. after
             # a full pipeline retry) failing must not clobber a valid
             # 3-bullet summary ENRICH already produced.
-            doc.ai_summary = {"error": str(e)}
+            doc.ai_summary = {"error": describe_exception(e)}
         db.commit()
         raise
 

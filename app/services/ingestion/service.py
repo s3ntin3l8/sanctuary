@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
 from app.core.paths import resolve_storage_path, to_storage_path
+from app.core.safe_error import describe_exception
 from app.core.validators import validate_case_id
 from app.models.database import (
     Case,
@@ -468,11 +469,11 @@ def process_uploaded_document(doc: Document, db: Session):
     except Exception as e:
         error_str = str(e)
         if "timed out" in error_str.lower():
-            conversion_error = f"OCR timeout: {error_str}"
+            conversion_error = f"OCR timeout: {describe_exception(e)}"
         else:
-            conversion_error = error_str
+            conversion_error = describe_exception(e)
         markdown_content = f"Conversion failed: {conversion_error}"
-        raise IngestionError(f"Conversion error: {e}") from e
+        raise IngestionError(f"Conversion error: {describe_exception(e)}") from e
 
     if not is_valid_docling_output(markdown_content):
         raise IngestionError(

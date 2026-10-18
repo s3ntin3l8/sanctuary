@@ -243,7 +243,7 @@ def _ensure_cost_signal(
             _erase_streitwert_for_doc(
                 doc.id,
                 db,
-                reason=f"false-positive description: {description!r}",
+                reason="false-positive description",
             )
             return None
 
