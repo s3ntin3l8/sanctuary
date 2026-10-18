@@ -1,16 +1,17 @@
 import '@testing-library/jest-dom/vitest'
 
 import { cleanup, configure } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 
 import { setDisplayTimeZone } from '../time'
 
 // CI runners are slow and queries resolve through fetch + React Query.
 configure({ asyncUtilTimeout: 4000 })
 
+// Pages read dates in the workspace zone, which the shell sets in the app.
+beforeEach(() => setDisplayTimeZone('UTC'))
 afterEach(() => {
   cleanup()
-  setDisplayTimeZone('UTC')
   vi.restoreAllMocks()
 })
 

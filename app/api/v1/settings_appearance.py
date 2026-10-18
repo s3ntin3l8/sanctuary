@@ -33,11 +33,15 @@ def _view(db: Session, user: User) -> AppearanceView:
     theme: Literal["dark", "light"] = (
         "light" if mine.get("theme") == "light" else "dark"
     )
+    zone = timezone_service.get_user_tz().key
+    choices = timezone_service.get_timezone_choices()
     return AppearanceView(
         theme=theme,
         dashboard_cards=DashboardCards(**(mine.get("dashboard_cards") or {})),
-        timezone=timezone_service.get_user_tz().key,
-        timezone_choices=timezone_service.get_timezone_choices(),
+        timezone=zone,
+        # The effective zone may come from TIMEZONE or any IANA name an admin saved;
+        # the select must always have its option.
+        timezone_choices=choices if zone in choices else [zone, *choices],
     )
 
 

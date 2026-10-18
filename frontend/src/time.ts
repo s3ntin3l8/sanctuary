@@ -12,17 +12,40 @@
  * `timezone_service.local_date_str`.
  */
 
+import { useSyncExternalStore } from 'react'
+
 const DAY_MS = 86_400_000
 
-let zone = 'UTC'
+let zone: string | null = null
+const listeners = new Set<() => void>()
 
-/** Set from the signed-in shell payload; the zone every date below is read in. */
-export function setDisplayTimeZone(tz: string) {
+/**
+ * Set from the signed-in shell payload (null = not known yet). Nothing guesses a zone:
+ * reading a date before it is set throws, and the shell mounts no page until it is.
+ */
+export function setDisplayTimeZone(tz: string | null) {
+  if (tz === zone) return
   zone = tz
+  listeners.forEach((notify) => notify())
+}
+
+function subscribe(notify: () => void) {
+  listeners.add(notify)
+  return () => listeners.delete(notify)
+}
+
+/** The zone dates are read in, re-rendering the caller when it changes. */
+export function useDisplayTimeZone() {
+  return useSyncExternalStore(subscribe, () => zone)
+}
+
+function activeZone() {
+  if (zone === null) throw new Error('The display timezone has not been set')
+  return zone
 }
 
 export function displayTimeZone() {
-  return zone
+  return activeZone()
 }
 
 const OFFSET = /(?:Z|[+-]\d{2}:?\d{2})$/i
@@ -53,7 +76,7 @@ function formatter(locale: string, timeZone: string, options: Intl.DateTimeForma
 
 /** `YYYY-MM-DD` of an instant on the configured calendar (no printed-date rule). */
 function instantDay(d: Date) {
-  const parts = formatter('en-GB', zone, {
+  const parts = formatter('en-GB', activeZone(), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -96,7 +119,7 @@ export function toMillis(iso: string) {
 /** An API value formatted on the reader's calendar (printed dates keep their day). */
 function format(iso: string, options: Intl.DateTimeFormatOptions) {
   const d = parseApiDate(iso)
-  return formatter('en-GB', isPrinted(d) ? 'UTC' : zone, options).format(d)
+  return formatter('en-GB', isPrinted(d) ? 'UTC' : activeZone(), options).format(d)
 }
 
 /** The value a `<input type="date">` day is stored as: a printed date. */
@@ -133,9 +156,11 @@ export function formatMonthLabel(iso: string) {
 
 /** "14:05" — the clock time of an instant in the configured zone. */
 export function formatTime(iso: string) {
-  return formatter('en-GB', zone, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(
-    parseApiDate(iso),
-  )
+  return formatter('en-GB', activeZone(), {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(parseApiDate(iso))
 }
 
 /** "2026-06-18 14:05"; a printed date has no time of day. */

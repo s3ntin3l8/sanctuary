@@ -245,6 +245,21 @@ def test_appearance_save_timezone_valid(db_session):
     assert _app_settings(db_session).get("timezone") == "Europe/Berlin"
 
 
+def test_appearance_choices_include_a_zone_outside_the_curated_list(db_session):
+    response = client.put(
+        "/api/v1/settings/appearance/timezone", json={"tz": "Pacific/Auckland"}
+    )
+    body = response.json()
+    assert body["timezone"] == "Pacific/Auckland"
+    assert "Pacific/Auckland" in body["timezone_choices"]
+    assert "Europe/Berlin" in body["timezone_choices"]
+    assert body["timezone_choices"].count("Pacific/Auckland") == 1
+    again = client.put(
+        "/api/v1/settings/appearance/timezone", json={"tz": "Europe/Berlin"}
+    ).json()
+    assert "Pacific/Auckland" not in again["timezone_choices"]
+
+
 def test_appearance_save_timezone_invalid():
     response = client.put(
         "/api/v1/settings/appearance/timezone", json={"tz": "Not/AReal/Timezone"}

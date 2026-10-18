@@ -288,6 +288,7 @@ export function useSaveTimezone() {
     mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/appearance/timezone', { body })),
     onSuccess: (view) => {
       queryClient.setQueryData(['settings', 'appearance'], view)
+      // Includes ['shell'], which carries the zone, and every server-dated view.
       return queryClient.invalidateQueries()
     },
   })

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router'
 
 import { useShell, useWorkerQueue } from '../api/shell'
-import { setDisplayTimeZone } from '../time'
+import { setDisplayTimeZone, useDisplayTimeZone } from '../time'
+import { Button } from '../ui/Button'
 import { useToast } from '../ui/toast'
 import { currentTheme, toggleTheme } from '../theme'
 import { CommandPalette } from './CommandPalette'
@@ -16,8 +17,13 @@ import { CountBadge, RailButton } from './RailButton'
 export function Shell() {
   const shellQuery = useShell()
   const shell = shellQuery.data
-  // Read before any page renders, so no date is ever printed in the wrong zone.
-  if (shell) setDisplayTimeZone(shell.timezone)
+  // Pages read dates through the time module, so they only mount once it holds the
+  // workspace zone; a changed zone remounts them so every date is re-read.
+  const zone = shell?.timezone
+  useEffect(() => {
+    if (zone) setDisplayTimeZone(zone)
+  }, [zone])
+  const appliedZone = useDisplayTimeZone()
   const [palette, setPalette] = useState(false)
   const [theme, setThemeState] = useState(currentTheme)
   const toast = useToast()
@@ -94,8 +100,20 @@ export function Shell() {
         <ProfileMenu />
       </nav>
       <main className="min-w-0 flex-1 overflow-y-auto">
-        {/* A changed workspace timezone remounts the page so every date is re-read. */}
-        {shellQuery.isPending ? null : <Outlet key={shell?.timezone} />}
+        {appliedZone ? (
+          <Outlet key={appliedZone} />
+        ) : shellQuery.isError ? (
+          <div role="alert" className="m-5 flex items-center gap-3 text-[12px] text-danger">
+            <span>Could not load the workspace settings: {shellQuery.error.message}</span>
+            <Button onClick={() => void shellQuery.refetch()}>Retry</Button>
+          </div>
+        ) : (
+          <div aria-busy="true" aria-label="Loading" className="space-y-3 p-5">
+            <div className="h-5 w-48 animate-pulse rounded bg-panel2" />
+            <div className="h-24 animate-pulse rounded-xl bg-panel2" />
+            <div className="h-24 animate-pulse rounded-xl bg-panel2" />
+          </div>
+        )}
       </main>
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
     </div>
