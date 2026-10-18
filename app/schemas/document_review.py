@@ -57,6 +57,10 @@ class PipelineView(BaseModel):
     ocr_unverified: list[OcrUnverifiedPage]
     # True when the OCR cross-check could not run at all (so no pages were checked).
     ocr_crosscheck_unavailable: bool = False
+    # Which engine read the text; None for formats that need no reading (txt, eml).
+    extraction_engine: Literal["chandra", "docling", "tesseract"] | None = None
+    # True when Chandra was the configured engine but failed, so Docling read it.
+    ocr_fallback: bool = False
 
 
 class MetadataField(BaseModel):

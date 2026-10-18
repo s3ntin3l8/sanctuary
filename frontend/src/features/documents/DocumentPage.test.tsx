@@ -194,6 +194,33 @@ test('warns about OCR page failures and re-extracts on demand', async () => {
   )
 })
 
+test('says which engine read the text and offers Re-extract on a Chandra fallback', async () => {
+  const fetch = stub({
+    'GET /api/v1/documents/2211/reader': {
+      body: {
+        ...documentReader,
+        pipeline: { ...documentReader.pipeline, extraction_engine: 'docling', ocr_fallback: true },
+      },
+    },
+    'POST /api/v1/documents/2211/pipeline/extract/retry': {
+      body: { ...documentReader.pipeline, extraction_engine: 'chandra' },
+    },
+  })
+  page()
+  const user = userEvent.setup()
+  expect(await screen.findByTestId('extraction-engine')).toHaveTextContent('Text read by Docling')
+  const alert = screen.getByTestId('ocr-fallback')
+  expect(alert).toHaveTextContent('text comes from Docling')
+  await user.click(within(alert).getByRole('button', { name: 'Re-extract' }))
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'POST' && r.url.endsWith('/documents/2211/pipeline/extract/retry'),
+      ),
+    ).toBe(true),
+  )
+})
+
 test('the Aktenzeichen is editable and saved with the metadata', async () => {
   const fetch = stub({
     'PUT /api/v1/documents/2211/metadata': { body: { ...documentReader, az_court: '3 F 2022/23' } },

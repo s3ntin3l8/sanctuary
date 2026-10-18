@@ -138,15 +138,15 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> Non
     dispatch_task(spec.retry_task, arg)
 
 
-def reset_batch_for_retry(batch, db, *, full: bool = False):
+def reset_batch_for_retry(batch, db):
     """Reset pipeline stages for one batch without committing or dispatching.
 
-    Returns (dispatch_items, batch_fallback) on success, or -1 if any stage is
+    Returns dispatch_items on success, or -1 if any stage is
     actively running (caller treats as skip/409). Does NOT commit — the caller
     must commit before calling dispatch_batch_retry with the returned items.
 
-    dispatch_items is a list of (doc_id, batch_id, head_stage | None).
-    batch_fallback is True when no per-doc head was found (BATCH_ANALYSIS fallback).
+    dispatch_items is a list of (doc_id, batch_id, head_stage); every document
+    starts over at EXTRACT, so the configured OCR engine reads it again.
 
     Does not dispatch EMBEDDINGS itself: METADATA is unconditionally reset to
     PENDING above for every doc (no per-stage skip exemption applies to it),
@@ -166,7 +166,6 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     )
     from app.services.intelligence.batch_analyzer import _has_manual_groups
     from app.services.pipeline_status import (
-        _STAGE_ORDER,
         clear_extraction_stamp,
         compute_overall_state,
         stages_dict,
@@ -192,16 +191,13 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
 
     # Clear the cascade gate so the batch analysis can re-run
     batch.analysis_queued_at = None
-    if full:
-        # metadata_phase_queued_at is a one-time CAS flag (see
-        # claim_batch_for_metadata_phase) — once set it never resets on its
-        # own. A full retry resets EXTRACT back to PENDING for every doc, so
-        # once they all complete EXTRACT again, claim_batch_for_metadata_phase
-        # would find the flag already set from the original run and refuse
-        # to fire, permanently stalling the whole batch's METADATA phase.
-        # Only `full` needs this: a partial retry leaves EXTRACT completed,
-        # so the phase already correctly fired once and must not fire again.
-        batch.metadata_phase_queued_at = None
+    # metadata_phase_queued_at is a one-time CAS flag (see
+    # claim_batch_for_metadata_phase) — once set it never resets on its
+    # own. A retry resets EXTRACT back to PENDING for every doc, so once they
+    # all complete EXTRACT again, claim_batch_for_metadata_phase would find the
+    # flag already set from the original run and refuse to fire, permanently
+    # stalling the whole batch's METADATA phase.
+    batch.metadata_phase_queued_at = None
     if batch.meta:
         meta = dict(batch.meta)
         meta.pop("reload_fired", None)
@@ -235,8 +231,6 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
 
         new_stages = dict(stages_current)
         for stage in PipelineStage:
-            if stage == PipelineStage.EXTRACT and not full:
-                continue
             record = stages_current.get(stage.value, {})
             if record.get("status") == StageStatus.SKIPPED.value and record.get(
                 "reason"
@@ -251,8 +245,6 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
         doc.pipeline_state = new_state
 
         for stage in PipelineStage:
-            if stage == PipelineStage.EXTRACT and not full:
-                continue
             record = stages_current.get(stage.value, {})
             if record.get("status") == StageStatus.SKIPPED.value and record.get(
                 "reason"
@@ -272,11 +264,10 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
             )
         db.expire(doc, ["stage_rows"])
 
-        if full:
-            clear_extraction_stamp(doc)
-            # Re-analysing starts the bundle over: it is back in the inbox and
-            # needs confirming again.
-            doc.confirmed_at = None
+        clear_extraction_stamp(doc)
+        # Re-analysing starts the bundle over: it is back in the inbox and
+        # needs confirming again.
+        doc.confirmed_at = None
 
         if not keep_structure:
             doc.role = DocumentRole.STANDALONE
@@ -284,19 +275,14 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
         doc.court_relay = False
         doc.attributed_originator = None
 
-        if full:
-            if doc.case_id and doc.case_id != "_TRIAGE":
-                c = db.query(Case).filter(Case.id == doc.case_id).first()
-                if not c or c.is_draft:
-                    doc.case_id = "_TRIAGE"
-            if doc.proceeding_id:
-                p = (
-                    db.query(Proceeding)
-                    .filter(Proceeding.id == doc.proceeding_id)
-                    .first()
-                )
-                if not p or p.is_draft:
-                    doc.proceeding_id = None
+        if doc.case_id and doc.case_id != "_TRIAGE":
+            c = db.query(Case).filter(Case.id == doc.case_id).first()
+            if not c or c.is_draft:
+                doc.case_id = "_TRIAGE"
+        if doc.proceeding_id:
+            p = db.query(Proceeding).filter(Proceeding.id == doc.proceeding_id).first()
+            if not p or p.is_draft:
+                doc.proceeding_id = None
 
         db.execute(
             _text(
@@ -313,50 +299,16 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
             },
         )
 
-        head: PipelineStage | None = None
-        if full:
-            head = PipelineStage.EXTRACT
-        else:
-            for spec in _STAGE_ORDER:
-                if spec.stage in (PipelineStage.EXTRACT, PipelineStage.EMBEDDINGS):
-                    continue
-                status = new_stages.get(spec.stage.value, {}).get("status")
-                if status not in (
-                    StageStatus.COMPLETED.value,
-                    StageStatus.SKIPPED.value,
-                ):
-                    head = spec.stage
-                    break
+        dispatch_items.append((doc.id, batch.id, PipelineStage.EXTRACT))
 
-        dispatch_items.append((doc.id, batch.id, head))
-
-    batch_fallback = not any(head is not None for _, _, head in dispatch_items)
-    return dispatch_items, batch_fallback
+    return dispatch_items
 
 
-def dispatch_batch_retry(
-    dispatch_items: list, *, batch_fallback: bool, batch_id: int, db
-) -> None:
+def dispatch_batch_retry(dispatch_items: list, db) -> None:
     """Dispatch Celery tasks from a plan built by reset_batch_for_retry.
 
     Must only be called after the DB transaction for the reset has committed.
-    The actual task dispatch (dispatch_task) is fire-and-forget. The claim
-    calls in front of it (claim_stage_for_dispatch, claim_batch_for_analysis)
-    are plain DB calls, not wrapped here — an OperationalError from one of
-    those does propagate out of this function.
+    The actual task dispatch (dispatch_task) is fire-and-forget.
     """
     for doc_id, b_id, head in dispatch_items:
-        if head is not None:
-            dispatch_pipeline_retry(doc_id, b_id, head, db)
-
-    # Fallback: all per-doc cascade stages are already done but BATCH_ANALYSIS is still
-    # pending — e.g. a batch-level retry after docs finished. The cascade won't fire it
-    # naturally since no per-doc head task was dispatched.
-    if batch_fallback:
-        from app.services.intelligence.orchestrator import claim_batch_for_analysis
-
-        if claim_batch_for_analysis(batch_id, db):
-            from app.tasks.analyze_batch import analyze_batch_task
-            from app.tasks.dispatch import dispatch_task
-
-            dispatch_task(analyze_batch_task, batch_id)
+        dispatch_pipeline_retry(doc_id, b_id, head, db)

@@ -8744,9 +8744,30 @@
       },
       "PipelineView": {
         "properties": {
+          "extraction_engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chandra",
+                  "docling",
+                  "tesseract"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Engine"
+          },
           "ocr_crosscheck_unavailable": {
             "default": false,
             "title": "Ocr Crosscheck Unavailable",
+            "type": "boolean"
+          },
+          "ocr_fallback": {
+            "default": false,
+            "title": "Ocr Fallback",
             "type": "boolean"
           },
           "ocr_page_failures": {
@@ -19226,7 +19247,7 @@
     },
     "/api/v1/triage/batch/retry": {
       "post": {
-        "description": "Re-run every AI stage of each selected bundle (extraction is kept).\n\nLoose documents, bundles with a stage actively running and bundles whose\nrow is still locked are skipped and reported.",
+        "description": "Re-extract and re-run every AI stage of each selected bundle.\n\nLoose documents, bundles with a stage actively running and bundles whose\nrow is still locked are skipped and reported.",
         "operationId": "v1_batch_retry_api_v1_triage_batch_retry_post",
         "requestBody": {
           "content": {

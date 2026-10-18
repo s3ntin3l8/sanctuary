@@ -252,7 +252,7 @@ def _reduce_summary(
             system_prompt=ENRICH_SUMMARY_REDUCE_SYSTEM,
             user_prompt=fence("\n".join(lines), "part_findings"),
             options=STAGE_OPTIONS["enrich"],
-            debug_label=f"doc_{doc.id}_enricher_reduce",
+            debug_label=f"doc_{doc.id}_enricherreduce",
             schema=SummaryReduction,
             model=model or None,
             ingest_batch_id=doc.ingest_batch_id,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
@@ -77,6 +78,22 @@ def proceeding_ref(p: Proceeding) -> ProceedingRef:
     )
 
 
+def _extraction_engine(
+    meta: dict,
+) -> Literal["chandra", "docling", "tesseract"] | None:
+    """The engine that read the document, from what extraction stamped.
+
+    Chandra stamps ``extractor``; an image is read by Tesseract; any other
+    converted format (``format`` is set by Docling) by Docling. Text formats
+    need no reading and carry neither.
+    """
+    if meta.get("extractor") == "chandra-ocr-2":
+        return "chandra"
+    if meta.get("format") == "image":
+        return "tesseract"
+    return "docling" if meta.get("format") else None
+
+
 def pipeline_view(doc: Document) -> PipelineView:
     stages = stages_dict(doc)
     out = []
@@ -107,6 +124,8 @@ def pipeline_view(doc: Document) -> PipelineView:
         stages=out,
         ocr_page_failures=sorted(int(p) for p in failures),
         ocr_crosscheck_unavailable=bool(meta.get("ocr_crosscheck_unavailable")),
+        extraction_engine=_extraction_engine(meta),
+        ocr_fallback=bool(meta.get("chandra_ocr_error")),
         ocr_unverified=[
             OcrUnverifiedPage(
                 page=chunk["meta"]["page"],

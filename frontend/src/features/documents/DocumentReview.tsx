@@ -325,6 +325,8 @@ function skipReasonLabel(reason: string): string {
   return SKIP_REASONS[reason] ?? reason.replaceAll('_', ' ')
 }
 
+const ENGINE_LABEL = { chandra: 'Chandra', docling: 'Docling', tesseract: 'Tesseract' } as const
+
 /** One line: a segment per stage, then a verdict. Failures surface their retry controls inline. */
 function Pipeline({ review }: { review: Review }) {
   const retry = useStageRetry(review.id)
@@ -414,6 +416,44 @@ function Pipeline({ review }: { review: Review }) {
         <p className="mt-1.5 text-[10px] text-muted">
           Grouping skipped · {skipReasonLabel(LEGACY_REGROUP_SKIP_REASON)}
         </p>
+      )}
+      {review.pipeline.extraction_engine && (
+        <p
+          className="mt-1.5 flex items-center gap-2 font-mono text-[10px] text-muted"
+          data-testid="extraction-engine"
+        >
+          <span>Text read by {ENGINE_LABEL[review.pipeline.extraction_engine]}</span>
+          {!review.pipeline.ocr_fallback && (
+            <button
+              type="button"
+              disabled={retry.isPending}
+              onClick={() => retry.mutate('extract', { onError: (e) => toast(e.message, 'error') })}
+              className="hover:underline"
+            >
+              Re-extract
+            </button>
+          )}
+        </p>
+      )}
+      {review.pipeline.ocr_fallback && (
+        <div
+          role="alert"
+          className="mt-1.5 flex items-center gap-2 text-[10px] text-warning"
+          data-testid="ocr-fallback"
+        >
+          <Icon name="warning" size={13} />
+          <span className="min-w-0 flex-1">
+            Chandra could not read this document; the text comes from Docling (fallback).
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={retry.isPending}
+            onClick={() => retry.mutate('extract', { onError: (e) => toast(e.message, 'error') })}
+          >
+            Re-extract
+          </Button>
+        </div>
       )}
       {review.pipeline.ocr_crosscheck_unavailable && (
         <p className="mt-1.5 text-[10px] text-muted" data-testid="ocr-crosscheck-unavailable">

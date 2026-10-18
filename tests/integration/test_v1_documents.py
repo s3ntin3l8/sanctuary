@@ -206,6 +206,28 @@ def test_review_says_when_the_ocr_crosscheck_could_not_run(db_session):
     assert unavailable(skipped) is True
 
 
+def test_review_names_the_engine_that_read_the_text(db_session):
+    admin = _admin(db_session)
+    chandra = _doc(
+        db_session, admin.id, meta={"extractor": "chandra-ocr-2", "format": "pdf"}
+    )
+    fallback = _doc(
+        db_session,
+        admin.id,
+        meta={"format": "pdf", "chandra_ocr_error": "All 2 pages failed OCR"},
+    )
+    text = _doc(db_session, admin.id, meta={"pages": 1})
+
+    def pipeline(doc):
+        return client.get(f"/api/v1/documents/{doc.id}/review").json()["pipeline"]
+
+    assert pipeline(chandra)["extraction_engine"] == "chandra"
+    assert pipeline(chandra)["ocr_fallback"] is False
+    assert pipeline(fallback)["extraction_engine"] == "docling"
+    assert pipeline(fallback)["ocr_fallback"] is True
+    assert pipeline(text)["extraction_engine"] is None
+
+
 def test_acknowledging_a_clean_document_writes_nothing(db_session):
     admin = _admin(db_session)
     doc = _doc(db_session, admin.id, meta={"chunks": []})
