@@ -206,17 +206,18 @@ ALLOWED_EXTENSIONS = _allowed_extensions
 
 @contextlib.contextmanager
 def _ocr_readable_image(file_path: str):
-    """The path of an image Docling can read: HEIC/HEIF is converted to a PNG
-    (in a temporary directory that is removed afterwards); others pass through."""
+    """The path of an image Docling can read: HEIC/HEIF is converted to an
+    upright PNG (in a temporary directory that is removed afterwards); others
+    pass through."""
     if os.path.splitext(file_path)[1].lower() not in {".heic", ".heif"}:
         yield file_path
         return
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     with tempfile.TemporaryDirectory() as tmp:
         png = os.path.join(tmp, "image.png")
         with Image.open(file_path) as image:
-            image.convert("RGB").save(png)
+            ImageOps.exif_transpose(image).convert("RGB").save(png)
         yield png
 
 

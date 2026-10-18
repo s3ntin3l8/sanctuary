@@ -29,6 +29,10 @@ pytestmark = pytest.mark.unit
         ("Hallo 3", None),
         ("Klage 5", None),
         ("3", None),  # a bare number is not an exhibit without "Anlage"
+        ("AG 3", None),  # a court and a number, not an exhibit
+        ("ASG 2", None),
+        ("Anlage AG 3", "AG 3"),
+        ("Anlage ASG 2", "ASG 2"),
     ],
 )
 def test_labels_are_normalised(text, label):
@@ -45,6 +49,7 @@ def test_labels_are_normalised(text, label):
         ("Anlage 1.pdf", "1"),
         ("SCHR_LG IN V_26_05_26.PDF", None),
         ("AG 3 C 123-26.pdf", None),  # a court and a file number, not an exhibit
+        ("Anlage AG 3.pdf", "AG 3"),
         ("Rechnung K1.pdf", None),
         ("scan.pdf", None),
     ],
@@ -68,6 +73,14 @@ def test_a_list_gives_labels_in_the_senders_order():
         ListItem("K 1", "Mietvertrag vom 01.01.2024", 1),
         ListItem("K 2", "Kündigungsschreiben", 2),
         ListItem("3", "Schriftverkehr", 3),
+    ]
+
+
+def test_ag_and_asg_on_a_list_line_need_the_word_anlage():
+    assert parse_anlage_list("AG 3: Urteil\nASG 2: Beschluss\n") == []
+    assert parse_anlage_list("Anlage AG 3: Urteil\nAnlage ASG 2: Beschluss\n") == [
+        ListItem("AG 3", "Urteil", 1),
+        ListItem("ASG 2", "Beschluss", 2),
     ]
 
 

@@ -301,6 +301,19 @@ def test_a_zip_inside_a_winmail_dat_is_expanded():
     assert [m["name"] for m in member["members"]] == ["K1.pdf"]
 
 
+def test_a_zip_member_of_a_winmail_dat_is_tagged_as_a_zip_member():
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("K1.pdf", b"%PDF-1.4 k1")
+    parsed = parse_rfc822(
+        _mail_with(_tnef({"Anlagen.zip": buffer.getvalue()}), "winmail.dat", "ms-tnef")
+    )
+    ids = {p["filename"]: p["id"] for p in parsed["parts"]}
+    assert ids["K1.pdf"] == ids["winmail.dat"] + ".t0.z0"
+
+
 def test_msg_recipients_are_comma_separated_headers():
     fake = _fake_message(to="A <a@x.de>; B <b@y.de>", cc="C <c@z.de>;", attachments=[])
     with patch("extract_msg.openMsg", return_value=fake):
@@ -359,18 +372,83 @@ def test_openmsg_is_asked_to_tolerate_signed_and_broken_parts():
     assert behaviour & ErrorBehavior.ATTACH_BROKEN
 
 
-def test_the_nesting_limit_is_named_as_such():
+def _nested(levels: int):
+    """A message with a sibling file, wrapped ``levels`` times in .msg files."""
     message = _fake_message(attachments=[])
-    for _ in range(email_msg._MAX_EMBEDDED + 2):
+    for _ in range(levels):
         message = _fake_message(
-            attachments=[SimpleNamespace(data=message, longFilename="inner.msg")]
+            attachments=[
+                SimpleNamespace(data=message, longFilename="inner.msg"),
+                SimpleNamespace(data=b"%PDF-1.4 ok", longFilename="gut.pdf"),
+            ]
         )
-    with patch("extract_msg.openMsg", return_value=message):
-        with pytest.raises(email_msg.MsgNestingLimit):
-            email_msg.msg_to_rfc822(OLE)
+    return message
+
+
+def test_the_nesting_limit_fails_only_the_offending_attachment():
+    with patch(
+        "extract_msg.openMsg", return_value=_nested(email_msg._MAX_EMBEDDED + 2)
+    ):
         parsed = parse_rfc822(_mail_with(OLE, "Ladung.msg", "vnd.ms-outlook"))
-    part = next(p for p in parsed["parts"] if p["filename"] == "Ladung.msg")
-    assert part["reason"] == "Attached email nesting limit reached"
+    outer = next(p for p in parsed["parts"] if p["filename"] == "Ladung.msg")
+    assert outer["outcome"] == "nested_source"  # the outer message survives
+    [limited] = [
+        p
+        for source in parsed["sources"]
+        for p in source["parts"]
+        if p["outcome"] == "failed"
+    ]
+    assert limited["reason"] == "Attached email nesting limit reached"
+    assert limited["mime_type"] == "application/vnd.ms-outlook"
+    # every level above it keeps its sibling file readable
+    assert (
+        sum(
+            p["filename"] == "gut.pdf" and p["outcome"] == "pending"
+            for source in parsed["sources"]
+            for p in source["parts"]
+        )
+        == email_msg._MAX_EMBEDDED
+    )
+
+
+def test_a_msg_beyond_the_limit_itself_is_refused():
+    with patch("extract_msg.openMsg", return_value=_fake_message()):
+        with pytest.raises(email_msg.MsgNestingLimit):
+            email_msg.msg_to_rfc822(OLE, depth=email_msg._MAX_EMBEDDED + 1)
+
+
+def test_a_msg_inside_a_nested_rfc822_mail_continues_the_depth():
+    inner = EmailMessage()
+    inner["From"] = "x@example.com"
+    inner["Message-ID"] = "<inner@example.com>"
+    inner.set_content("innen")
+    inner.add_attachment(
+        OLE, maintype="application", subtype="vnd.ms-outlook", filename="tief.msg"
+    )
+    outer = EmailMessage()
+    outer["From"] = "y@example.com"
+    outer["Message-ID"] = "<outer@example.com>"
+    outer.set_content("aussen")
+    outer.add_attachment(inner)
+    depths = []
+
+    with patch("app.services.ingestion.email_parser.msg_to_rfc822") as convert:
+        convert.side_effect = lambda data, depth, nonce: (
+            depths.append(depth) or b"From: a@b.de\r\n\r\nx"
+        )
+        parse_rfc822(outer.as_bytes())
+    assert depths == [2]  # the nested mail is level 1, the .msg inside it level 2
+
+
+def test_a_broken_placeholder_keeps_the_attachments_type():
+    broken = _Raising(longFilename="kaputt.pdf")
+    with patch("extract_msg.openMsg", return_value=_fake_message(attachments=[broken])):
+        msg = email.message_from_bytes(
+            email_msg.msg_to_rfc822(OLE), policy=policy.default
+        )
+    [placeholder] = msg.iter_attachments()
+    assert placeholder.get_content_type() == "application/pdf"
+    assert placeholder.get_content() == b""
 
 
 def test_a_broken_attachment_without_data_is_a_visible_empty_part():
@@ -384,3 +462,34 @@ def test_a_broken_attachment_without_data_is_a_visible_empty_part():
         )
     by_name = {a.get_filename(): a.get_content() for a in msg.iter_attachments()}
     assert by_name == {"kaputt.pdf": b"", "leer.pdf": b""}
+
+
+# --- HEIC orientation --------------------------------------------------------
+
+
+def _oriented(path, fmt: str, orientation: int):
+    """A 40x20 image whose EXIF says it must be turned to be upright."""
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    Image.new("RGB", (40, 20), (200, 30, 30)).save(path, format=fmt, exif=exif)
+
+
+def test_a_heic_comes_out_upright_and_as_a_png(tmp_path):
+    # pillow-heif applies the HEIF rotation itself; the PNG keeps that result.
+    from PIL import Image
+
+    _heic()  # registers the HEIF opener
+    path = tmp_path / "foto.heic"
+    _oriented(path, "HEIF", 6)
+    with converters._ocr_readable_image(str(path)) as readable:
+        with Image.open(readable) as image:
+            assert image.format == "PNG" and image.size == (40, 20)
+
+
+def test_a_non_heic_image_is_passed_through_untouched(tmp_path):
+    path = tmp_path / "scan.jpg"
+    path.write_bytes(b"not even an image")  # never opened
+    with converters._ocr_readable_image(str(path)) as readable:
+        assert readable == str(path)
