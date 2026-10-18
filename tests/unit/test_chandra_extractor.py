@@ -362,6 +362,32 @@ def test_a_failed_second_ocr_never_fails_extraction():
     assert result["metadata"]["page_failures"] == []
 
 
+@pytest.mark.unit
+def test_a_failed_page_placeholder_carries_no_exception_text():
+    render, _, gate, slot, _ = _patch_common(page_count=2)
+    with (
+        render,
+        gate,
+        slot,
+        patch(
+            "app.services.ingestion.chandra_extractor._ocr_one_page",
+            side_effect=[ValueError("SENTINEL --> injected"), "<p>hi</p>"],
+        ),
+        patch(
+            "app.services.ingestion.ocr_crosscheck.second_opinion", return_value=None
+        ),
+        patch("app.services.ingestion.chandra_extractor.ThreadPoolExecutor") as pool,
+    ):
+        pool.return_value.submit.side_effect = lambda fn, arg: _done(fn(arg))
+        result = extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=1)
+    assert "SENTINEL" not in result["content"]
+    assert "injected" not in result["content"]
+    chunks = result["chunks"]
+    assert chunks[0]["text"] == "<!-- chandra page 1 failed: ValueError -->"
+    assert chunks[0]["meta"]["failed"] is True
+    assert result["metadata"]["page_failures"] == [1]
+
+
 def _done(value):
     from concurrent.futures import Future
 
