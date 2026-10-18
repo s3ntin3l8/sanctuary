@@ -7,7 +7,8 @@ document or a model answer (a parse error quotes it). Logging ``exc`` / ``str(ex
 are sanitised by ``LocalTimeFormatter``).
 
 The check is syntactic: it sees the exception variable used inside the logging call
-itself. Assigning ``msg = str(exc)`` first and logging ``msg`` is not caught, so
+itself. The variable is an ``except ... as NAME`` target, or a function parameter
+named like an exception (``exc``, ``e``, ``error``, ...). Assigning ``msg = str(exc)`` first and logging ``msg`` is not caught, so
 don't.
 """
 
@@ -21,6 +22,7 @@ pytestmark = pytest.mark.unit
 APP = Path(__file__).resolve().parents[2] / "app"
 LEVELS = {"debug", "info", "warning", "error", "exception", "critical", "warn"}
 RAW_ATTRS = {"args", "message", "msg"}
+EXCEPTION_PARAMS = {"e", "ex", "exc", "err", "error", "exception"}
 
 
 def _is_logger_call(node: ast.Call) -> bool:
@@ -53,23 +55,38 @@ def _raw_uses(node: ast.AST, name: str) -> list[ast.AST]:
     return hits
 
 
-def _violations(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    found: list[str] = []
-    for handler in ast.walk(tree):
-        if not (isinstance(handler, ast.ExceptHandler) and handler.name):
-            continue
-        for stmt in handler.body:
+def scopes(tree: ast.AST):
+    """``(variable, statements)``: where an exception variable is in scope."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            yield node.name, node.body
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            params = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+            for param in params:
+                if param.arg in EXCEPTION_PARAMS:
+                    yield param.arg, node.body
+
+
+def logged_raw(tree: ast.AST):
+    """``(variable, node)`` for every raw use of an exception in a logging call."""
+    for name, body in scopes(tree):
+        for stmt in body:
             for call in ast.walk(stmt):
                 if isinstance(call, ast.Call) and _is_logger_call(call):
                     args = [*call.args, *(k.value for k in call.keywords)]
                     for arg in args:
-                        for hit in _raw_uses(arg, handler.name):
-                            found.append(f"{path.relative_to(APP.parent)}:{hit.lineno}")
-    return sorted(set(found))
+                        for hit in _raw_uses(arg, name):
+                            yield name, hit
 
 
-def test_no_caught_exception_is_logged_raw():
+def _violations(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return sorted(
+        {f"{path.relative_to(APP.parent)}:{hit.lineno}" for _n, hit in logged_raw(tree)}
+    )
+
+
+def test_no_exception_is_logged_raw():
     offenders = [v for p in sorted(APP.rglob("*.py")) for v in _violations(p)]
     assert not offenders, (
         "log describe_exception(exc), not the exception itself:\n"

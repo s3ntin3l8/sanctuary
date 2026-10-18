@@ -459,7 +459,7 @@ def _retry_or_fail_after_gate_timeout(task, doc_id: int, exc: ModelGateTimeout) 
                 "Doc #%d: METADATA could not get the model slot (%s) — "
                 "retry %d/%d in %ds",
                 doc_id,
-                exc,
+                describe_exception(exc),
                 task.request.retries + 1,
                 task.max_retries,
                 _GATE_RETRY_COUNTDOWN,

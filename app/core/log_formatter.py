@@ -22,7 +22,10 @@ class LocalTimeFormatter(logging.Formatter):
     ) -> str:
         """The traceback with its frames, but each exception's message replaced
         by ``describe_exception``: a parse or validation error quotes the model
-        answer (document text), and the stock traceback would print it again."""
+        answer (document text), and the stock traceback would print it again.
+        Deliberately simpler than ``traceback.print_exception``: no
+        ``ExceptionGroup`` members and no ``add_note`` text (nothing in ``app/``
+        uses either)."""
         exc = ei[1]
         if exc is None:
             return super().formatException(ei)

@@ -74,3 +74,46 @@ def test_celery_task_failure_line_carries_no_quoted_model_input():
     assert _SanitizeTaskFailure().filter(rec)
     assert SENTINEL not in rec.getMessage()
     assert "ValidationError" in rec.getMessage()
+
+
+def _validation_error() -> ValidationError:
+    try:
+        _Answer.model_validate({"count": SENTINEL})
+    except ValidationError as exc:
+        return exc
+    raise AssertionError
+
+
+def test_celery_retry_line_without_exc_info_is_sanitised():
+    from app.tasks.celery_app import _SanitizeTaskFailure
+
+    raw = repr(_validation_error())
+    assert SENTINEL in raw
+    rec = logging.LogRecord(
+        "celery.app.trace",
+        logging.INFO,
+        __file__,
+        1,
+        "Task %(name)s retry: %(exc)s",
+        ({"name": "t", "exc": raw},),
+        None,
+    )
+    _SanitizeTaskFailure().filter(rec)
+    assert SENTINEL not in rec.getMessage()
+
+
+def test_celery_worker_request_line_is_sanitised():
+    from app.tasks.celery_app import _SanitizeTaskFailure
+
+    rec = logging.LogRecord(
+        "celery.worker.request",
+        logging.ERROR,
+        __file__,
+        1,
+        "Task handler raised error: %r",
+        (_validation_error(),),
+        None,
+    )
+    _SanitizeTaskFailure().filter(rec)
+    assert SENTINEL not in rec.getMessage()
+    assert "ValidationError" in rec.getMessage()

@@ -240,7 +240,7 @@ def _maybe_warn(exc: Exception) -> None:
         logger.warning(
             "gmail_sync: Redis unavailable (%s); proceeding without the "
             "per-user sync lock",
-            exc,
+            describe_exception(exc),
         )
         _last_warn_at = now
 

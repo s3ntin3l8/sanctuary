@@ -14,6 +14,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from app.core.safe_error import describe_exception
 from app.services.gmail_oauth_config import OAuthClient
 
 logger = logging.getLogger(__name__)
@@ -430,7 +431,9 @@ def fetch_metadata(
             retry.append(request_id)
         else:
             logger.warning(
-                "Gmail metadata fetch failed for %s: %s", request_id, exception
+                "Gmail metadata fetch failed for %s: %s",
+                request_id,
+                describe_exception(exception) if exception else "no response",
             )
 
     pending = list(gmail_ids)

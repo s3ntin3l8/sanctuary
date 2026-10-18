@@ -99,7 +99,7 @@ input when it is written, and the call index's `error` field is sanitised at its
 callers. Logged exceptions go through `describe_exception` (type plus a bounded line;
 for a validation error only the failing fields, never the quoted input), tracebacks are
 re-rendered by the log formatter with the same text, and Celery's "task raised" line is
-sanitised too. `tests/unit/test_no_raw_exception_logging.py` fails on a caught exception
+sanitised too (failure, retry and worker-handler lines). `tests/unit/test_no_raw_exception_logging.py` fails on a caught exception or an `exc`-named parameter
 logged raw. A bounded message of an ordinary exception is still printed, so treat the
 server log as sensitive (the encrypted volume covers it).
 
