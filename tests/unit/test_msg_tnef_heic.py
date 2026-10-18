@@ -464,7 +464,7 @@ def test_a_broken_attachment_without_data_is_a_visible_empty_part():
     assert by_name == {"kaputt.pdf": b"", "leer.pdf": b""}
 
 
-# --- image orientation -------------------------------------------------------
+# --- HEIC orientation --------------------------------------------------------
 
 
 def _oriented(path, fmt: str, orientation: int):
@@ -474,18 +474,6 @@ def _oriented(path, fmt: str, orientation: int):
     exif = Image.Exif()
     exif[0x0112] = orientation
     Image.new("RGB", (40, 20), (200, 30, 30)).save(path, format=fmt, exif=exif)
-
-
-def test_a_rotated_photo_is_turned_upright_for_ocr(tmp_path):
-    from PIL import Image
-
-    path = tmp_path / "foto.jpg"
-    _oriented(path, "JPEG", 6)
-    with converters._ocr_readable_image(str(path)) as readable:
-        assert readable.endswith(".png")
-        with Image.open(readable) as image:
-            assert image.size == (20, 40)  # width and height swapped
-    assert path.exists()
 
 
 def test_a_heic_comes_out_upright_and_as_a_png(tmp_path):
@@ -500,14 +488,8 @@ def test_a_heic_comes_out_upright_and_as_a_png(tmp_path):
             assert image.format == "PNG" and image.size == (40, 20)
 
 
-def test_an_upright_image_is_passed_through_untouched(tmp_path):
-    from PIL import Image
-
-    path = tmp_path / "scan.png"
-    Image.new("RGB", (40, 20)).save(path)
+def test_a_non_heic_image_is_passed_through_untouched(tmp_path):
+    path = tmp_path / "scan.jpg"
+    path.write_bytes(b"not even an image")  # never opened
     with converters._ocr_readable_image(str(path)) as readable:
         assert readable == str(path)
-    jpeg = tmp_path / "foto.jpg"
-    _oriented(jpeg, "JPEG", 1)
-    with converters._ocr_readable_image(str(jpeg)) as readable:
-        assert readable == str(jpeg)

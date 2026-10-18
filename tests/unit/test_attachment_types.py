@@ -68,10 +68,8 @@ def test_convert_file_reads_an_ics(tmp_path):
 
 
 def test_convert_file_runs_an_image_through_the_ocr_pipeline(tmp_path):
-    from PIL import Image
-
     path = tmp_path / "scan.png"
-    Image.new("RGB", (8, 8)).save(path)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
     with (
         patch.object(converters, "_get_image_ocr_converter", return_value="conv"),
         patch.object(
