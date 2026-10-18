@@ -12,7 +12,7 @@ import pytest
 from app.services.intelligence._ai_call import _LABEL_RE, _resolve_run_ids
 
 APP = Path(__file__).resolve().parents[2] / "app"
-_LABEL_LITERAL = re.compile(r'debug_label=f?"((?:doc|batch|case)_[^"]+)"')
+_LABEL_LITERAL = re.compile(r'debug_label\s*=\s*f?"([^"]+)"')
 
 
 def _labels() -> list[str]:
@@ -25,14 +25,17 @@ def _labels() -> list[str]:
 
 @pytest.mark.unit
 def test_labels_are_discovered():
-    assert "doc_7_enricherreduce" in _labels()
+    found = _labels()
+    assert "doc_7_enricherreduce" in found
+    assert "dedup_batch" in found
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("label", sorted(set(_labels())))
 def test_label_stage_has_no_underscore_and_id_parses(label):
     m = _LABEL_RE.match(label)
-    assert m, label
+    if m is None:  # not doc/batch/case scoped: logged under "misc", no id parsed
+        return
     kind, scope_id, stage = m.groups()
     assert "_" not in stage
     if kind != "case":

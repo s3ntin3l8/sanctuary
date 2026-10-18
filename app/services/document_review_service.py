@@ -83,10 +83,13 @@ def _extraction_engine(
 ) -> Literal["chandra", "docling", "tesseract"] | None:
     """The engine that read the document, from what extraction stamped.
 
-    Chandra stamps ``extractor``; an image is read by Tesseract; any other
+    A stamped ``extraction_engine`` wins. Otherwise Chandra's ``extractor``; an image is read by Tesseract; any other
     converted format (``format`` is set by Docling) by Docling. Text formats
     need no reading and carry neither.
     """
+    stamped = meta.get("extraction_engine")
+    if stamped in ("chandra", "docling", "tesseract"):
+        return stamped
     if meta.get("extractor") == "chandra-ocr-2":
         return "chandra"
     if meta.get("format") == "image":

@@ -308,7 +308,10 @@ def dispatch_batch_retry(dispatch_items: list, db) -> None:
     """Dispatch Celery tasks from a plan built by reset_batch_for_retry.
 
     Must only be called after the DB transaction for the reset has committed.
-    The actual task dispatch (dispatch_task) is fire-and-forget.
+    The actual task dispatch (dispatch_task) is fire-and-forget. The claim
+    calls in front of it (claim_stage_for_dispatch) are plain DB calls outside
+    retry_on_db_locked: an OperationalError there leaves the batch reset but
+    undispatched, and the orphan sweep picks it up (see dispatch_pipeline_retry).
     """
     for doc_id, b_id, head in dispatch_items:
         dispatch_pipeline_retry(doc_id, b_id, head, db)
