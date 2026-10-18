@@ -14,6 +14,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Document, DocumentRelationship, IngestBatch
 from app.models.enums import (
     DocumentRole,
@@ -1003,7 +1004,7 @@ def analyze(batch_id: int) -> bool:
             "Batch %d analyzer: empty AI response (%s) — retrying with "
             "thinking suppressed.",
             batch_id,
-            first_err,
+            describe_exception(first_err),
         )
         try:
             result = _call_batch_analyzer_sync(
@@ -1021,11 +1022,13 @@ def analyze(batch_id: int) -> bool:
                 "Batch %d: analyzer empty after /no_think retry (%s) — "
                 "applying heuristic fallback.",
                 batch_id,
-                retry_err,
+                describe_exception(retry_err),
             )
             result = {}
     except Exception as e:
-        logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
+        logger.error(
+            f"Batch {batch_id} analysis failed: {describe_exception(e)}", exc_info=True
+        )
         db = SessionLocal()
         try:
             has_manual = _has_manual_groups(batch_id, db)

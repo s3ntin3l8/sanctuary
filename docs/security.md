@@ -96,9 +96,12 @@ Logs, admin). While on, each AI call is recorded as one encrypted line and delet
 
 Error text: a pipeline stage error is cut to one bounded line without quoted model
 input when it is written, and the call index's `error` field is sanitised at its
-callers. Warning and error logs are **not** filtered: many still print the raw
-exception, which for a failed JSON or validation parse can quote the model's answer.
-Treat the server log as sensitive too (the encrypted volume covers it).
+callers. Logged exceptions go through `describe_exception` (type plus a bounded line;
+for a validation error only the failing fields, never the quoted input), tracebacks are
+re-rendered by the log formatter with the same text, and Celery's "task raised" line is
+sanitised too. `tests/unit/test_no_raw_exception_logging.py` fails on a caught exception
+logged raw. A bounded message of an ordinary exception is still printed, so treat the
+server log as sensitive (the encrypted volume covers it).
 
 ## Upgrading
 

@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.core.private_files import is_current, write_private
+from app.core.safe_error import describe_exception
 from app.services import ai_debug_store
 from app.tasks.celery_app import celery_app
 
@@ -154,7 +155,11 @@ def prune_ai_debug_logs_task():
             if not runs_file.exists():
                 files_removed += 1
         except OSError as exc:
-            logger.warning("Could not prune ai_debug file %s: %s", runs_file, exc)
+            logger.warning(
+                "Could not prune ai_debug file %s: %s",
+                runs_file,
+                describe_exception(exc),
+            )
             errors += 1
 
     # Prune the encrypted per-scope dumps
@@ -168,7 +173,9 @@ def prune_ai_debug_logs_task():
             if not entry.exists():
                 files_removed += 1
         except OSError as exc:
-            logger.warning("Could not prune ai_debug file %s: %s", entry, exc)
+            logger.warning(
+                "Could not prune ai_debug file %s: %s", entry, describe_exception(exc)
+            )
             errors += 1
 
     # Cleanup empty directories
@@ -264,7 +271,9 @@ def recover_pipeline_task():
         logger.info("recover_pipeline: %s", result)
         return result
     except Exception as e:
-        logger.error("recover_pipeline failed: %s", e, exc_info=True)
+        logger.error(
+            "recover_pipeline failed: %s", describe_exception(e), exc_info=True
+        )
         return {"status": "error", "error": str(e)}
     finally:
         db.close()
@@ -335,7 +344,7 @@ def retry_failed_claim_embeddings_task():
             logger.warning(
                 "retry_failed_claim_embeddings: claim %d raised %s",
                 claim_id,
-                e,
+                describe_exception(e),
             )
         finally:
             db.close()

@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import REDIS_URL
-from app.core.safe_error import sanitize_error_text
+from app.core.safe_error import describe_exception, sanitize_error_text
 from app.core.secrets import SecretsError
 from app.models.database import GmailMessageIndex, UserSettings
 from app.services import (
@@ -513,11 +513,17 @@ def sync_gmail_for_user(self, user_id: int):
         except (GmailReconnectRequired, SecretsError) as e:
             # Only a fresh OAuth grant (or the right encryption key) fixes
             # these — retrying with backoff would just hammer Google.
-            logger.warning("Gmail sync for user %d needs a reconnect: %s", user_id, e)
+            logger.warning(
+                "Gmail sync for user %d needs a reconnect: %s",
+                user_id,
+                describe_exception(e),
+            )
             _record_failure(db, user_id, str(e), reconnect_required=True)
             return "Reconnect required"
         except Exception as e:
-            logger.error(f"Gmail incremental sync failed for user {user_id}: {e}")
+            logger.error(
+                f"Gmail incremental sync failed for user {user_id}: {describe_exception(e)}"
+            )
             _record_failure(db, user_id, _public_error(e))
             raise
         finally:
@@ -601,11 +607,19 @@ def check_gmail_new(self, user_id: int):
                 f"Checked: {len(new_ids) - skipped} new message(s) for user {user_id}"
             )
         except (GmailReconnectRequired, SecretsError) as e:
-            logger.warning("Gmail check for user %d needs a reconnect: %s", user_id, e)
+            logger.warning(
+                "Gmail check for user %d needs a reconnect: %s",
+                user_id,
+                describe_exception(e),
+            )
             _record_failure(db, user_id, str(e), reconnect_required=True)
             return "Reconnect required"
         except Exception as e:
-            logger.error("Gmail new-mail check failed for user %d: %s", user_id, e)
+            logger.error(
+                "Gmail new-mail check failed for user %d: %s",
+                user_id,
+                describe_exception(e),
+            )
             _record_failure(db, user_id, _public_error(e))
             raise
         finally:
@@ -669,14 +683,20 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
             gmail_runs.finish_run("index", user_id, run_id)
             return f"Indexed {len(new_ids) - skipped} new messages for user {user_id}"
         except (GmailReconnectRequired, SecretsError) as e:
-            logger.warning("Gmail index for user %d needs a reconnect: %s", user_id, e)
+            logger.warning(
+                "Gmail index for user %d needs a reconnect: %s",
+                user_id,
+                describe_exception(e),
+            )
             _record_failure(db, user_id, str(e), reconnect_required=True)
             gmail_runs.finish_run(
                 "index", user_id, run_id, error=f"Reconnect required — {e}"
             )
             return "Reconnect required"
         except Exception as e:
-            logger.error("Gmail index failed for user %d: %s", user_id, e)
+            logger.error(
+                "Gmail index failed for user %d: %s", user_id, describe_exception(e)
+            )
             message = _public_error(e)
             if self.request.retries >= self.max_retries:
                 gmail_runs.finish_run("index", user_id, run_id, error=message)
@@ -877,7 +897,11 @@ def import_gmail_messages(self, user_id: int, run_id: str):
         _merge_import_outcome(db, user_id, finished)
         return f"Imported {finished['done']} of {finished['total']} messages"
     except (GmailReconnectRequired, SecretsError) as e:
-        logger.warning("Gmail import for user %d needs a reconnect: %s", user_id, e)
+        logger.warning(
+            "Gmail import for user %d needs a reconnect: %s",
+            user_id,
+            describe_exception(e),
+        )
         _record_failure(db, user_id, str(e), reconnect_required=True)
         finished = gmail_runs.finish_run(
             "import",
@@ -890,7 +914,9 @@ def import_gmail_messages(self, user_id: int, run_id: str):
             _merge_import_outcome(db, user_id, finished, record_status=False)
         return "Reconnect required"
     except Exception as e:
-        logger.error("Gmail import failed for user %d: %s", user_id, e)
+        logger.error(
+            "Gmail import failed for user %d: %s", user_id, describe_exception(e)
+        )
         finished = gmail_runs.finish_run(
             "import", user_id, run_id, patch=_progress(work), error=_public_error(e)
         )

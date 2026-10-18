@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import AI_API_KEY, AI_BASE_URL, AI_PROVIDER
+from app.core.safe_error import describe_exception
 
 if TYPE_CHECKING:
     from app.services.ai_config import ChatConfig, EmbedConfig, OcrConfig
@@ -266,7 +267,7 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
                 if isinstance(data, dict) and "models" in data:
                     return ProviderType.OLLAMA
         except Exception as e:
-            logger.debug(f"Ollama probe failed at {base_url}: {e}")
+            logger.debug(f"Ollama probe failed at {base_url}: {describe_exception(e)}")
 
         try:
             resp = await client.get(f"{base_url}/v1/models", headers=headers)
@@ -301,7 +302,7 @@ async def detect_provider(base_url: str, api_key: str | None = None) -> Provider
                     return ProviderType.ANTHROPIC
                 return ProviderType.LMSTUDIO
         except Exception as e:
-            logger.debug(f"OpenAI probe failed at {base_url}: {e}")
+            logger.debug(f"OpenAI probe failed at {base_url}: {describe_exception(e)}")
 
     raise RuntimeError(
         f"AI provider unreachable: no endpoint responded at {base_url} "
@@ -570,7 +571,9 @@ class AIProvider:
                     else await detect_provider(base_url, api_key)
                 )
             except Exception as e:
-                logger.debug(f"probe_health: detect_provider failed at {base_url}: {e}")
+                logger.debug(
+                    f"probe_health: detect_provider failed at {base_url}: {describe_exception(e)}"
+                )
                 return {
                     "ok": False,
                     "provider": "unknown",
@@ -598,7 +601,9 @@ class AIProvider:
                 "detail": f"HTTP {resp.status_code}",
             }
         except Exception as e:
-            logger.debug(f"probe_health: {base_url} {ptype} failed: {e}")
+            logger.debug(
+                f"probe_health: {base_url} {ptype} failed: {describe_exception(e)}"
+            )
             return {
                 "ok": False,
                 "provider": str(ptype),

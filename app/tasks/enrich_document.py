@@ -3,6 +3,7 @@ import logging
 import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app.core.safe_error import describe_exception
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
 
@@ -118,7 +119,9 @@ def enrich_document_task(self, doc_id: int):
                 db.close()
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
         logger.warning(
-            "Doc #%d: enrich timeout after retry (%s) — marking failed", doc_id, e
+            "Doc #%d: enrich timeout after retry (%s) — marking failed",
+            doc_id,
+            describe_exception(e),
         )
         _fail_enrich_terminally(doc_id, f"timeout: {e}")
         _trigger_cost_rollup(doc_id)
@@ -134,7 +137,7 @@ def enrich_document_task(self, doc_id: int):
                 "Doc #%d: AI backend unreachable at %s (%s) — retry %d in %ds",
                 doc_id,
                 chat_provider.base_url,
-                e,
+                describe_exception(e),
                 self.request.retries + 1,
                 countdown,
             )
@@ -158,7 +161,7 @@ def enrich_document_task(self, doc_id: int):
             "Doc #%d: AI backend unreachable at %s after all retries: %s",
             doc_id,
             chat_provider.base_url,
-            e,
+            describe_exception(e),
         )
         _fail_enrich_terminally(doc_id, f"connect: {e}")
         _trigger_cost_rollup(doc_id)
@@ -180,7 +183,7 @@ def enrich_document_task(self, doc_id: int):
                 "Doc #%d: AI returned HTTP %d — failing immediately (no retry): %s",
                 doc_id,
                 e.response.status_code,
-                e,
+                describe_exception(e),
             )
             _fail_enrich_terminally(doc_id, f"HTTP {e.response.status_code}: {e}")
             _trigger_cost_rollup(doc_id)
@@ -197,7 +200,7 @@ def enrich_document_task(self, doc_id: int):
                 e.response.status_code,
                 self.request.retries + 1,
                 countdown,
-                e,
+                describe_exception(e),
             )
             db = get_db_session()
             try:
@@ -219,7 +222,7 @@ def enrich_document_task(self, doc_id: int):
             doc_id,
             e.response.status_code,
             self.max_retries,
-            e,
+            describe_exception(e),
         )
         _fail_enrich_terminally(doc_id, f"HTTP {e.response.status_code}: {e}")
         _trigger_cost_rollup(doc_id)
@@ -228,12 +231,17 @@ def enrich_document_task(self, doc_id: int):
         # An Exception subclass — must come before the generic branch below
         # or it would be treated as a retryable system error, racing
         # self.retry()'s countdown against the imminent hard kill.
-        logger.error(f"Doc {doc_id} enrich soft time limit exceeded: {e}")
+        logger.error(
+            f"Doc {doc_id} enrich soft time limit exceeded: {describe_exception(e)}"
+        )
         _fail_enrich_terminally(doc_id, f"soft time limit exceeded: {e}")
         _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
-        logger.error(f"Doc {doc_id} enrichment task failed: {e}", exc_info=True)
+        logger.error(
+            f"Doc {doc_id} enrichment task failed: {describe_exception(e)}",
+            exc_info=True,
+        )
         if self.request.retries < self.max_retries:
             countdown = 60 * (self.request.retries + 1)
             db = get_db_session()
@@ -346,7 +354,7 @@ def _dispatch_safely(doc_id: int, stage: PipelineStage) -> None:
             "Doc #%d: dispatch of %s failed — marking stage failed: %s",
             doc_id,
             stage.value,
-            e,
+            describe_exception(e),
             exc_info=True,
         )
         db = get_db_session()
@@ -467,6 +475,6 @@ def _trigger_cost_rollup(doc_id: int) -> None:
         if doc and doc.case_id and doc.case_id != "_TRIAGE":
             recompute_total_cost_exposure(doc.case_id, db)
     except Exception as e:
-        logger.warning(f"Cost rollup failed for doc {doc_id}: {e}")
+        logger.warning(f"Cost rollup failed for doc {doc_id}: {describe_exception(e)}")
     finally:
         db.close()

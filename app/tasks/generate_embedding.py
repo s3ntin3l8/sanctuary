@@ -1,6 +1,7 @@
 import logging
 
 from app.core.async_utils import run_async
+from app.core.safe_error import describe_exception
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
 
@@ -77,7 +78,9 @@ def generate_embedding_task(self, doc_id: int):
     try:
         run_async(generate_embedding(doc_id))
     except Exception as e:
-        logger.error(f"Embedding failed for doc {doc_id}: {e}", exc_info=True)
+        logger.error(
+            f"Embedding failed for doc {doc_id}: {describe_exception(e)}", exc_info=True
+        )
         if self.request.retries < self.max_retries:
             countdown = 60 * (self.request.retries + 1)
             db2 = get_db_session()

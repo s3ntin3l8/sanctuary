@@ -265,7 +265,9 @@ def _reduce_summary(
             base_url=base_url,
         )
     except Exception as exc:
-        logger.warning("Doc %d: summary reduction failed: %s", doc.id, exc)
+        logger.warning(
+            "Doc %d: summary reduction failed: %s", doc.id, describe_exception(exc)
+        )
         return None
     return result.model_dump()
 
@@ -381,7 +383,7 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             purge_disqualified_streitwert(doc, db)
         except Exception as purge_err:
             logger.warning(
-                f"Doc {doc.id}: proactive Streitwert purge failed: {purge_err}"
+                f"Doc {doc.id}: proactive Streitwert purge failed: {describe_exception(purge_err)}"
             )
 
     # cost_delta — validate and normalise the typed signal
@@ -425,7 +427,7 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                     materialize_cost_signal(doc, validated_delta.model_dump(), db)
                 except Exception as mat_err:
                     logger.warning(
-                        f"Doc {doc.id}: cost signal materialisation failed: {mat_err}"
+                        f"Doc {doc.id}: cost signal materialisation failed: {describe_exception(mat_err)}"
                     )
         except Exception as e:
             logger.warning(
@@ -466,7 +468,9 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             doc.ai_summary = new_summary
             doc.ai_summary_created_at = datetime.now(UTC)
         except Exception as e:
-            logger.warning("Doc %d: invalid ai_summary skipped: %s", doc.id, e)
+            logger.warning(
+                "Doc %d: invalid ai_summary skipped: %s", doc.id, describe_exception(e)
+            )
 
     # Track strategy and character count for UI transparency
     windows = content_windows(doc)

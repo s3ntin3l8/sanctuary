@@ -767,7 +767,7 @@ def call_json_ai(
                 "call %s pass-1 failed (%s); proceeding to pass 2 with no "
                 "analysis context",
                 debug_label,
-                e,
+                describe_exception(e),
             )
             p1_response, p1_thinking = "", ""
 

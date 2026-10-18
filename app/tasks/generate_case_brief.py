@@ -3,6 +3,7 @@ import logging
 import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app.core.safe_error import describe_exception
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,11 @@ def _release_brief_claim(case_id: str) -> None:
     try:
         release_case_brief_claim(case_id, db)
     except Exception as exc:
-        logger.warning("Failed to release brief claim for case %s: %s", case_id, exc)
+        logger.warning(
+            "Failed to release brief claim for case %s: %s",
+            case_id,
+            describe_exception(exc),
+        )
     finally:
         db.close()
 
@@ -44,7 +49,7 @@ def generate_case_brief_task(self, case_id: str):
         generate(case_id)
         return {"status": "success", "case_id": case_id}
     except ValueError as e:
-        logger.warning("Case %s brief skipped: %s", case_id, e)
+        logger.warning("Case %s brief skipped: %s", case_id, describe_exception(e))
         return {"status": "not_found", "case_id": case_id}
     except httpx.ReadTimeout as e:
         if self.request.retries < 1:
@@ -53,7 +58,9 @@ def generate_case_brief_task(self, case_id: str):
             # parallel triggers stay blocked.
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
         logger.warning(
-            "Case %s brief timeout after retry (%s) — marking failed", case_id, e
+            "Case %s brief timeout after retry (%s) — marking failed",
+            case_id,
+            describe_exception(e),
         )
         mark_brief_failed(case_id, f"timeout: {e}")
         return {"status": "failed", "case_id": case_id, "error": str(e)}
@@ -61,11 +68,13 @@ def generate_case_brief_task(self, case_id: str):
         # An Exception subclass — must come before the generic branch below
         # or it would be treated as a retryable system error, racing
         # self.retry()'s countdown against the imminent hard kill.
-        logger.error(f"Case {case_id} brief soft time limit exceeded: {e}")
+        logger.error(
+            f"Case {case_id} brief soft time limit exceeded: {describe_exception(e)}"
+        )
         mark_brief_failed(case_id, f"soft time limit exceeded: {e}")
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     except Exception as e:
-        logger.error(f"Case {case_id} brief generation failed: {e}")
+        logger.error(f"Case {case_id} brief generation failed: {describe_exception(e)}")
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
         mark_brief_failed(case_id, str(e))
@@ -95,24 +104,30 @@ def refresh_case_brief_task(self, case_id: str):
         generate(case_id)
         return {"status": "success", "case_id": case_id}
     except ValueError as e:
-        logger.warning("Case %s brief skipped: %s", case_id, e)
+        logger.warning("Case %s brief skipped: %s", case_id, describe_exception(e))
         return {"status": "not_found", "case_id": case_id}
     except httpx.ReadTimeout as e:
         if self.request.retries < 1:
             logger.info("Case %s brief refresh timeout — retrying once in 90s", case_id)
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
-        logger.warning("Case %s brief refresh timeout after retry (%s)", case_id, e)
+        logger.warning(
+            "Case %s brief refresh timeout after retry (%s)",
+            case_id,
+            describe_exception(e),
+        )
         mark_brief_failed(case_id, f"timeout: {e}")
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     except SoftTimeLimitExceeded as e:
         # An Exception subclass — must come before the generic branch below
         # or it would be treated as a retryable system error, racing
         # self.retry()'s countdown against the imminent hard kill.
-        logger.error(f"Case {case_id} brief refresh soft time limit exceeded: {e}")
+        logger.error(
+            f"Case {case_id} brief refresh soft time limit exceeded: {describe_exception(e)}"
+        )
         mark_brief_failed(case_id, f"soft time limit exceeded: {e}")
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     except Exception as e:
-        logger.error(f"Case {case_id} brief refresh failed: {e}")
+        logger.error(f"Case {case_id} brief refresh failed: {describe_exception(e)}")
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=30) from e
         mark_brief_failed(case_id, str(e))

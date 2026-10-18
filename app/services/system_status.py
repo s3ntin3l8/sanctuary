@@ -12,6 +12,7 @@ import time
 import redis
 
 from app.config import REDIS_URL
+from app.core.safe_error import describe_exception
 from app.services.model_gate import gate_snapshot
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,9 @@ def _inspect_workers() -> list[dict] | None:
     try:
         stats = celery_app.control.inspect(timeout=1.0).stats()
     except Exception as exc:  # broker down, kombu errors, socket errors
-        logger.warning("system_status: worker inspect failed (%s)", exc)
+        logger.warning(
+            "system_status: worker inspect failed (%s)", describe_exception(exc)
+        )
         return None
     stats = stats or {}
     workers = []
@@ -66,7 +69,9 @@ def queue_depth() -> dict[str, int] | None:
         finally:
             client.close()
     except (redis.RedisError, OSError) as exc:
-        logger.warning("system_status: queue depth unavailable (%s)", exc)
+        logger.warning(
+            "system_status: queue depth unavailable (%s)", describe_exception(exc)
+        )
         return None
 
 

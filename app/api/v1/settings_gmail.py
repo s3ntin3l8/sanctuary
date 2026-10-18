@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
+from app.core.safe_error import describe_exception
 from app.core.secrets import SecretsError
 from app.dependencies import get_current_admin, get_current_user, get_db
 from app.models.database import User
@@ -221,7 +222,11 @@ def preview_filters(
     except GmailReconnectRequired as exc:
         raise ApiError(409, "gmail_reconnect_required", str(exc)) from exc
     except _GMAIL_TRANSPORT_ERRORS as exc:  # Google/network failure, not a bug
-        logger.warning("Gmail filter preview failed for user %d: %s", user.id, exc)
+        logger.warning(
+            "Gmail filter preview failed for user %d: %s",
+            user.id,
+            describe_exception(exc),
+        )
         raise ApiError(
             502, "gmail_unreachable", "Couldn't reach Gmail to count matches."
         ) from exc

@@ -19,6 +19,7 @@ from app.config import (
     SCAN_PROCESSING_STALE_SECONDS,
 )
 from app.core.paths import to_storage_path
+from app.core.safe_error import describe_exception
 from app.models.database import IngestBatch
 from app.services.ingestion.batch_orchestrator import ingest_scanned_file
 from app.services.ingestion.converters import MAX_FILE_SIZE
@@ -132,7 +133,9 @@ def _ingest_one(db: Session, incoming_path: Path, owner_id: int | None) -> int:
         archive_dir = _archive_batch(processing_batch_dir, batch_id)
     except Exception as exc:
         logger.error(
-            "scan_and_ingest: could not archive %s: %s", incoming_path.name, exc
+            "scan_and_ingest: could not archive %s: %s",
+            incoming_path.name,
+            describe_exception(exc),
         )
         _fail_batch(processing_batch_dir, batch_id, str(exc))
         return 0
@@ -174,7 +177,11 @@ def _ingest_archived(
         # failed/ with a misleading error, even though nothing was actually
         # wrong with them.
         db.rollback()
-        logger.error("scan_and_ingest: ingest failed for %s: %s", pdf_name, exc)
+        logger.error(
+            "scan_and_ingest: ingest failed for %s: %s",
+            pdf_name,
+            describe_exception(exc),
+        )
         _fail_batch(archive_dir, batch_id, str(exc))
         return 0
 

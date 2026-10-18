@@ -49,6 +49,22 @@ def _setup_worker_logging(logger, loglevel, **kwargs):
     root.addHandler(fh)
 
 
+class _SanitizeTaskFailure(logging.Filter):
+    """Celery logs "Task x raised unexpected: <exc>" with the exception text in
+    the message itself (and the exception in ``exc_info``). Swap the text for
+    ``describe_exception`` so a failed parse does not print the model answer."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        from app.core.safe_error import describe_exception
+
+        args = record.args
+        exc = record.exc_info[1] if record.exc_info else None
+        if exc is not None and isinstance(args, dict) and "exc" in args:
+            record.args = {**args, "exc": describe_exception(exc)}
+        return True
+
+
+logging.getLogger("celery.app.trace").addFilter(_SanitizeTaskFailure())
 after_setup_logger.connect(_suppress_httpx_noise)
 after_setup_logger.connect(_setup_worker_logging)
 after_setup_task_logger.connect(_suppress_httpx_noise)

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
+from app.core.safe_error import describe_exception
 from app.core.timezone import now_utc
 from app.dependencies import get_current_admin, get_db
 from app.models.database import Document
@@ -374,7 +375,11 @@ def rebuild_index(request: Request, db: Session = Depends(get_db)):
         audit_service.record(db, AuditEventType.MAINTENANCE_REBUILD_INDEX)
         db.commit()
     except Exception as exc:
-        logger.error("Failed to resize embedding columns to dim=%s: %s", embed_dim, exc)
+        logger.error(
+            "Failed to resize embedding columns to dim=%s: %s",
+            embed_dim,
+            describe_exception(exc),
+        )
         db.rollback()
         raise ApiError(
             500, "index_resize_failed", "Index resize failed — see server log"

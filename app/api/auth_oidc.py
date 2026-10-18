@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.api.v1.auth import safe_next
+from app.core.safe_error import describe_exception
 from app.dependencies import get_db
 from app.services import auth_service
 
@@ -76,7 +77,7 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     try:
         token = await client.authorize_access_token(request)
     except OAuthError as exc:
-        logger.warning("OIDC callback failed: %s", exc)
+        logger.warning("OIDC callback failed: %s", describe_exception(exc))
         return _login_error("sso_failed")
 
     userinfo = token.get("userinfo") or {}

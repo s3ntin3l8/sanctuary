@@ -16,6 +16,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Claim
 from app.services.ai_config import EmbedConfig, get_embed_config
 from app.services.ai_provider import embed_provider
@@ -72,7 +73,7 @@ async def embed_text(claim_text: str, cfg: EmbedConfig) -> list[float] | None:
             return None
         return embedding
     except Exception as exc:  # noqa: BLE001
-        logger.error("claim embedding failed: %s", exc)
+        logger.error("claim embedding failed: %s", describe_exception(exc))
         return None
 
 
@@ -160,7 +161,9 @@ async def reindex_all_claims(db: Session, progress_cb=None) -> dict:
                 # (see app/services/ingestion/service.py's identical guard).
                 raise
             except Exception as e:
-                logger.warning(f"Claim reindex failed for claim {claim.id}: {e}")
+                logger.warning(
+                    f"Claim reindex failed for claim {claim.id}: {describe_exception(e)}"
+                )
                 db.rollback()
                 failed += 1
         offset += _CLAIM_REINDEX_BATCH_SIZE
@@ -168,7 +171,9 @@ async def reindex_all_claims(db: Session, progress_cb=None) -> dict:
             try:
                 progress_cb(reindexed=reindexed, failed=failed)
             except Exception as cb_err:
-                logger.debug(f"claim reindex progress_cb failed (continuing): {cb_err}")
+                logger.debug(
+                    f"claim reindex progress_cb failed (continuing): {describe_exception(cb_err)}"
+                )
 
     return {"total": total, "reindexed": reindexed, "failed": failed}
 

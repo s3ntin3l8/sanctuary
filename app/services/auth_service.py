@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.core import security
+from app.core.safe_error import describe_exception
 from app.models.database import User, UserSettings
 from app.models.enums import UserRole
 
@@ -156,7 +157,11 @@ def ensure_user_scan_dir(user: User) -> None:
     try:
         user_scan_dir(user).mkdir(parents=True, exist_ok=True)
     except OSError as exc:  # pragma: no cover - filesystem edge
-        logger.warning("Could not create scan dir for user %s: %s", user.id, exc)
+        logger.warning(
+            "Could not create scan dir for user %s: %s",
+            user.id,
+            describe_exception(exc),
+        )
 
 
 def ensure_user_settings(db: Session, user: User) -> UserSettings:

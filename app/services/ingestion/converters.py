@@ -11,6 +11,7 @@ import pillow_heif
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.config import MAX_FILE_SIZE_MB
+from app.core.safe_error import describe_exception
 from app.services.ingestion.archive_guard import ARCHIVE_EXTENSIONS, check_zip
 from app.services.model_gate import ModelGateTimeout
 
@@ -482,7 +483,7 @@ def _pdf_text_in_bbox(textpage, bbox) -> str:
     except SoftTimeLimitExceeded:
         raise
     except Exception as e:
-        logger.debug("get_text_bounded failed: %s", e)
+        logger.debug("get_text_bounded failed: %s", describe_exception(e))
         return ""
     return (text or "").strip()
 
@@ -523,7 +524,7 @@ def _ocr_picture_region(page, bbox) -> str:
     except SoftTimeLimitExceeded:
         raise
     except Exception as e:
-        logger.debug("OCR of picture region failed: %s", e)
+        logger.debug("OCR of picture region failed: %s", describe_exception(e))
         return ""
 
 
@@ -546,7 +547,9 @@ def _recover_picture_text(
     except SoftTimeLimitExceeded:
         raise
     except Exception as e:
-        logger.debug("Failed to open PDF for picture recovery: %s", e)
+        logger.debug(
+            "Failed to open PDF for picture recovery: %s", describe_exception(e)
+        )
         return {id(p): "" for pics in pictures_by_page.values() for p in pics}
 
     try:
@@ -644,7 +647,7 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     except SoftTimeLimitExceeded:
         raise
     except Exception as e:
-        logger.warning("Chunking failed for %s: %s", file_path, e)
+        logger.warning("Chunking failed for %s: %s", file_path, describe_exception(e))
 
     pictures_by_page = _collect_pictures(result.document)
 
@@ -717,7 +720,11 @@ def _extract_pdf_text_layer(file_path: str) -> str | None:
         # left for it.
         raise
     except Exception as e:
-        logger.debug("pdf text layer extraction failed for %s: %s", file_path, e)
+        logger.debug(
+            "pdf text layer extraction failed for %s: %s",
+            file_path,
+            describe_exception(e),
+        )
         return None
 
 
@@ -919,7 +926,7 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
             logger.warning(
                 "Chandra extraction failed for %s — falling back to Docling: %s",
                 file_path,
-                exc,
+                describe_exception(exc),
             )
             chandra_failure = {
                 "error": str(exc),
@@ -942,7 +949,7 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
             logger.warning(
                 "Chandra extraction crashed for %s — falling back to Docling: %s",
                 file_path,
-                exc,
+                describe_exception(exc),
             )
             chandra_failure = {
                 "error": str(exc),

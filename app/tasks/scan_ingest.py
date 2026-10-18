@@ -1,5 +1,6 @@
 import logging
 
+from app.core.safe_error import describe_exception
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ def scan_folder_tick_task(self):
             logger.info("scan_folder_tick: ingested %d file(s)", count)
         return {"status": "ok", "ingested": count}
     except Exception as exc:
-        logger.error("scan_folder_tick failed: %s", exc)
+        logger.error("scan_folder_tick failed: %s", describe_exception(exc))
         return {"status": "error", "error": str(exc)}
     finally:
         db.close()

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import config as cfg
 from app.core.cache import cache
+from app.core.safe_error import describe_exception
 from app.models.database import Base, UserSettings
 from app.models.enums import AuditEventType
 from app.services import audit_service, gmail_cache
@@ -66,7 +67,7 @@ def clear_all_data(db: Session) -> tuple[int, int]:
 
         celery_app.control.purge()
     except Exception as exc:
-        logger.warning("Could not purge Celery queue: %s", exc)
+        logger.warning("Could not purge Celery queue: %s", describe_exception(exc))
 
     # Wipe all domain tables; skip _PRESERVED_TABLES. NOTE: "users" must stay
     # in _PRESERVED_TABLES — user_settings has an ondelete="CASCADE" FK to
@@ -112,7 +113,9 @@ def clear_all_data(db: Session) -> tuple[int, int]:
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.exec_driver_sql("VACUUM FULL")
     except Exception as exc:
-        logger.warning("VACUUM after clear-all-data failed: %s", exc)
+        logger.warning(
+            "VACUUM after clear-all-data failed: %s", describe_exception(exc)
+        )
 
     # Wipe filesystem artifacts.
     # gmail_raw is the local copy of fetched Gmail mail: kept so a wipe can be
@@ -136,7 +139,7 @@ def clear_all_data(db: Session) -> tuple[int, int]:
                 shutil.rmtree(item) if item.is_dir() else item.unlink()
                 removed += 1
             except Exception as exc:
-                logger.warning("Could not remove %s: %s", item, exc)
+                logger.warning("Could not remove %s: %s", item, describe_exception(exc))
         return removed
 
     # Per-case directories (anything in DATA_DIR that isn't a known system dir).
@@ -146,7 +149,9 @@ def clear_all_data(db: Session) -> tuple[int, int]:
                 shutil.rmtree(entry)
                 disk_items += 1
             except Exception as exc:
-                logger.warning("Could not remove %s: %s", entry, exc)
+                logger.warning(
+                    "Could not remove %s: %s", entry, describe_exception(exc)
+                )
 
     # _TRIAGE upload artifacts (keep the dir itself).
     disk_items += _clear_dir_contents(cfg.DATA_DIR / "_TRIAGE")

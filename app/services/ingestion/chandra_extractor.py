@@ -34,6 +34,7 @@ import pypdfium2 as pdfium
 from markdownify import markdownify
 
 from app.config import AI_READ_TIMEOUT, CHANDRA_DOCUMENT_DEADLINE_SECONDS
+from app.core.safe_error import describe_exception
 from app.services.ai_config import OcrConfig
 from app.services.ingestion import ocr_crosscheck
 from app.services.model_gate import model_gate
@@ -395,7 +396,10 @@ def extract_with_chandra(
             return idx, html, md, time.perf_counter() - page_started, None
         except Exception as exc:  # noqa: BLE001 — per-page resilience
             logger.warning(
-                "chandra OCR failed on page %d of %s: %s", idx, file_path, exc
+                "chandra OCR failed on page %d of %s: %s",
+                idx,
+                file_path,
+                describe_exception(exc),
             )
             return (
                 idx,

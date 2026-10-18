@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.safe_error import describe_exception
 from app.models.database import Case, Conversation, Document
 from app.repositories.chat import ChatRepository
 from app.schemas.chat import Citation
@@ -113,7 +114,9 @@ async def stream_answer(
                 if "context" in err_str and any(
                     w in err_str for w in ("size", "window", "exceeded", "length")
                 ):
-                    logger.warning("Chat context too large for model: %s", e)
+                    logger.warning(
+                        "Chat context too large for model: %s", describe_exception(e)
+                    )
                     yield _sse(
                         {
                             "type": "token",
@@ -122,7 +125,7 @@ async def stream_answer(
                         }
                     )
                 else:
-                    logger.error("Chat stream error: %s", e)
+                    logger.error("Chat stream error: %s", describe_exception(e))
                     yield _sse(
                         {
                             "type": "token",

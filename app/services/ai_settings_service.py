@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.config import DATA_DIR
+from app.core.safe_error import describe_exception
 from app.services import ai_debug_store
 from app.services.ai_config import _resolve_active
 from app.services.ai_provider import (
@@ -137,7 +138,9 @@ async def fetch_models(inst: dict) -> dict[str, list[str]]:
             if resp.status_code == 200:
                 all_models = models_in(ptype, resp.json())
     except Exception as e:
-        logger.warning(f"Model discovery failed for {base_url}: {e}")
+        logger.warning(
+            f"Model discovery failed for {base_url}: {describe_exception(e)}"
+        )
 
     return categorize_models(all_models)
 

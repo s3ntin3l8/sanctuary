@@ -988,7 +988,8 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document | None:
         enrich_document_with_ai(doc, summary_data, db)
     except Exception as e:
         logger.error(
-            f"Failed to generate summary for doc {doc_id} (sync): {e}", exc_info=True
+            f"Failed to generate summary for doc {doc_id} (sync): {describe_exception(e)}",
+            exc_info=True,
         )
         if not doc.ai_summary_created_at:
             # Only stamp a placeholder error when there's no real summary
