@@ -275,8 +275,6 @@ class ActionItemEntry(BaseModel):
 def list_action_items(
     db: Session, p: McpPrincipal, case_id: str, include_done: bool = False
 ) -> list[ActionItemEntry]:
-    from app.core.timezone import now_utc
-
     case = p.require_case(db, case_id)
     q = db.query(ActionItem).filter(
         ActionItem.case_id == case.id, ActionItem.superseded.is_(False)
@@ -285,11 +283,10 @@ def list_action_items(
         q = q.filter(ActionItem.status == ActionItemStatus.OPEN)
     items = q.order_by(ActionItem.due_date.asc().nullslast(), ActionItem.id.asc()).all()
     refs = _refs(db, p, {i.source_document_id for i in items if i.source_document_id})
-    today = now_utc()
     names = api_token_service.token_names(db, (i.agent_token_id for i in items))
     out = []
     for i in items:
-        view = case_overview_service.action_item_view(i, today, names)
+        view = case_overview_service.action_item_view(i, names)
         out.append(
             ActionItemEntry(
                 action_item_id=i.id,

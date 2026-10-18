@@ -1,6 +1,6 @@
 """Dates that reach the AI or an agent are the reader's calendar, not UTC's."""
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -131,11 +131,10 @@ def test_chronology_prints_local_dates_and_counts_overdue_from_them(
 ):
     from app.models.database import ActionItem
     from app.models.enums import ActionItemStatus, ActionItemType
+    from app.services import case_timeline_service
     from app.services.intelligence import chronology_context
 
-    monkeypatch.setattr(
-        chronology_context, "now_utc", lambda: datetime(2026, 6, 5, 12, 0, tzinfo=UTC)
-    )
+    monkeypatch.setattr(case_timeline_service, "local_today", lambda: date(2026, 6, 5))
     db_session.add(
         ActionItem(
             case_id=sample_case.id,
@@ -189,3 +188,38 @@ def test_graph_node_dates_are_local(berlin, db_session, sample_case):
 
     nodes = CaseGraphService(db_session).build_payload(proc.id).nodes
     assert [n["date_short"] for n in nodes] == ["06-02"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("today", "overdue", "future"),
+    [
+        (date(2026, 6, 1), False, True),  # due 06-02 in Berlin: still ahead
+        (date(2026, 6, 2), False, False),  # due today for the reader
+        (date(2026, 6, 3), True, False),  # a day late
+    ],
+)
+def test_timeline_overdue_follows_the_readers_calendar(
+    berlin, db_session, sample_case, monkeypatch, today, overdue, future
+):
+    from app.models.database import ActionItem
+    from app.models.enums import ActionItemStatus, ActionItemType
+    from app.services import case_timeline_service
+
+    monkeypatch.setattr(case_timeline_service, "local_today", lambda: today)
+    # 23:30 UTC on 06-01 is 06-02 in Berlin; the UTC rule would call it overdue on 06-02
+    db_session.add(
+        ActionItem(
+            case_id=sample_case.id,
+            title="Frist",
+            due_date=LATE_UTC,
+            status=ActionItemStatus.OPEN,
+            action_type=ActionItemType.DEADLINE,
+        )
+    )
+    db_session.commit()
+
+    (event,) = case_timeline_service.CaseTimelineService(db_session).build_payload(
+        sample_case.id
+    )["events"]
+    assert (event.is_overdue, event.is_future) == (overdue, future)

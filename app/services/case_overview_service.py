@@ -10,7 +10,6 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.timezone import now_utc
 from app.helpers import build_cost_summary
 from app.models.database import (
     ActionItem,
@@ -45,6 +44,7 @@ from app.services.case_service import (
     build_case_level_costs,
     build_proceeding_exposure,
 )
+from app.services.timezone_service import local_day, local_today
 from app.services.triage_bundles import (
     actionable_review_reasons,
     summary_awaits_approval,
@@ -105,7 +105,7 @@ def summary_of(costs: list[LegalCost], exposure_cents: int) -> FinancialsSummary
 
 
 def action_item_view(
-    a: ActionItem, today, names: dict[int | None, str] | None = None
+    a: ActionItem, names: dict[int | None, str] | None = None
 ) -> CaseActionItem:
     return CaseActionItem(
         id=a.id,
@@ -120,7 +120,7 @@ def action_item_view(
         source_document_id=a.source_document_id,
         is_overdue=a.status == ActionItemStatus.OPEN
         and a.due_date is not None
-        and a.due_date < today,
+        and local_day(a.due_date) < local_today(),
         agent_token_name=(names or {}).get(a.agent_token_id),
     )
 
@@ -186,7 +186,6 @@ def build_case_detail(
         )
         for d in docs
     ]
-    today = now_utc()
     items = (
         db.query(ActionItem)
         .filter(ActionItem.case_id == case.id, ActionItem.superseded.is_(False))
@@ -223,7 +222,7 @@ def build_case_detail(
         documents=documents,
         new_doc_count=sum(1 for d in documents if d.is_new),
         last_visit=last_visit,
-        action_items=[action_item_view(a, today, action_names) for a in items],
+        action_items=[action_item_view(a, action_names) for a in items],
         parties=[
             PartyView(
                 name=str(p.get("name", "")),

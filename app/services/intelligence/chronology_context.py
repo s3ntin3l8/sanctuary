@@ -14,10 +14,9 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.core.timezone import now_utc
 from app.services.case_timeline_service import CaseTimelineService, TimelineEvent
 from app.services.intelligence.prompts import sanitize_oneline
-from app.services.timezone_service import local_date_str, to_local
+from app.services.timezone_service import local_date_str
 
 # A silence shorter than this is not worth a line.
 _SILENCE_DAYS = 30
@@ -84,8 +83,7 @@ def format_chronology_for_case(
     and a footer counts what was omitted.
     """
     payload = CaseTimelineService(db).build_payload(case_id)
-    # The reader's today: overdue days are counted between calendar dates they see.
-    today = to_local(now_utc()).date()
+    today = payload["today"].date()  # the reader's today, as the overdue flag sees it
     events = [e for e in payload["events"] if e.status != "dismissed"]
     if not events:
         return ""

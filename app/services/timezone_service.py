@@ -100,6 +100,16 @@ def local_date_str(dt: datetime, fmt: str = "%Y-%m-%d") -> str:
     return to_local(dt).strftime(fmt)
 
 
+def local_day(dt: datetime) -> date:
+    """The calendar day ``local_date_str`` prints, as a ``date``."""
+    return date.fromisoformat(local_date_str(dt))
+
+
+def local_today() -> date:
+    """Today on the reader's calendar."""
+    return datetime.now(get_user_tz()).date()
+
+
 def local_date_or(
     dt: datetime | None, missing: str = "unknown", fmt: str = "%Y-%m-%d"
 ) -> str:
