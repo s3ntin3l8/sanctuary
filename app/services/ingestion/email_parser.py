@@ -18,6 +18,7 @@ from app import config
 from app.config import TIMEZONE
 from app.core.timezone import ensure_utc
 from app.services.ingestion.archive_guard import ArchiveRejected
+from app.services.ingestion.converters import is_decorative_image
 from app.services.ingestion.email_archive import (
     TnefUnreadable,
     archive_members,
@@ -218,6 +219,7 @@ _SIGNATURE_TYPES = {
 }
 _OPAQUE_TYPES = {"application/pkcs7-mime", "application/x-pkcs7-mime"}
 _ENCRYPTED_REASON = "Encrypted or opaque message part cannot be read"
+_DECORATIVE_REASON = "Small image (logo or icon)"
 
 
 def _opaque_kind(part) -> str | None:
@@ -769,7 +771,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     "content": member["data"],
                 }
                 source["parts"].append(entry)
-                if member["outcome"] == "pending":
+                if member["outcome"] == "pending" and is_decorative_image(
+                    member["data"]
+                ):
+                    entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
+                if entry["outcome"] == "pending":
                     source["attachments"].append(entry)
                 emit_members(member["members"], path, "z")
 
@@ -810,6 +816,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 elif not data and part.get(NESTING_LIMIT_HEADER) == nesting_nonce:
                     record(part, path, data, "failed").update(
                         reason="Attached email nesting limit reached"
+                    )
+                elif is_decorative_image(data):
+                    record(part, path, data, "ignored_inline").update(
+                        reason=_DECORATIVE_REASON
                     )
                 else:
                     entry = record(part, path, data)

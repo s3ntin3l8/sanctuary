@@ -1,5 +1,6 @@
 import contextlib
 import html
+import io
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ from typing import overload
 import pillow_heif
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app import config
 from app.config import MAX_FILE_SIZE_MB
 from app.core.safe_error import describe_exception
 from app.services.ingestion.archive_guard import ARCHIVE_EXTENSIONS, check_zip
@@ -190,6 +192,21 @@ def magic_extension(header: bytes) -> str | None:
     if header[4:8] == b"ftyp" and header[8:12] in _HEIF_BRANDS:
         return ".heic"
     return None
+
+
+def is_decorative_image(data: bytes) -> bool:
+    """True for an image whose longest side is under MIN_IMAGE_SIDE_PX (a logo or
+    icon). Only the header is read; anything Pillow cannot read is not decorative,
+    so the converter still refuses it visibly."""
+    if magic_extension(data[:12]) not in IMAGE_EXTENSIONS:
+        return False
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            return max(image.size) < config.MIN_IMAGE_SIDE_PX
+    except Exception:
+        return False
 
 
 def validate_file_magic(file_path: str) -> str | None:

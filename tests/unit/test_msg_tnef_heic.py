@@ -73,6 +73,27 @@ def test_a_winmail_dat_becomes_parts_of_the_mail():
     assert [a["filename"] for a in parsed["attachments"]] == ["Schriftsatz.pdf"]
 
 
+def test_a_small_image_in_a_winmail_dat_is_ignored_and_the_pdf_is_kept():
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (200, 80), "white").save(buffer, "PNG")
+    parsed = parse_rfc822(
+        _mail_with(
+            _tnef(
+                {"image001.png": buffer.getvalue(), "Schriftsatz.pdf": b"%PDF-1.4 x"}
+            ),
+            "winmail.dat",
+            "ms-tnef",
+        )
+    )
+    by_name = {p["filename"]: p for p in parsed["parts"]}
+    assert by_name["image001.png"]["outcome"] == "ignored_inline"
+    assert by_name["image001.png"]["reason"] == "Small image (logo or icon)"
+    assert by_name["Schriftsatz.pdf"]["outcome"] == "pending"
+    assert [a["filename"] for a in parsed["attachments"]] == ["Schriftsatz.pdf"]
+
+
 def test_a_winmail_dat_without_files_is_only_the_rich_text_copy():
     parsed = parse_rfc822(_mail_with(_tnef({}), "winmail.dat", "ms-tnef"))
     [part] = parsed["parts"]

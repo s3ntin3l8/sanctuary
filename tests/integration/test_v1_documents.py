@@ -455,6 +455,21 @@ def test_upload_queues_files_and_reports_duplicates(db_session):
     assert dup["batch_id"] is None  # empty batch is removed again
 
 
+def test_upload_still_accepts_a_small_image(db_session):
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (200, 80), "white").save(buffer, "PNG")
+    with patch("app.tasks.dispatch.dispatch_task"):
+        result = client.post(
+            "/api/v1/upload",
+            files=[("files", ("logo.png", buffer.getvalue(), "image/png"))],
+        ).json()
+    assert result["results"][0]["status"] == "queued"
+
+
 @pytest.mark.parametrize(
     ("name", "payload"),
     [
