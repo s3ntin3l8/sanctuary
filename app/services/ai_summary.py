@@ -838,9 +838,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 )
 
 
-def generate_summary_sync(
-    doc: Document, db=None, model: str = "", base_url: str | None = None
-) -> dict:
+def generate_summary_sync(doc: Document, db=None, model: str = "") -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     cfg = get_chat_config(db)
     content_preview = get_content_preview(doc, AI_CONTEXT_CHARS)
@@ -930,7 +928,6 @@ def generate_summary_sync(
             two_pass=True,
             # Per-doc stage: suppress the case-narrative preamble (Issue #5).
             include_user_context=False,
-            base_url=base_url,
         )
     except ValueError as e:
         if "empty response" in str(e):
@@ -951,7 +948,6 @@ def generate_summary_sync(
                 suppress_thinking=True,
                 two_pass=True,
                 include_user_context=False,
-                base_url=base_url,
             )
         else:
             raise

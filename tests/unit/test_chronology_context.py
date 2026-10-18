@@ -11,6 +11,7 @@ from app.models.enums import (
     SignificanceTier,
 )
 from app.services.intelligence.chronology_context import format_chronology_for_case
+from app.services.timezone_service import local_day_bounds, local_today
 
 
 def _item(case_id, title, due, status=ActionItemStatus.OPEN, doc_id=None, kind=None):
@@ -141,7 +142,9 @@ def test_payment_and_open_past_hearing_and_late_due_time(
     db_session, sample_case, sample_cost
 ):
     now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
-    late = _item(sample_case.id, "Late evening", now - timedelta(seconds=1))
+    # one second before the reader's today began
+    day_start, _ = local_day_bounds(local_today())
+    late = _item(sample_case.id, "Late evening", day_start - timedelta(seconds=1))
     past_hearing = _item(
         sample_case.id,
         "Old hearing",

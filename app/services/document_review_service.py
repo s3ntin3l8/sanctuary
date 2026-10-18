@@ -46,6 +46,7 @@ from app.services import access_service, api_token_service, family_context
 from app.services.hud_context import build_hud_context
 from app.services.markdown_render import render_highlighted
 from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
+from app.services.timezone_service import local_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def field_value(doc: Document, field: str) -> str | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.date().isoformat()
+        return local_date_str(value)
     return getattr(value, "value", value)
 
 

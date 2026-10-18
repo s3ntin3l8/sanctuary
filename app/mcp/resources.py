@@ -114,7 +114,7 @@ def render_case(c: dict[str, Any]) -> str:
         for a in c["action_items"]:
             flag = " **OVERDUE**" if a.get("is_overdue") else ""
             out.append(
-                f"- {str(a['due_date'])[:10]} · {a['title']} ({a['action_type']}, "
+                f"- {a['due_date']} · {a['title']} ({a['action_type']}, "
                 f"{a['status']}){flag}"
             )
     fin = c.get("financials") or {}

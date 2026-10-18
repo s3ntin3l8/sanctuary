@@ -91,7 +91,6 @@ def _call_claim_extractor_sync(
     doc: Document,
     existing_claims: list[Claim],
     model: str = "",
-    base_url: str | None = None,
     reports_note: bool = False,
 ) -> dict:
     """AI calls only — no DB session held. A long document is read window by window."""
@@ -137,7 +136,6 @@ def _call_claim_extractor_sync(
             # come from the explicit "Known Party Identity" block built into the
             # user prompt below.
             include_user_context=False,
-            base_url=base_url,
         )
         part = result.model_dump()
         for claim in part["new_claims"]:

@@ -80,7 +80,6 @@ def _call_enricher_sync(
     reactions_block: str = "",
     party_context: str = "",
     filing_context: str = "",
-    base_url: str | None = None,
 ) -> dict:
     """Synchronous AI calls to enrich a single document. No DB session held.
 
@@ -161,7 +160,6 @@ def _call_enricher_sync(
             # got `required_action="File as supporting evidence in custody
             # proceedings"` because the preamble framed everything as custody.
             include_user_context=False,
-            base_url=base_url,
         )
         return result.model_dump()
 
@@ -170,7 +168,7 @@ def _call_enricher_sync(
     if len(parts) == 1:
         return parts[0]
     merged = _merge_parts(parts)
-    summary = _reduce_summary(doc, merged, parts, windows, model, base_url)
+    summary = _reduce_summary(doc, merged, parts, windows, model)
     if summary is not None:
         merged["management_summary"] = summary
     return merged
@@ -214,7 +212,6 @@ def _reduce_summary(
     parts: list[dict],
     windows: list[ContentWindow],
     model: str,
-    base_url: str | None,
 ) -> dict | None:
     """The management summary of a document read in parts, from what each part found.
 
@@ -262,7 +259,6 @@ def _reduce_summary(
             case_id=doc.case_id,
             two_pass=False,
             include_user_context=False,
-            base_url=base_url,
         )
     except Exception as exc:
         logger.warning(

@@ -22,6 +22,7 @@ from app.models.enums import (
 )
 from app.repositories.document import DocumentRepository
 from app.repositories.document_relationship import DocumentRelationshipRepository
+from app.services.timezone_service import local_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -405,7 +406,7 @@ class CaseGraphService:
                     "title": _clip(doc.title or "Untitled", 18),
                     "full_title": doc.title or "Untitled",
                     "role": doc.role.value if doc.role else "standalone",
-                    "date_short": doc.issued_date.strftime("%m-%d")
+                    "date_short": local_date_str(doc.issued_date, "%m-%d")
                     if doc.issued_date
                     else "\u2014",
                     "tier": "informational",
@@ -449,7 +450,7 @@ class CaseGraphService:
                     "title": _clip(doc.title or "Untitled", max_title_len),
                     "full_title": doc.title or "Untitled",
                     "role": doc.role.value if doc.role else "standalone",
-                    "date_short": doc.issued_date.strftime("%m-%d")
+                    "date_short": local_date_str(doc.issued_date, "%m-%d")
                     if doc.issued_date
                     else "\u2014",
                     "tier": doc.significance_tier.value
@@ -510,7 +511,7 @@ class CaseGraphService:
                 "y": TOP + node["row"] * ROW_H - 6,
                 "header": "\u2691 COURT RELAY",
                 "footer": (
-                    f"zugestellt {doc_obj.issued_date.strftime('%d.%m')}"
+                    f"zugestellt {local_date_str(doc_obj.issued_date, '%d.%m')}"
                     if doc_obj.issued_date
                     else "zugestellt \u2014"
                 ),
@@ -519,7 +520,7 @@ class CaseGraphService:
                         "id": child.id,
                         "title": _clip(child.title or "Untitled", 22),
                         "origin": _lane_for(child),
-                        "date": child.issued_date.strftime("%d.%m")
+                        "date": local_date_str(child.issued_date, "%d.%m")
                         if child.issued_date
                         else "—",
                         "tier": child.significance_tier.value

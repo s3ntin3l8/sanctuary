@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.safe_error import describe_exception
 from app.models.database import Document, DocumentChunk
+from app.services.timezone_service import local_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def _to_hit(d: Document, key_passages: list[dict]) -> RetrievalHit:
         significance_tier=d.significance_tier.value if d.significance_tier else None,
         originator_type=d.originator_type.value if d.originator_type else None,
         attributed_originator=d.attributed_originator or d.sender,
-        issued_date=d.issued_date.strftime("%Y-%m-%d") if d.issued_date else None,
+        issued_date=local_date_str(d.issued_date) if d.issued_date else None,
     )
 
 

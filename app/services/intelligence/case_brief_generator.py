@@ -29,6 +29,7 @@ from app.services.intelligence.claim_context import (
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
 from app.services.intelligence.schemas import CaseBrief
+from app.services.timezone_service import local_date_or, local_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +253,7 @@ def _call_brief_sync(
     proceedings = sorted(case.proceedings, key=lambda p: _as_utc(p.started_at))
     proc_lines = [
         f"- {p.court_level} ({p.status})"
-        + (f" — ended {p.ended_at.date()}" if p.ended_at else "")
+        + (f" — ended {local_date_str(p.ended_at)}" if p.ended_at else "")
         for p in proceedings
     ] or ["None"]
 
@@ -261,7 +262,7 @@ def _call_brief_sync(
     doc_lines = chr(10).join(
         f"- [{d.significance_tier}/{d.document_type}] "
         f"{sanitize_oneline(d.title, 120) or 'Untitled'} "
-        f"({d.issued_date}) — by "
+        f"({local_date_or(d.issued_date)}) — by "
         f"{sanitize_oneline(d.attributed_originator, 100) or 'unknown'} "
         f"({d.originator_type})\n"
         f"  Summary: {sanitize_oneline((d.ai_summary or {}).get('legal_significance', 'N/A'), 400)}"

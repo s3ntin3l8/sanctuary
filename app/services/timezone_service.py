@@ -8,7 +8,7 @@ in-process; call invalidate() after any UI write to reset it.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, available_timezones
 
 from app.core.timezone import ensure_utc
@@ -89,14 +89,43 @@ def to_local(dt: datetime) -> datetime:
     return ensure_utc(dt).astimezone(get_user_tz())
 
 
-def local_date_str(dt: datetime) -> str:
-    """``YYYY-MM-DD`` of ``dt`` on the reader's calendar, not UTC's.
+def local_date_str(dt: datetime, fmt: str = "%Y-%m-%d") -> str:
+    """The date of ``dt`` on the reader's calendar, not UTC's (``YYYY-MM-DD``
+    unless ``fmt`` says otherwise).
 
     A value at exactly 00:00 is a printed calendar date (a letter's date), not
     an instant, so it is not shifted."""
     if dt.hour == dt.minute == dt.second == dt.microsecond == 0:
-        return dt.strftime("%Y-%m-%d")
-    return to_local(dt).strftime("%Y-%m-%d")
+        return dt.strftime(fmt)
+    return to_local(dt).strftime(fmt)
+
+
+def local_day(dt: datetime) -> date:
+    """The calendar day ``local_date_str`` prints, as a ``date``."""
+    return date.fromisoformat(local_date_str(dt))
+
+
+def local_today() -> date:
+    """Today on the reader's calendar."""
+    return datetime.now(get_user_tz()).date()
+
+
+def local_date_or(
+    dt: datetime | None, missing: str = "unknown", fmt: str = "%Y-%m-%d"
+) -> str:
+    """``local_date_str`` of an optional value, ``missing`` when there is none."""
+    return local_date_str(dt, fmt) if dt else missing
+
+
+def local_day_bounds(day: date) -> tuple[datetime, datetime]:
+    """The naive-UTC instants where ``day`` starts and ends (the next day starts)
+    on the reader's calendar, for comparing against stored values."""
+    tz = get_user_tz()
+
+    def utc(d: date) -> datetime:
+        return datetime.combine(d, time.min, tz).astimezone(_UTC).replace(tzinfo=None)
+
+    return utc(day), utc(day + timedelta(days=1))
 
 
 def invalidate() -> None:

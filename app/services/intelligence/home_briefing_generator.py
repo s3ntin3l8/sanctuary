@@ -12,7 +12,7 @@ AI calls.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
 
 from sqlalchemy import CursorResult, text
@@ -29,7 +29,7 @@ from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import HOME_BRIEFING_SYSTEM, sanitize_oneline
 from app.services.intelligence.schemas import HomeBriefingOut
-from app.services.timezone_service import get_user_tz
+from app.services.timezone_service import get_user_tz, local_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -92,13 +92,15 @@ def briefing_row(db: Session, user_id: int, day: date) -> HomeBriefing | None:
     )
 
 
-def _compose_prompt(data: dict, day: date, tz: tzinfo) -> str:
-    """One sanitised line per item. Dates are the reader's calendar (``tz``)
-    relative to the row's ``day``, so a retry after midnight still describes
-    the day the row is stored under."""
+def _compose_prompt(data: dict, day: date) -> str:
+    """One sanitised line per item. Dates are the reader's calendar (display
+    timezone) relative to the row's ``day``, so a retry after midnight still
+    describes the day the row is stored under."""
 
     def local_date(due: datetime | None) -> date | None:
-        return due.astimezone(tz).date() if due else None
+        if due is None:
+            return None
+        return date.fromisoformat(local_date_str(due))
 
     def days_until(due: date | None) -> str:
         if due is None:
@@ -160,7 +162,7 @@ def generate(user_id: int, day: date) -> None:
         data = HomeService(db).get_home_data(user_id)
         result = call_json_ai(
             system_prompt=HOME_BRIEFING_SYSTEM,
-            user_prompt=_compose_prompt(data, day, get_user_tz()),
+            user_prompt=_compose_prompt(data, day),
             options=STAGE_OPTIONS["home_briefing"],
             debug_label=f"user_{user_id}_briefing_{day.isoformat()}",
             schema=HomeBriefingOut,

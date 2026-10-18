@@ -7,11 +7,12 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 from app.models.database import Document
+from app.services.timezone_service import local_date_str
 
 
 def iso_date(value: datetime | date | None) -> str | None:
     return (
-        value.date().isoformat()
+        local_date_str(value)
         if isinstance(value, datetime)
         else (value.isoformat() if value else None)
     )

@@ -253,7 +253,7 @@ def set_action_item_status(
 ):
     item = action_item_service.set_status(db, item, body.status)
     names = api_token_service.token_names(db, [item.agent_token_id])
-    return action_item_view(item, now_utc(), names)
+    return action_item_view(item, names)
 
 
 # --- Brief -------------------------------------------------------------------

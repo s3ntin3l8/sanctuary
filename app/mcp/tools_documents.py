@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import UTC, date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
-from sqlalchemy import ColumnElement, func, or_
+from sqlalchemy import ColumnElement, Time, and_, cast, func, not_, or_
 from sqlalchemy.orm import Session
 
 from app.mcp.db import run
@@ -26,6 +26,7 @@ from app.services import (
 )
 from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 from app.services.search_service import SearchService
+from app.services.timezone_service import local_day_bounds
 
 _TRIAGE = "_TRIAGE"
 _TIER_ORDER = [
@@ -50,13 +51,36 @@ def _tier(value: str) -> SignificanceTier:
         ) from None
 
 
-def _day(value: str | None, name: str) -> datetime | None:
+def _day(value: str | None, name: str) -> date | None:
     if not value:
         return None
     try:
-        return datetime.combine(date.fromisoformat(value), datetime.min.time(), UTC)
+        return date.fromisoformat(value)
     except ValueError:
         raise ToolError(f"{name} must be an ISO date (YYYY-MM-DD).") from None
+
+
+def _from_day(when: ColumnElement, day: date) -> ColumnElement[bool]:
+    """``when`` is on or after ``day`` on the reader's calendar, the same one
+    ``iso_date`` prints. A stored midnight is a printed date, not an instant, so
+    it is compared as that date; any other value as an instant against the
+    local midnight."""
+    start, _ = local_day_bounds(day)
+    printed = cast(when, Time) == time.min
+    return or_(
+        and_(printed, when >= datetime.combine(day, time.min)),
+        and_(not_(printed), when >= start),
+    )
+
+
+def _through_day(when: ColumnElement, day: date) -> ColumnElement[bool]:
+    """``when`` is on or before ``day`` on the reader's calendar (see ``_from_day``)."""
+    _, end = local_day_bounds(day)
+    printed = cast(when, Time) == time.min
+    return or_(
+        and_(printed, when < datetime.combine(day + timedelta(days=1), time.min)),
+        and_(not_(printed), when < end),
+    )
 
 
 def _encode_cursor(offset: int) -> str:
@@ -150,10 +174,10 @@ def list_documents(
     q = db.query(Document).filter(Document.case_id == case.id, tier_clause)
     if proceeding_id is not None:
         q = q.filter(Document.proceeding_id == proceeding_id)
-    if (start := _day(since, "since")) is not None:
-        q = q.filter(when >= start)
-    if (end := _day(until, "until")) is not None:
-        q = q.filter(when < end.replace(hour=23, minute=59, second=59))
+    if (first := _day(since, "since")) is not None:
+        q = q.filter(_from_day(when, first))
+    if (last := _day(until, "until")) is not None:
+        q = q.filter(_through_day(when, last))
     limit = max(1, min(limit, MAX_LIST))
     offset = _decode_cursor(cursor)
     docs = (

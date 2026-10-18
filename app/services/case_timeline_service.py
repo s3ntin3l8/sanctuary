@@ -10,12 +10,11 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, time
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.timezone import now_utc
 from app.models.database import (
     ActionItem,
     ClaimEvidence,
@@ -32,6 +31,7 @@ from app.models.enums import (
     RelationshipType,
 )
 from app.services.case_graph_service import _lane_for
+from app.services.timezone_service import local_day, local_today
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ class TimelineEvent:
     note: str | None  # short subtext (relay description, etc.)
     amount_eur: float | None  # payment events
     direction: str | None  # debit | credit
-    is_overdue: bool  # ActionItem: OPEN + due_date < today
-    is_future: bool  # date > today
+    is_overdue: bool  # ActionItem: OPEN + due day before today (reader's calendar)
+    is_future: bool  # day after today (reader's calendar)
     claim_count: int = 0  # distinct claims linked to this document
     rel_count: int = 0  # document relationships (from + to)
     copy_count: int = 0  # later copies of this document folded into the event
@@ -117,11 +117,11 @@ class CaseTimelineService:
         Returns a dict with:
           events        — list[TimelineEvent] sorted ascending by date
           month_buckets — list[dict] with keys: key, label, total, critical, future, max_total
-          today         — datetime (tz-aware UTC, midnight)
+          today         — the reader's today as a tz-aware UTC midnight datetime
           total_count   — int
           quiet_gaps    — dict[event_id, int] gap in days before this event in same month
         """
-        today = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.combine(local_today(), time.min, UTC)
         events: list[TimelineEvent] = []
 
         self._add_document_events(case_id, today, events)
@@ -255,7 +255,7 @@ class CaseTimelineService:
                         amount_eur=None,
                         direction=None,
                         is_overdue=False,
-                        is_future=date > today,
+                        is_future=local_day(date) > today.date(),
                         claim_count=claim_counts.get(doc.id, 0),
                         rel_count=rel_counts.get(doc.id, 0),
                         copy_count=copy_counts.get(doc.id, 0),
@@ -283,7 +283,7 @@ class CaseTimelineService:
                             amount_eur=None,
                             direction=None,
                             is_overdue=False,
-                            is_future=child_date > today,
+                            is_future=local_day(child_date) > today.date(),
                             claim_count=claim_counts.get(child.id, 0),
                             rel_count=rel_counts.get(child.id, 0),
                             copy_count=copy_counts.get(child.id, 0),
@@ -305,7 +305,7 @@ class CaseTimelineService:
                         amount_eur=None,
                         direction=None,
                         is_overdue=False,
-                        is_future=date > today,
+                        is_future=local_day(date) > today.date(),
                         claim_count=claim_counts.get(doc.id, 0),
                         rel_count=rel_counts.get(doc.id, 0),
                         copy_count=copy_counts.get(doc.id, 0),
@@ -331,7 +331,7 @@ class CaseTimelineService:
                 item.status.value if hasattr(item.status, "value") else str(item.status)
             )
             is_open = status_val == "open"
-            is_overdue = is_open and date < today
+            is_overdue = is_open and local_day(date) < today.date()
             out.append(
                 TimelineEvent(
                     id=f"action-{item.id}",
@@ -345,7 +345,7 @@ class CaseTimelineService:
                     amount_eur=None,
                     direction=None,
                     is_overdue=is_overdue,
-                    is_future=date > today,
+                    is_future=local_day(date) > today.date(),
                     status=status_val,
                 )
             )
@@ -382,7 +382,7 @@ class CaseTimelineService:
                     amount_eur=cost.amount_gross,
                     direction=direction,
                     is_overdue=False,
-                    is_future=date > today,
+                    is_future=local_day(date) > today.date(),
                 )
             )
 
@@ -412,7 +412,7 @@ class CaseTimelineService:
                         amount_eur=None,
                         direction=None,
                         is_overdue=False,
-                        is_future=p.started_at > today,
+                        is_future=local_day(p.started_at) > today.date(),
                     )
                 )
             if p.ended_at:
@@ -429,7 +429,7 @@ class CaseTimelineService:
                         amount_eur=None,
                         direction=None,
                         is_overdue=False,
-                        is_future=p.ended_at > today,
+                        is_future=local_day(p.ended_at) > today.date(),
                     )
                 )
 

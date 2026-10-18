@@ -10,10 +10,13 @@ Every line is a recorded fact; an overdue item is "open, past its due date",
 never "missed" — the user may simply not have ticked it off.
 """
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.services.case_timeline_service import CaseTimelineService, TimelineEvent
 from app.services.intelligence.prompts import sanitize_oneline
+from app.services.timezone_service import local_date_str
 
 # A silence shorter than this is not worth a line.
 _SILENCE_DAYS = 30
@@ -35,12 +38,12 @@ def _priority(ev: TimelineEvent) -> int:
     return _PRIO_MINOR
 
 
-def _flag(ev: TimelineEvent, today) -> str:
+def _flag(ev: TimelineEvent, today: date) -> str:
     if ev.kind in ("hearing", "deadline"):
         if ev.status == "completed":
             return "done "
         if ev.is_overdue:
-            days = (today.date() - ev.date.date()).days
+            days = (today - date.fromisoformat(local_date_str(ev.date))).days
             label = "date passed" if ev.kind == "hearing" else "past due"
             unit = "day" if days == 1 else "days"
             return f"OVERDUE (open, {days} {unit} {label}) "
@@ -55,7 +58,7 @@ def _flag(ev: TimelineEvent, today) -> str:
     return ""
 
 
-def _line(ev: TimelineEvent, today) -> str:
+def _line(ev: TimelineEvent, today: date) -> str:
     doc = f" [DOC:{ev.source_document_id}]" if ev.source_document_id else ""
     note = (
         f" — {sanitize_oneline(ev.note, 150)}"
@@ -63,7 +66,7 @@ def _line(ev: TimelineEvent, today) -> str:
         else ""
     )
     return (
-        f"  {ev.date.date()}  {ev.actor:<8} {ev.kind:<9} "
+        f"  {local_date_str(ev.date)}  {ev.actor:<8} {ev.kind:<9} "
         f"{_flag(ev, today)}{sanitize_oneline(ev.title, 100)}{note}{doc}"
     )
 
@@ -80,7 +83,7 @@ def format_chronology_for_case(
     and a footer counts what was omitted.
     """
     payload = CaseTimelineService(db).build_payload(case_id)
-    today = payload["today"]
+    today = payload["today"].date()  # the reader's today, as the overdue flag sees it
     events = [e for e in payload["events"] if e.status != "dismissed"]
     if not events:
         return ""
