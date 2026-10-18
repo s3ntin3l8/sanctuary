@@ -50,9 +50,19 @@ It does **not** protect against someone who has the whole host or the disk inclu
 
 1. **Encrypt the volume that holds Postgres and `data/`.** LUKS on the data disk, or an
    encrypted ZFS dataset (on Proxmox: `zfs create -o encryption=on -o keyformat=passphrase
-   rpool/sanctuary`, then mount it at the compose project's `data/` and the Postgres
-   volume). This is the actual protection for everything in the table above that the
-   application leaves in the clear.
+   rpool/sanctuary`). This is the actual protection for everything in the table above
+   that the application leaves in the clear. Two details decide whether it works:
+   - **Put Postgres on it too.** `db_data` in `docker-compose.yml` is a Docker named
+     volume, so mounting the dataset at `data/` alone leaves the database (the document
+     text, embeddings and chat history) on the unencrypted pool. Replace it with a bind
+     mount on the dataset (`/path/to/dataset/postgres:/var/lib/postgresql/data`), or move
+     Docker's `data-root` onto it.
+   - **Unlock before starting the stack.** Both options need an explicit unlock after
+     every reboot (`zfs load-key <dataset>` and mount; or LUKS via crypttab/keyfile).
+     Until then the dataset is not mounted and a started stack would write into the bare
+     mountpoint, a second `data/` tree that is shadowed when the real one mounts. Start
+     compose only after the unlock (for example from a systemd unit ordered after it),
+     not from `restart: unless-stopped` alone.
 2. **Keep the key out of backups that contain `data/`.** Back up `SECRETS_ENCRYPTION_KEY`
    separately (password manager). Losing it makes stored credentials and raw mail
    unreadable; credentials must be re-entered and mail is re-fetched from Gmail where
@@ -68,7 +78,10 @@ It does **not** protect against someone who has the whole host or the disk inclu
    `SECRETS_ENCRYPTION_KEY_PREVIOUS` (comma-separate several).
 2. Restart. Startup samples one stored mail file and one credential and starts the
    reseal sweep (`reseal_stored_secrets_task`); it also runs daily. Wait for the
-   `Reseal: encrypted=… rotated=… undecryptable=…` log line.
+   `Reseal: encrypted=… rotated=… undecryptable=…` log line. It is written by the
+   **maintenance worker** (not the web app) and only when something changed or could not
+   be read, so a clean sweep prints nothing. The sweep reads and decrypts every stored
+   mail file, which takes a while on a large mailbox.
 3. Remove `SECRETS_ENCRYPTION_KEY_PREVIOUS`. `undecryptable` should be 0; anything
    counted there is sealed with a key that is in neither variable.
 
@@ -79,14 +92,16 @@ names `SECRETS_ENCRYPTION_KEY_PREVIOUS`.
 
 Prompts contain document text, so full dumps are **off by default** (Settings → AI →
 Logs, admin). While on, each AI call is recorded as one encrypted line and deleted after
-7 days; the call list (no text) is always kept for 30 days. Stored error messages and
-warning logs carry the exception type and field paths, not quoted document or model text.
+7 days; the call list (no text) is always kept for 30 days. Stored error messages (pipeline stage errors, the call index's `error` field) and
+warning logs carry the exception type and a bounded, sanitised message (field paths for
+validation errors), not quoted document or model text.
 
 ## Upgrading
 
 - `SECRETS_ENCRYPTION_KEY` and `POSTGRES_PASSWORD` must be set. `make setup` generates
   both into `.env`; for a plain Docker deployment set them yourself.
 - An existing database keeps the password it was created with: change it with
-  `ALTER USER sanctuary PASSWORD '…'` before changing `POSTGRES_PASSWORD`.
+  `ALTER USER <POSTGRES_USER> PASSWORD '…'` (`sanctuary` unless you changed it) before
+  changing `POSTGRES_PASSWORD`.
 - Plaintext mail files and credentials from before encryption are sealed by the first
   reseal sweep; plaintext AI dumps are deleted at startup.

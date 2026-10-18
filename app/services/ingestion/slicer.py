@@ -369,7 +369,7 @@ async def _ai_cut_judgment(b: _Boundary, model: str, client: httpx.AsyncClient) 
         )
     except Exception as exc:
         logger.debug("AI cut judgment failed: %s", exc)
-        return _conservative_ai_failure(str(exc))
+        return _conservative_ai_failure(describe_exception(exc))
 
 
 def _conservative_ai_failure(notes: str) -> dict:
@@ -395,7 +395,7 @@ async def _ai_cut_judgments(candidates: list[_Boundary], model: str) -> dict[int
     out = {}
     for b, result in zip(candidates, results, strict=False):
         if isinstance(result, BaseException):
-            out[b.page] = _conservative_ai_failure(str(result))
+            out[b.page] = _conservative_ai_failure(describe_exception(result))
         else:
             out[b.page] = result
     return out
@@ -834,7 +834,7 @@ def _prepare(model: type[IngestBatch] | type[Document], source_id: int) -> None:
                 ai_results = run_async(_ai_cut_judgments(candidates, summary_model))
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
-                slice_error = str(exc)
+                slice_error = describe_exception(exc)
                 # No verdicts at all: _combine_proposed_cuts proposes nothing.
                 ai_results = {}
             # One aggregate entry per slicing run — the candidates fan out to
@@ -876,7 +876,7 @@ def _prepare(model: type[IngestBatch] | type[Document], source_id: int) -> None:
                 )
             except Exception as exc:
                 logger.warning("AI slice outline failed: %s", exc)
-                outline_error = str(exc)
+                outline_error = describe_exception(exc)
             if not isinstance(outline, dict):
                 outline = {}
             record_run(
