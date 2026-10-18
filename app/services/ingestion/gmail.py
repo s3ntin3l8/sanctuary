@@ -430,11 +430,10 @@ def fetch_metadata(
         elif exception is not None and _is_rate_limited(exception):
             retry.append(request_id)
         else:
-            logger.warning(
-                "Gmail metadata fetch failed for %s: %s",
-                request_id,
-                describe_exception(exception) if exception else "no response",
+            reason = (
+                "no response" if exception is None else describe_exception(exception)
             )
+            logger.warning("Gmail metadata fetch failed for %s: %s", request_id, reason)
 
     pending = list(gmail_ids)
     batch_size, pause = _METADATA_BATCH, _BATCH_PAUSE_SECONDS
