@@ -51,9 +51,7 @@ _CASE_TITLE_SEPARATOR_RE = re.compile(
 )
 
 
-def _call_entity_extractor_sync(
-    doc: Document, model: str = "", base_url: str | None = None
-) -> dict:
+def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
     """AI calls only — no DB session held. A long document is read window by window."""
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
@@ -94,7 +92,6 @@ def _call_entity_extractor_sync(
             two_pass=True,
             # Per-doc stage: suppress the case-narrative preamble (Issue #5).
             include_user_context=False,
-            base_url=base_url,
         )
         for entity in result.model_dump()["entities"]:
             key = (str(entity.get("name", "")).lower().strip(), str(entity.get("type")))

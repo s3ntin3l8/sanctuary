@@ -23,6 +23,7 @@ from app.core.async_utils import run_async
 from app.core.safe_error import describe_exception
 from app.mcp.db import run
 from app.mcp.principal import McpPrincipal
+from app.mcp.serializers import iso_date
 from app.models.database import (
     ActionItem,
     Claim,
@@ -335,7 +336,7 @@ def _action_out(item: ActionItem) -> ActionItemOut:
         action_item_id=item.id,
         case_id=item.case_id,
         title=item.title,
-        due_date=item.due_date.date().isoformat(),
+        due_date=iso_date(item.due_date) or "",
         action_type=item.action_type.value,
         status=item.status.value,
     )
@@ -384,7 +385,7 @@ def create_action_item(
             else f"already exists (action item {clash.id})"
         )
         raise ToolError(
-            f"A {action_type.value} on {due.date().isoformat()} {reason}; "
+            f"A {action_type.value} on {iso_date(due)} {reason}; "
             "use update_action_item instead."
         )
     try:

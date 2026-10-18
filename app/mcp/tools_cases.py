@@ -91,6 +91,8 @@ def get_case(db: Session, p: McpPrincipal, case_id: str) -> dict[str, Any]:
     )
     out = detail.model_dump(mode="json", exclude=_OVERVIEW_EXCLUDE)
     out["case_id"] = out.pop("id")
+    for view, item in zip(detail.action_items, out["action_items"], strict=True):
+        item["due_date"] = iso_date(view.due_date)
     return out
 
 

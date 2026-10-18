@@ -15,6 +15,7 @@ from app.services.intelligence.reaction_context import (
     format_reactions_for_case,
     format_reactions_for_document,
 )
+from app.services.timezone_service import local_date_or
 
 MAX_HISTORY_TURNS = 20
 
@@ -38,7 +39,7 @@ def build_document_chat_prompt(
 
     context = f"""Document: [{doc.id}] {doc.title}
 Case: {doc.case_id or "unassigned"}
-Issued: {doc.issued_date.strftime("%d.%m.%Y") if doc.issued_date else "unknown"}
+Issued: {local_date_or(doc.issued_date, fmt="%d.%m.%Y")}
 Significance: {doc.significance_tier.value if doc.significance_tier else "unset"}
 
 {passages_block}

@@ -6,7 +6,7 @@ import re
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from app.config import TIMEZONE
+from app.services.timezone_service import get_user_tz
 
 _LABELS = (
     ("DTSTART", "Beginn"),
@@ -66,11 +66,12 @@ def _when(value: str, params: dict[str, str]) -> str:
                 "%d.%m.%Y"
             )
         naive = datetime.strptime(value.rstrip("Z"), "%Y%m%dT%H%M%S")
+        local = get_user_tz()
         if value.endswith("Z"):
             moment = naive.replace(tzinfo=UTC)
         else:
-            moment = naive.replace(tzinfo=ZoneInfo(params.get("TZID") or TIMEZONE))
-        return moment.astimezone(ZoneInfo(TIMEZONE)).strftime("%d.%m.%Y %H:%M")
+            moment = naive.replace(tzinfo=ZoneInfo(params.get("TZID") or local.key))
+        return moment.astimezone(local).strftime("%d.%m.%Y %H:%M")
     except (ValueError, KeyError, OSError):
         return value
 

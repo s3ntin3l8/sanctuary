@@ -1207,3 +1207,37 @@ def test_prompt_dates_are_in_the_configured_timezone(batch_with_two_docs, monkey
         _call_batch_analyzer_sync([cover, enclosure], batch.id)
 
     assert f"doc_{cover.id}: 2026-06-02" in captured["user_prompt"]
+
+
+@pytest.mark.unit
+def test_manifest_block_tolerates_missing_timestamp_and_label():
+    from app.services.intelligence.batch_analyzer import _build_manifest_block
+
+    block = _build_manifest_block(
+        [
+            {"filename": "a.pdf", "doc_id": 1, "timestamp": None, "source_label": None},
+            {"filename": "b.pdf", "doc_id": 2},
+            {"filename": "c.pdf", "doc_id": 3, "timestamp": "", "source_label": ""},
+            {
+                "filename": "d.pdf",
+                "doc_id": 4,
+                "timestamp": "2026-05-26T06:24:30+00:00",
+                "source_label": None,
+            },
+        ]
+    )
+
+    # None, missing and "" are one group, listed before the dated one
+    assert block.count('Group A — ? "?":') == 1
+    assert block.index("a.pdf") < block.index("b.pdf") < block.index("c.pdf")
+    assert block.index("c.pdf") < block.index("Group B")
+    assert block.count("Group") == 2
+
+
+@pytest.mark.unit
+def test_local_stamp_handles_none_empty_and_garbage():
+    from app.services.intelligence.batch_analyzer import _local_stamp
+
+    assert _local_stamp(None) == "?"
+    assert _local_stamp("") == "?"
+    assert _local_stamp("not a date") == "not a date"

@@ -43,12 +43,14 @@ from app.services.timezone_service import local_date_str, to_local
 logger = logging.getLogger(__name__)
 
 
-def _local_stamp(iso: str) -> str:
+def _local_stamp(iso: str | None) -> str:
     """A manifest's ISO UTC timestamp as the reader's ``dd.mm.yyyy HH:MM``;
-    anything unparseable is shown as stored."""
+    ``?`` when there is none, as stored when unparseable."""
+    if not iso:
+        return "?"
     try:
         return to_local(datetime.fromisoformat(iso)).strftime("%d.%m.%Y %H:%M")
-    except ValueError:
+    except (TypeError, ValueError):
         return iso
 
 
@@ -112,16 +114,16 @@ def _build_manifest_block(manifest: list[dict]) -> str:
     """
     from itertools import groupby
 
-    sorted_entries = sorted(
-        manifest, key=lambda e: (e.get("timestamp", ""), e.get("source_label", ""))
-    )
+    def key(e: dict) -> tuple[str, str]:
+        # One normalised key for sorting and grouping: a missing, None or empty
+        # timestamp/label is the same group.
+        return (e.get("timestamp") or "", e.get("source_label") or "")
+
+    sorted_entries = sorted(manifest, key=key)
     lines = ["### Attachment Manifest (timestamp-grouped transmissions)"]
     label = "A"
-    for (ts, court), group_iter in groupby(
-        sorted_entries,
-        key=lambda e: (e.get("timestamp", "?"), e.get("source_label", "?")),
-    ):
-        lines.append(f'Group {label} — {_local_stamp(ts)} "{court}":')
+    for (ts, court), group_iter in groupby(sorted_entries, key=key):
+        lines.append(f'Group {label} — {_local_stamp(ts)} "{court or "?"}":')
         for entry in group_iter:
             fname = entry.get("filename", "?")
             doc_id = entry.get("doc_id")
@@ -139,7 +141,6 @@ def _call_batch_analyzer_sync(
     suppress_thinking: bool = False,
     debug_label: str | None = None,
     party_context: str = "",
-    base_url: str | None = None,
     attachment_manifest: list[dict] | None = None,
     email_note: str | None = None,
 ) -> dict:
@@ -219,7 +220,6 @@ def _call_batch_analyzer_sync(
         # Batch-level (but not case-level) stage: suppress the case-narrative
         # preamble. Party identities come from the party_block built above.
         include_user_context=False,
-        base_url=base_url,
     )
     return result.model_dump()
 

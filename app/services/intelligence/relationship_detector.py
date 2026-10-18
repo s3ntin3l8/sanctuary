@@ -15,6 +15,7 @@ from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import RELATIONSHIP_DETECTOR_SYSTEM
 from app.services.intelligence.schemas import RelationshipDetection
+from app.services.timezone_service import local_date_or
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,7 @@ def _build_candidate_summary(cand: _Candidate) -> str:
     return (
         f"ID={candidate.id} | "
         f"{sanitize_oneline(candidate.title, 200)} | "
-        f"Date={candidate.issued_date.date() if candidate.issued_date else 'unknown'} | "
+        f"Date={local_date_or(candidate.issued_date)} | "
         f"AZ={sanitize_oneline(candidate.az_court, 60) or '-'} | "
         f"Via={'+'.join(sorted(cand.via))} | "
         f"Author={sanitize_oneline(candidate.attributed_originator or candidate.sender, 100) or 'unknown'} | "

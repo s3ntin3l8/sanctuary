@@ -89,14 +89,22 @@ def to_local(dt: datetime) -> datetime:
     return ensure_utc(dt).astimezone(get_user_tz())
 
 
-def local_date_str(dt: datetime) -> str:
-    """``YYYY-MM-DD`` of ``dt`` on the reader's calendar, not UTC's.
+def local_date_str(dt: datetime, fmt: str = "%Y-%m-%d") -> str:
+    """The date of ``dt`` on the reader's calendar, not UTC's (``YYYY-MM-DD``
+    unless ``fmt`` says otherwise).
 
     A value at exactly 00:00 is a printed calendar date (a letter's date), not
     an instant, so it is not shifted."""
     if dt.hour == dt.minute == dt.second == dt.microsecond == 0:
-        return dt.strftime("%Y-%m-%d")
-    return to_local(dt).strftime("%Y-%m-%d")
+        return dt.strftime(fmt)
+    return to_local(dt).strftime(fmt)
+
+
+def local_date_or(
+    dt: datetime | None, missing: str = "unknown", fmt: str = "%Y-%m-%d"
+) -> str:
+    """``local_date_str`` of an optional value, ``missing`` when there is none."""
+    return local_date_str(dt, fmt) if dt else missing
 
 
 def invalidate() -> None:

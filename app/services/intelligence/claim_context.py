@@ -17,6 +17,7 @@ from app.models.enums import ClaimEvidenceRole, ClaimStatus, EntityType
 from app.repositories.claim import ClaimRepository
 from app.repositories.entity import EntityRepository
 from app.services.intelligence.prompts import sanitize_oneline
+from app.services.timezone_service import local_date_str
 
 _ENTITY_LABELS = {
     EntityType.PERSON: "People",
@@ -62,7 +63,7 @@ def format_claims_for_case(
             default=None,
         )
         anchor = (
-            f", first made {c.first_made_at.date()}"
+            f", first made {local_date_str(c.first_made_at)}"
             + (f" [DOC:{origin.document_id}]" if origin else "")
             if c.first_made_at
             else ""

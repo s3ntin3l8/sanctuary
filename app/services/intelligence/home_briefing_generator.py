@@ -12,7 +12,7 @@ AI calls.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from typing import cast
 
 from sqlalchemy import CursorResult, text
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app import config
 from app.config import CELERY_TASK_TIME_LIMIT
 from app.core.safe_error import sanitize_error_text
+from app.core.timezone import ensure_utc
 from app.models.database import HomeBriefing, User
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import is_external_endpoint
@@ -98,7 +99,11 @@ def _compose_prompt(data: dict, day: date, tz: tzinfo) -> str:
     the day the row is stored under."""
 
     def local_date(due: datetime | None) -> date | None:
-        return due.astimezone(tz).date() if due else None
+        if due is None:
+            return None
+        if due.time() == time.min:  # a printed calendar date, not an instant
+            return due.date()
+        return ensure_utc(due).astimezone(tz).date()
 
     def days_until(due: date | None) -> str:
         if due is None:
