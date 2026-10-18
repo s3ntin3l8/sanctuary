@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.config import DATA_DIR
+from app.services import ai_debug_store
 from app.services.ai_config import _resolve_active
 from app.services.ai_provider import (
     chat_provider,
@@ -260,7 +261,7 @@ def read_debug_log(path: str) -> str | None:
     candidate = Path(normalized)
     if candidate.suffix != ".md" or not candidate.is_file():
         return None
-    return candidate.read_text(encoding="utf-8", errors="replace")
+    return ai_debug_store.read_text(candidate)
 
 
 def debug_log_path(row: dict[str, Any]) -> str | None:

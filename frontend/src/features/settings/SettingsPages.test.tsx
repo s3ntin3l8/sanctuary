@@ -312,7 +312,7 @@ const logList = {
   ],
   facets: { kind: ['doc'], stage: ['claims-p1', 'embed'], model: ['gemma'] },
   log_root: '/data/ai_debug',
-  ai_debug_redact: true,
+  ai_debug_capture: true,
 }
 
 test('ai logs: a call expands right under its row and shows only that call', async () => {
@@ -337,6 +337,21 @@ test('ai logs: a call expands right under its row and shows only that call', asy
   expect(screen.queryByRole('button', { name: 'View call' })).not.toBeInTheDocument()
 })
 
+test('ai logs: a call with no recorded dump says so instead of loading forever', async () => {
+  stubApi({
+    'GET /api/v1/settings/ai/logs': { body: { ...logList, ai_debug_capture: false } },
+    'GET /api/v1/settings/ai/logs/view': {
+      status: 404,
+      body: { detail: 'Log file not found.', code: 'not_found' },
+    },
+  })
+  renderAt('/settings/ai/logs', <AiLogsPage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'View call' }))
+  expect(await screen.findByText(/No prompt or response was recorded/)).toBeInTheDocument()
+  expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+})
+
 test('ai logs: filters are sent to the server', async () => {
   const fetch = stubApi({ 'GET /api/v1/settings/ai/logs': { body: logList } })
   renderAt('/settings/ai/logs', <AiLogsPage />)
@@ -350,17 +365,17 @@ test('ai logs: filters are sent to the server', async () => {
   })
 })
 
-test('ai logs: the redaction toggle lives here', async () => {
+test('ai logs: the prompt-capture switch lives here', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/ai/logs': { body: logList },
-    'PUT /api/v1/settings/ai/debug-redact': { body: { enabled: false } },
+    'PUT /api/v1/settings/ai/debug-capture': { body: { enabled: false } },
   })
   renderAt('/settings/ai/logs', <AiLogsPage />)
   const user = userEvent.setup()
-  const toggle = await screen.findByRole('switch', { name: 'Redact PII in AI debug logs' })
+  const toggle = await screen.findByRole('switch', { name: 'Record full AI prompts and responses' })
   expect(toggle).toBeChecked()
   await user.click(toggle)
   await waitFor(async () =>
-    expect(await postedJson(fetch, 'PUT', '/debug-redact')).toEqual({ enabled: false }),
+    expect(await postedJson(fetch, 'PUT', '/debug-capture')).toEqual({ enabled: false }),
   )
 })

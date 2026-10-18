@@ -79,10 +79,10 @@ def patched_provider():
             create=True,
         ),
         # call_json_ai's no-db branch reads user_settings via
-        # get_ai_debug_redact. Without patching it the test hits the
+        # get_ai_debug_capture. Without patching it the test hits the
         # production DB (no user_settings table → OperationalError).
         patch(
-            "app.services.user_settings_service.get_ai_debug_redact",
+            "app.services.user_settings_service.get_ai_debug_capture",
             return_value=False,
         ),
     ):
@@ -102,7 +102,7 @@ def test_two_pass_makes_two_stream_calls_with_correct_schema_split(patched_provi
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(
             {
@@ -155,7 +155,7 @@ def test_two_pass_embeds_pass1_output_in_pass2_user_prompt(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
@@ -196,7 +196,7 @@ def test_two_pass_promotes_pass1_thinking_when_response_empty(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
@@ -233,7 +233,7 @@ def test_two_pass_skips_analysis_block_when_pass1_truly_empty(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
@@ -272,7 +272,7 @@ def test_two_pass_pass2_empty_triggers_retry(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         if debug_label.endswith("-p1"):
             call_count["p1"] += 1
@@ -386,7 +386,7 @@ def test_runs_jsonl_records_watchdog_drain_event(
         resolved_model="test-model",
         ingest_batch_id=None,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     )
 
     runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
@@ -464,7 +464,7 @@ def test_runs_jsonl_watchdog_field_null_on_normal_completion(
         resolved_model="test-model",
         ingest_batch_id=None,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     )
 
     runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
@@ -494,7 +494,7 @@ def test_two_pass_watchdog_drain_short_circuits_retry(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         if debug_label.endswith("-p1"):
             call_count["p1"] += 1
@@ -538,7 +538,7 @@ def test_single_pass_unchanged(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         return ('{"is_court_document": true}', "")
@@ -579,7 +579,7 @@ def test_pass1_user_prompt_asks_for_final_json(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         seen_prompts[debug_label] = params["json"]["prompt"]
         if debug_label.endswith("-p1"):
@@ -621,7 +621,7 @@ def test_pass1_inherits_caller_max_tokens_by_default(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
         if debug_label.endswith("-p1"):
@@ -659,7 +659,7 @@ def test_pass1_max_tokens_caps_max_tokens(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
         if debug_label.endswith("-p1"):
@@ -838,7 +838,7 @@ def test_pass1_json_promotion_skips_pass2(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         if debug_label.endswith("-p1"):
@@ -886,7 +886,7 @@ def test_pass1_json_promotion_from_thinking_channel(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         if debug_label.endswith("-p1"):
@@ -928,7 +928,7 @@ def test_pass1_json_promotion_falls_through_on_malformed(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         if debug_label.endswith("-p1"):
@@ -971,7 +971,7 @@ def test_pass1_json_promotion_falls_through_on_schema_mismatch(patched_provider)
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         if debug_label.endswith("-p1"):
@@ -1024,7 +1024,7 @@ def test_pass1_json_promotion_phase1_falls_through_when_originator_type_none(
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         if debug_label.endswith("-p1"):
@@ -1081,7 +1081,7 @@ def test_pass1_json_promotion_phase1_succeeds_when_originator_type_set(
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         calls.append(debug_label)
         if debug_label.endswith("-p1"):
@@ -1140,7 +1140,7 @@ def test_two_pass_empty_fence_pass2_promotes_thinking_channel(patched_provider):
         resolved_model,
         ingest_batch_id,
         doc_case_id=None,
-        redact=False,
+        capture=False,
     ):
         if debug_label.endswith("-p1"):
             # Pass 1 produces only thinking (model spun on the doc but never

@@ -366,6 +366,13 @@ async def _app_lifespan(app: FastAPI):
 
         dispatch_task("app.tasks.maintenance.reseal_stored_secrets_task")
 
+    # AI call dumps are encrypted and opt-in now: drop the plaintext ones left over
+    # from when every call was written out in the clear.
+    from app.config import DATA_DIR as _DATA_DIR
+    from app.services import ai_debug_store
+
+    await asyncio.to_thread(ai_debug_store.purge_plaintext, _DATA_DIR / "ai_debug")
+
     # Pin the primary admin (by id) for the worker/dev-mode code paths. Idempotent
     # and safe to call always: it pins an existing admin, optionally seeds one from
     # BOOTSTRAP_ADMIN_EMAIL+PASSWORD on a fresh DB (the code-driven provisioning

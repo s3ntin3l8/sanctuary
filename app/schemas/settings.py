@@ -280,7 +280,7 @@ class ExtractionEngineUpdate(BaseModel):
     engine: Literal["chandra", "docling"]
 
 
-class DebugRedactUpdate(BaseModel):
+class DebugCaptureUpdate(BaseModel):
     enabled: bool
 
 
@@ -354,7 +354,7 @@ class DebugLogList(BaseModel):
     rows: list[DebugLogRow]
     facets: DebugLogFacets
     log_root: str
-    ai_debug_redact: bool
+    ai_debug_capture: bool
 
 
 class DebugLogView(BaseModel):

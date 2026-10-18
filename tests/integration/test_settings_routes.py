@@ -175,9 +175,15 @@ def test_ai_log_view_returns_only_the_requested_call(db_session, tmp_path, monke
     root = _write_runs(tmp_path, monkeypatch, [])
     rule = "═" * 64
     (root / "ib-0001").mkdir()
-    (root / "ib-0001" / "doc_7.md").write_text(
-        f"{rule}\n# call: doc_7_a | stage=metadata | ts=2026-10-10T12:00:00+02:00 | prompt_v=1\n\nFIRST\n\n"
-        f"{rule}\n# call: doc_7_b | stage=enrich | ts=2026-10-10T12:05:00+02:00 | prompt_v=1\n\nSECOND\n"
+    from app.services import ai_debug_store
+
+    ai_debug_store.append_block(
+        root / "ib-0001" / "doc_7.md",
+        f"{rule}\n# call: doc_7_a | stage=metadata | ts=2026-10-10T12:00:00+02:00 | prompt_v=1\n\nFIRST\n",
+    )
+    ai_debug_store.append_block(
+        root / "ib-0001" / "doc_7.md",
+        f"{rule}\n# call: doc_7_b | stage=enrich | ts=2026-10-10T12:05:00+02:00 | prompt_v=1\n\nSECOND\n",
     )
     one = client.get(
         "/api/v1/settings/ai/logs/view",
@@ -521,7 +527,7 @@ def test_set_ocr_concurrency(db_session):
     assert _app_settings(db_session).get("workers", {}).get("ocr_concurrency") == 5
 
 
-def test_extraction_engine_and_debug_redact(db_session):
+def test_extraction_engine_and_debug_capture(db_session):
     assert client.put(
         "/api/v1/settings/ai/extraction-engine", json={"engine": "docling"}
     ).json() == {"engine": "docling"}
@@ -531,10 +537,12 @@ def test_extraction_engine_and_debug_redact(db_session):
         ).status_code
         == 422
     )
+    # Full prompt capture is opt-in: off until an admin switches it on.
+    assert client.get("/api/v1/settings/ai/logs").json()["ai_debug_capture"] is False
     assert client.put(
-        "/api/v1/settings/ai/debug-redact", json={"enabled": False}
-    ).json() == {"enabled": False}
-    assert client.get("/api/v1/settings/ai/logs").json()["ai_debug_redact"] is False
+        "/api/v1/settings/ai/debug-capture", json={"enabled": True}
+    ).json() == {"enabled": True}
+    assert client.get("/api/v1/settings/ai/logs").json()["ai_debug_capture"] is True
 
 
 # --- Pages -------------------------------------------------------------------

@@ -9,7 +9,7 @@ Key design decisions:
   HTTP probe inside `get_type()` (which short-circuits for non-"auto" values).
 - `_stream_response` is monkeypatched at the module level so the outgoing URL
   is captured before any real network I/O.
-- `get_ai_debug_redact` is patched to avoid hitting the DB for the redact flag.
+- `get_ai_debug_capture` is patched to avoid hitting the DB for the capture flag.
 - `get_db_session` is patched (for the db=None path) to inject a mock session.
 """
 
@@ -70,7 +70,7 @@ class TestCallJsonAiUsesDbProvider:
             module.chat_provider.base_url = SENTINEL_URL
             module.chat_provider.provider = "openai"
 
-        def fake_get_ai_debug_redact(db):
+        def fake_get_ai_debug_capture(db):
             return False
 
         def fake_stream_response(
@@ -81,7 +81,7 @@ class TestCallJsonAiUsesDbProvider:
             resolved_model: str,
             ingest_batch_id=None,
             doc_case_id=None,
-            redact: bool = False,
+            capture: bool = False,
         ):
             # Capture the URL that would be used for the outgoing POST.
             captured_urls.append(params.get("url", ""))
@@ -92,8 +92,8 @@ class TestCallJsonAiUsesDbProvider:
         monkeypatch.setattr(module, "get_chat_config", fake_get_chat_config)
         monkeypatch.setattr(module.chat_provider, "reload_from_db", fake_reload_from_db)
         monkeypatch.setattr(
-            "app.services.user_settings_service.get_ai_debug_redact",
-            fake_get_ai_debug_redact,
+            "app.services.user_settings_service.get_ai_debug_capture",
+            fake_get_ai_debug_capture,
         )
         monkeypatch.setattr(module, "_stream_response", fake_stream_response)
 

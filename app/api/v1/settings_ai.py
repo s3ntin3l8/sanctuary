@@ -25,11 +25,11 @@ from app.schemas.settings import (
     AiSettingsView,
     ConcurrencyResult,
     ConcurrencyUpdate,
+    DebugCaptureUpdate,
     DebugLogFacets,
     DebugLogList,
     DebugLogRow,
     DebugLogView,
-    DebugRedactUpdate,
     EmbedIndex,
     ExtractionEngineUpdate,
     ModelsView,
@@ -76,12 +76,12 @@ from app.services.ai_settings_service import (
 )
 from app.services.embeddings import verify_embedding_dim
 from app.services.user_settings_service import (
-    get_ai_debug_redact,
+    get_ai_debug_capture,
     get_extraction_engine,
     get_ocr_concurrency,
     get_reindex_job,
     get_worker_concurrency,
-    set_ai_debug_redact,
+    set_ai_debug_capture,
     set_extraction_engine,
     set_ocr_concurrency,
     set_reindex_running,
@@ -420,9 +420,9 @@ def ocr_concurrency(body: ConcurrencyUpdate, db: Session = Depends(get_db)):
     )
 
 
-@router.put("/debug-redact", response_model=DebugRedactUpdate)
-def debug_redact(body: DebugRedactUpdate, db: Session = Depends(get_db)):
-    set_ai_debug_redact(db, body.enabled)
+@router.put("/debug-capture", response_model=DebugCaptureUpdate)
+def debug_capture(body: DebugCaptureUpdate, db: Session = Depends(get_db)):
+    set_ai_debug_capture(db, body.enabled)
     return body
 
 
@@ -480,7 +480,7 @@ def ai_logs(
         ],
         facets=DebugLogFacets(**facets),
         log_root=str(AI_DEBUG_ROOT),
-        ai_debug_redact=get_ai_debug_redact(db),
+        ai_debug_capture=get_ai_debug_capture(db),
     )
 
 

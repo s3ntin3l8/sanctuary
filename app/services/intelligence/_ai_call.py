@@ -1,6 +1,5 @@
 """Shared synchronous AI streaming helper for all intelligence stages."""
 
-import fcntl
 import json
 import logging
 import os
@@ -15,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import AI_READ_TIMEOUT, DATA_DIR
 from app.core.async_utils import run_async
+from app.services import ai_debug_store
 from app.services.ai_config import get_chat_config
 from app.services.ai_inflight import track_ai_call
 from app.services.ai_provider import chat_provider
@@ -141,20 +141,14 @@ def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None)
         # pathlib joins it below (CodeQL py/path-injection).
         filename = f"{kind}_{os.path.basename(scope_id)}.md"
         if ingest_batch_id is not None:
-            folder = debug_dir / f"ib-{ingest_batch_id:04d}"
-            folder.mkdir(parents=True, exist_ok=True)
-            return folder / filename
+            return debug_dir / f"ib-{ingest_batch_id:04d}" / filename
         elif kind == "case":
             return debug_dir / filename
         else:
-            folder = debug_dir / "unbatched"
-            folder.mkdir(parents=True, exist_ok=True)
-            return folder / filename
+            return debug_dir / "unbatched" / filename
 
     filename = f"misc_{os.path.basename(debug_label)}.md"
-    folder = debug_dir / "unbatched"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder / filename
+    return debug_dir / "unbatched" / filename
 
 
 def _shift_headers(text: str, depth: int = 4) -> str:
@@ -183,8 +177,12 @@ def _write_block(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     reasoning_tokens: int | None = None,
-    redact: bool = False,
+    capture: bool = False,
 ) -> None:
+    """Record the call's full prompt and response (encrypted) when an admin has
+    switched capture on; otherwise only the metadata index sees the call."""
+    if not capture:
+        return
     status = "error" if error else "ok"
     doc_id = int(scope_id) if kind == "doc" else None
     case_id = scope_id if kind == "case" else None
@@ -227,10 +225,7 @@ def _write_block(
 
             body += f"### {role}\n"
 
-            if redact:
-                orig_len = len(content)
-                content = f"[REDACTED {orig_len} chars]"
-            elif len(content) > 5000:
+            if len(content) > 5000:
                 orig_len = len(content)
                 content = (
                     content[:2500]
@@ -267,12 +262,7 @@ def _write_block(
 
     block = header + body
 
-    with open(scope_file, "a", encoding="utf-8") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            f.write(block)
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    ai_debug_store.append_block(scope_file, block)
 
 
 def _resolve_run_ids(
@@ -311,7 +301,7 @@ def _stream_response(
     resolved_model: str,
     ingest_batch_id: int | None,
     doc_case_id: str | None = None,
-    redact: bool = False,
+    capture: bool = False,
 ) -> tuple[str, str]:
     """Stream one AI request, write its debug-log block, return (response, thinking).
 
@@ -528,7 +518,7 @@ def _stream_response(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_tokens=reasoning_tokens,
-            redact=redact,
+            capture=capture,
         )
         doc_id, batch_id, case_id = _resolve_run_ids(
             kind, scope_id, ingest_batch_id, doc_case_id
@@ -713,12 +703,12 @@ def call_json_ai(
     # service-layer callers don't carry a db session.  Without this reload the
     # singleton falls back to ENV defaults (Ollama localhost:11434) on every
     # first AI call after worker startup, silently routing to the wrong backend.
-    from app.services.user_settings_service import get_ai_debug_redact
+    from app.services.user_settings_service import get_ai_debug_capture
 
     if db is not None:
         chat_provider.reload_from_db(db)
         cfg = get_chat_config(db)
-        redact = get_ai_debug_redact(db)
+        capture = get_ai_debug_capture(db)
     else:
         from app.dependencies import get_db_session
 
@@ -726,7 +716,7 @@ def call_json_ai(
         try:
             chat_provider.reload_from_db(_cfg_db)
             cfg = get_chat_config(_cfg_db)
-            redact = get_ai_debug_redact(_cfg_db)
+            capture = get_ai_debug_capture(_cfg_db)
         finally:
             _cfg_db.close()
 
@@ -735,6 +725,11 @@ def call_json_ai(
 
     debug_dir = DATA_DIR / "ai_debug"
     scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)
+    detail = (
+        f"See {scope_file} for details."
+        if capture
+        else "Switch on prompt capture (Settings → AI → Logs) to record the call."
+    )
 
     # Pass 1: free-form analysis (only when two_pass=True).
     analysis = ""
@@ -762,7 +757,7 @@ def call_json_ai(
                 resolved_model=resolved_model,
                 ingest_batch_id=ingest_batch_id,
                 doc_case_id=case_id,
-                redact=redact,
+                capture=capture,
             )
         except Exception as e:
             # Pass 1 errored — pass 2 can still run cold (with no analysis).
@@ -868,7 +863,7 @@ def call_json_ai(
         resolved_model=resolved_model,
         ingest_batch_id=ingest_batch_id,
         doc_case_id=case_id,
-        redact=redact,
+        capture=capture,
     )
 
     # Qwen3.5 + LMStudio + structured output: the schema-constrained JSON
@@ -946,14 +941,13 @@ def call_json_ai(
                 f"{_pre_promotion_thinking_len:,} chars of reasoning without "
                 f"producing a response (watchdog fired after "
                 f"{_THINK_WATCHDOG_SECS:.0f}s). Re-queue this document to "
-                f"retry enrichment. See {scope_file} for details."
+                f"retry enrichment. {detail}"
             )
         refusal_hint = ""
         if full_thinking:
             refusal_hint = f" (Thinking present: {full_thinking[:80]}...)"
         raise ValueError(
-            f"Empty AI response for '{pass2_label}'{refusal_hint}. "
-            f"See {scope_file} for details."
+            f"Empty AI response for '{pass2_label}'{refusal_hint}. {detail}"
         )
 
     parsed = parse_json_response(full_response)
@@ -967,5 +961,5 @@ def call_json_ai(
         # specific schema-violation cause so callers can catch and fall back.
         raise ValueError(
             f"AI response failed schema validation for '{pass2_label}' "
-            f"({schema.__name__}): {e}. See {scope_file} for the raw response."
+            f"({schema.__name__}): {e}. {detail}"
         ) from e
