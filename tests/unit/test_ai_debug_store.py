@@ -109,3 +109,34 @@ def test_a_file_with_an_encrypted_call_is_never_purged(tmp_path):
         f.write("a torn partial wr")  # an interrupted append
     assert ai_debug_store.purge_plaintext(tmp_path / "ai_debug") == 0
     assert path.exists()
+
+
+def test_a_call_appended_while_the_pruner_rewrites_the_file_is_kept(
+    tmp_path, monkeypatch
+):
+    import fcntl
+
+    now = datetime.now(UTC)
+    path = tmp_path / "doc_1.md"
+    ai_debug_store.append_block(path, _block("old", now - timedelta(days=8), "OLD"))
+    ai_debug_store.append_block(path, _block("keep", now - timedelta(days=1), "KEEP"))
+    real_flock, fired = fcntl.flock, []
+
+    def flock(fd, op):
+        real_flock(fd, op)
+        if not fired:  # the appender opened the file, then the pruner ran
+            fired.append(1)
+            _prune_log_file(path, now - timedelta(days=7))
+
+    # Once the appender holds the old file's lock the pruner runs (its own
+    # flock calls must not block on it, hence the no-op while `fired`).
+    def prune_without_lock(fd, op):
+        if fired:
+            return
+        flock(fd, op)
+
+    monkeypatch.setattr(fcntl, "flock", prune_without_lock)
+    ai_debug_store.append_block(path, _block("late", now, "LATE"))
+    monkeypatch.undo()
+    text = ai_debug_store.read_text(path)
+    assert "KEEP" in text and "LATE" in text and "OLD" not in text

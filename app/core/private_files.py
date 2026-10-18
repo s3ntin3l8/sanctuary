@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import os
 import tempfile
@@ -42,3 +43,36 @@ def _fsync_dir(directory: Path) -> None:
         # own fsync is the real guarantee and the data is already in place, so
         # this must not fail an otherwise successful write.
         logger.debug("Could not fsync directory %s", directory, exc_info=True)
+
+
+_APPEND_ATTEMPTS = 5
+
+
+def append_line_locked(path: Path, line: str) -> None:
+    """Append ``line`` to ``path`` (0600, directory 0700) under an exclusive lock.
+
+    A pruner rewrites such files with a temp file + rename, which leaves a
+    concurrent appender holding the lock of the replaced (or deleted) inode:
+    its write would go to a file nobody can reach. So after taking the lock the
+    path is checked to still be the file that was locked, and the append starts
+    over otherwise.
+    """
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for _ in range(_APPEND_ATTEMPTS):
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                current = os.stat(path)
+            except FileNotFoundError:
+                continue
+            locked = os.fstat(fd)
+            if (current.st_dev, current.st_ino) != (locked.st_dev, locked.st_ino):
+                continue
+            data = memoryview(line.encode("utf-8"))
+            while data:
+                data = data[os.write(fd, data) :]
+            return
+        finally:
+            os.close(fd)  # releases the lock
+    raise OSError(f"{path.name} kept being replaced while appending")

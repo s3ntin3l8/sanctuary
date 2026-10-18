@@ -1,5 +1,6 @@
 """write_private: atomic, owner-only and durable (the rename itself is fsynced)."""
 
+import fcntl
 import os
 import stat
 from unittest.mock import patch
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from app.core import private_files
-from app.core.private_files import write_private
+from app.core.private_files import append_line_locked, write_private
 
 
 def test_writes_owner_only_in_a_private_directory(tmp_path):
@@ -69,3 +70,48 @@ def test_a_filesystem_that_cannot_fsync_a_directory_does_not_fail_the_write(tmp_
     with patch("os.open", open_dir):
         write_private(target, b"payload")
     assert target.read_bytes() == b"payload"
+
+
+def _replace_on_first_lock(monkeypatch, action):
+    """Run ``action`` the first time the appender takes the lock, i.e. after it
+    opened the file and before it writes (the window a pruner can hit)."""
+    real_flock, fired = fcntl.flock, []
+
+    def flock(fd, op):
+        real_flock(fd, op)
+        if not fired:
+            fired.append(1)
+            action()
+
+    monkeypatch.setattr(fcntl, "flock", flock)
+
+
+def test_an_append_survives_the_file_being_rewritten_under_it(tmp_path, monkeypatch):
+    target = tmp_path / "dump.md"
+    append_line_locked(target, "old\n")
+    _replace_on_first_lock(monkeypatch, lambda: write_private(target, b"kept\n"))
+    append_line_locked(target, "new\n")
+    assert target.read_text() == "kept\nnew\n"
+
+
+def test_an_append_survives_the_file_being_pruned_away(tmp_path, monkeypatch):
+    target = tmp_path / "dump.md"
+    append_line_locked(target, "old\n")
+    _replace_on_first_lock(monkeypatch, lambda: target.unlink())
+    append_line_locked(target, "new\n")
+    assert target.read_text() == "new\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_an_append_gives_up_when_the_file_never_stays_put(tmp_path, monkeypatch):
+    target = tmp_path / "dump.md"
+    append_line_locked(target, "old\n")
+    real_flock = fcntl.flock
+
+    def flock(fd, op):
+        real_flock(fd, op)
+        write_private(target, b"churn\n")
+
+    monkeypatch.setattr(fcntl, "flock", flock)
+    with pytest.raises(OSError):
+        append_line_locked(target, "new\n")

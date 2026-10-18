@@ -11,12 +11,11 @@ that decrypts to the call's markdown block. One line per call keeps appends chea
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import logging
-import os
 from pathlib import Path
 
 from app.core import secrets
+from app.core.private_files import append_line_locked
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +27,7 @@ UNREADABLE = (
 
 def append_block(path: Path, block: str) -> None:
     """Record one call's markdown block, encrypted, as a single line."""
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    line = secrets.encrypt(block) + "\n"
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-    with os.fdopen(fd, "a", encoding="utf-8") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            f.write(line)
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    append_line_locked(path, secrets.encrypt(block) + "\n")
 
 
 def _plain(line: str) -> str:

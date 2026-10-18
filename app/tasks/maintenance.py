@@ -1,10 +1,10 @@
 import fcntl
 import json
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from app.core.private_files import write_private
 from app.services import ai_debug_store
 from app.tasks.celery_app import celery_app
 
@@ -35,21 +35,17 @@ def _prune_log_file(log_file: Path, cutoff: datetime) -> tuple[int, int]:
                 else:
                     pruned += 1
 
+            # Both outcomes happen under the lock; an appender that already
+            # opened the old file re-checks the path once it holds the lock
+            # (private_files.append_line_locked) and starts over.
             if not kept:
-                f.close()
                 log_file.unlink(missing_ok=True)
                 return 0, pruned
 
-            tmp = log_file.with_suffix(".tmp")
-            tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, log_file)
+            write_private(log_file, ("\n".join(kept) + "\n").encode("utf-8"))
             return len(kept), pruned
         finally:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except Exception:
-                pass
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 def _parse_block_ts(block: str) -> datetime | None:
@@ -98,19 +94,13 @@ def _prune_jsonl(jsonl_file: Path, cutoff: datetime) -> tuple[int, int]:
                     pruned += 1
 
             if not kept:
-                f.close()
                 jsonl_file.unlink(missing_ok=True)
                 return 0, pruned
 
-            tmp = jsonl_file.with_suffix(".tmp")
-            tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
-            os.replace(tmp, jsonl_file)
+            write_private(jsonl_file, ("\n".join(kept) + "\n").encode("utf-8"))
             return len(kept), pruned
         finally:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except Exception:
-                pass
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 @celery_app.task(name="app.tasks.maintenance.reseal_stored_secrets_task")
