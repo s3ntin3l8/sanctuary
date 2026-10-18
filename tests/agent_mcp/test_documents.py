@@ -305,3 +305,38 @@ def test_search_passages_falls_back_to_keyword_matching(
     )
     assert [p["document"]["title"] for p in scoped["passages"]] == ["mine"]
     assert all(p["distance"] is None for p in scoped["passages"])
+
+
+def test_list_documents_date_bounds_follow_the_readers_calendar(
+    mcp_session, make_token, make_case, alice, db_session, monkeypatch
+):
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Europe/Berlin"))
+    make_case("A-1", alice.id)
+    # 23:30 UTC is already the next day in Berlin; a stored midnight is a printed date.
+    for title, issued in [
+        ("before", datetime(2026, 3, 1, 22, 30, tzinfo=UTC)),  # 03-01 23:30 local
+        ("first", datetime(2026, 3, 1, 23, 30, tzinfo=UTC)),  # 03-02 local
+        ("last", datetime(2026, 3, 3, 21, 30, tzinfo=UTC)),  # 03-03 22:30 local
+        ("printed", datetime(2026, 3, 3, tzinfo=UTC)),  # printed 03-03
+        ("after", datetime(2026, 3, 3, 23, 30, tzinfo=UTC)),  # 03-04 local
+    ]:
+        db_session.add(
+            Document(
+                title=title,
+                owner_id=alice.id,
+                case_id="A-1",
+                significance_tier=SignificanceTier.SIGNIFICANT,
+                issued_date=issued,
+                content="x",
+            )
+        )
+    db_session.commit()
+    s = mcp_session(make_token(alice))
+    ranged = _ok(
+        s, "list_documents", case_id="A-1", since="2026-03-02", until="2026-03-03"
+    )
+    assert sorted(_docs(ranged)) == ["first", "last", "printed"]

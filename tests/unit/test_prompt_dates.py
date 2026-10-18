@@ -1,6 +1,6 @@
 """Dates that reach the AI or an agent are the reader's calendar, not UTC's."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -108,3 +108,84 @@ def test_calendar_times_use_the_configured_timezone(berlin, monkeypatch):
     monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Asia/Tokyo"))
     assert _when("20260601T233000Z", {}) == "02.06.2026 08:30"
     assert _when("20260601T100000", {}) == "01.06.2026 10:00"  # floating = local
+
+
+@pytest.mark.unit
+def test_review_field_value_is_the_local_date(berlin):
+    from app.services.document_review_service import field_value
+
+    assert field_value(Document(issued_date=LATE_UTC), "issued_date") == "2026-06-02"
+    assert field_value(Document(issued_date=MIDNIGHT), "issued_date") == "2026-06-01"
+
+
+@pytest.mark.unit
+def test_local_day_bounds_are_naive_utc(berlin):
+    start, end = timezone_service.local_day_bounds(date(2026, 6, 2))
+    assert start == datetime(2026, 6, 1, 22, 0)
+    assert end == datetime(2026, 6, 2, 22, 0)
+
+
+@pytest.mark.unit
+def test_chronology_prints_local_dates_and_counts_overdue_from_them(
+    berlin, db_session, sample_case, monkeypatch
+):
+    from app.models.database import ActionItem
+    from app.models.enums import ActionItemStatus, ActionItemType
+    from app.services.intelligence import chronology_context
+
+    monkeypatch.setattr(
+        chronology_context, "now_utc", lambda: datetime(2026, 6, 5, 12, 0, tzinfo=UTC)
+    )
+    db_session.add(
+        ActionItem(
+            case_id=sample_case.id,
+            title="Frist",
+            due_date=LATE_UTC,
+            status=ActionItemStatus.OPEN,
+            action_type=ActionItemType.DEADLINE,
+        )
+    )
+    db_session.commit()
+
+    text = chronology_context.format_chronology_for_case(db_session, sample_case.id)
+    assert "2026-06-02 " in text
+    assert "2026-06-01 " not in text
+    assert "OVERDUE (open, 3 days past due)" in text
+
+
+@pytest.mark.unit
+def test_graph_node_dates_are_local(berlin, db_session, sample_case):
+    from app.models.database import Proceeding
+    from app.models.enums import (
+        DocumentRole,
+        OriginatorType,
+        ProceedingCourtLevel,
+        ProceedingStatus,
+        SignificanceTier,
+    )
+    from app.services.case_graph_service import CaseGraphService
+
+    proc = Proceeding(
+        case_id=sample_case.id,
+        court_name="AG",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+        ingest_date=datetime(2025, 1, 1),
+    )
+    db_session.add(proc)
+    db_session.flush()
+    db_session.add(
+        Document(
+            title="Late letter",
+            case_id=sample_case.id,
+            proceeding_id=proc.id,
+            originator_type=OriginatorType.OWN,
+            role=DocumentRole.STANDALONE,
+            significance_tier=SignificanceTier.SIGNIFICANT,
+            issued_date=LATE_UTC,
+        )
+    )
+    db_session.commit()
+
+    nodes = CaseGraphService(db_session).build_payload(proc.id).nodes
+    assert [n["date_short"] for n in nodes] == ["06-02"]

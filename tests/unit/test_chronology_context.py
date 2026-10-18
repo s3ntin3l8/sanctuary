@@ -138,8 +138,13 @@ def test_trimming_drops_minor_documents_first_and_keeps_deadlines(
 
 @pytest.mark.unit
 def test_payment_and_open_past_hearing_and_late_due_time(
-    db_session, sample_case, sample_cost
+    db_session, sample_case, sample_cost, monkeypatch
 ):
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("UTC"))
     now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
     late = _item(sample_case.id, "Late evening", now - timedelta(seconds=1))
     past_hearing = _item(

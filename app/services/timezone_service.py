@@ -8,7 +8,7 @@ in-process; call invalidate() after any UI write to reset it.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, available_timezones
 
 from app.core.timezone import ensure_utc
@@ -105,6 +105,17 @@ def local_date_or(
 ) -> str:
     """``local_date_str`` of an optional value, ``missing`` when there is none."""
     return local_date_str(dt, fmt) if dt else missing
+
+
+def local_day_bounds(day: date) -> tuple[datetime, datetime]:
+    """The naive-UTC instants where ``day`` starts and ends (the next day starts)
+    on the reader's calendar, for comparing against stored values."""
+    tz = get_user_tz()
+
+    def utc(d: date) -> datetime:
+        return datetime.combine(d, time.min, tz).astimezone(_UTC).replace(tzinfo=None)
+
+    return utc(day), utc(day + timedelta(days=1))
 
 
 def invalidate() -> None:

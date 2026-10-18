@@ -174,6 +174,9 @@ def test_stale_claim_is_taken_over(db_session, mock_dispatch_task):
 def test_prompt_dates_follow_the_readers_calendar(db_session, monkeypatch):
     from zoneinfo import ZoneInfo
 
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Europe/Berlin"))
     admin = _admin(db_session)
     db_session.add(
         Case(
@@ -195,7 +198,7 @@ def test_prompt_dates_follow_the_readers_calendar(db_session, monkeypatch):
     )
     db_session.commit()
     data = HomeService(db_session).get_home_data(admin.id)
-    prompt = gen._compose_prompt(data, date(2026, 6, 17), ZoneInfo("Europe/Berlin"))
+    prompt = gen._compose_prompt(data, date(2026, 6, 17))
     assert "due 2026-06-18 (1d)" in prompt
     assert "Today: 2026-06-17" in prompt
 
