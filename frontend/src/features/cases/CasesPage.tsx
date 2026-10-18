@@ -207,7 +207,7 @@ function CaseRow({ card }: { card: CaseCard }) {
           {card.to_review_count > 0 && (
             <span className="text-warning" title="documents to review">
               {' '}
-              ⚑{card.to_review_count}
+              ⚑ {card.to_review_count}
             </span>
           )}
         </span>

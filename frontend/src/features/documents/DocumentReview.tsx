@@ -189,13 +189,14 @@ function PacketHint({ review }: { review: Review }) {
 }
 
 /** Several letters in one PDF (a scanned packet that arrived by email): open the cut review. */
-export function SplitButton({ docId }: { docId: number }) {
+export function SplitButton({ docId, compact = false }: { docId: number; compact?: boolean }) {
   const start = useStartDocumentSlicing()
   const toast = useToast()
   return (
     <Button
       variant="secondary"
-      size="sm"
+      size={compact ? 'icon' : 'sm'}
+      aria-label={compact ? 'Split' : undefined}
       disabled={start.isPending}
       title="Cut this PDF into separate documents"
       onClick={() =>
@@ -205,24 +206,25 @@ export function SplitButton({ docId }: { docId: number }) {
         })
       }
     >
-      <Icon name="content_cut" size={12} /> Split
+      <Icon name="content_cut" size={compact ? 16 : 12} /> {!compact && 'Split'}
     </Button>
   )
 }
 
 /** A held packet that is one document after all: release it, and the email's processing goes on. */
-export function KeepWholeButton({ docId }: { docId: number }) {
+export function KeepWholeButton({ docId, compact = false }: { docId: number; compact?: boolean }) {
   const keep = useKeepDocumentWhole()
   const toast = useToast()
   return (
     <Button
       variant="secondary"
-      size="sm"
+      size={compact ? 'icon' : 'sm'}
+      aria-label={compact ? 'Keep as one' : undefined}
       disabled={keep.isPending}
       title="Keep this PDF as one document and continue processing"
       onClick={() => keep.mutate(docId, { onError: (e) => toast(e.message, 'error') })}
     >
-      <Icon name="check" size={12} /> Keep as one
+      <Icon name="task" size={compact ? 16 : 12} /> {!compact && 'Keep as one'}
     </Button>
   )
 }

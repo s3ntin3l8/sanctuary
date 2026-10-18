@@ -858,20 +858,16 @@ function BundleRow({
               <Icon name="alt_route" size={16} />
             </Button>
           )}
-          {heldDocs.length > 0 ? (
+          {soleHeld ? (
             <>
-              <Badge tone="warning" pill>
-                awaiting split
-              </Badge>
-              {soleHeld && (
-                <>
-                  <SplitButton docId={soleHeld.id} />
-                  <KeepWholeButton docId={soleHeld.id} />
-                </>
-              )}
+              <SplitButton docId={soleHeld.id} compact />
+              <KeepWholeButton docId={soleHeld.id} compact />
             </>
           ) : (
-            processing && <Icon name="hourglass_top" size={16} className="text-warning" />
+            processing &&
+            heldDocs.length === 0 && (
+              <Icon name="hourglass_top" size={16} className="text-warning" />
+            )
           )}
           {(!processing || heldDocs.length > 0) && (
             <span className="relative">

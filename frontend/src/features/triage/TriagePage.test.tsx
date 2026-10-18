@@ -715,7 +715,7 @@ test('a bundle with a held packet shows "awaiting split" with Split and Keep as 
   const user = userEvent.setup()
   const row = (await screen.findByText('Klageerwiderung')).closest('li')
   if (!row) throw new Error('row')
-  expect(within(row).getByText('awaiting split')).toBeVisible()
+  expect(within(row).getByText('Awaiting split')).toBeVisible()
   // No hourglass, and the bundle can still be archived or deleted while it waits.
   expect(within(row).queryByText('hourglass_top')).toBeNull()
   expect(within(row).getByRole('button', { name: 'More actions' })).toBeVisible()
@@ -737,7 +737,7 @@ test('with two held packets the row asks for no decision itself', async () => {
   renderAt('/triage', <TriagePage />)
   const row = (await screen.findByText('Klageerwiderung')).closest('li')
   if (!row) throw new Error('row')
-  expect(within(row).getByText('awaiting split')).toBeVisible()
+  expect(within(row).getByText('Awaiting split')).toBeVisible()
   expect(within(row).queryByRole('button', { name: 'Keep as one' })).toBeNull()
   expect(within(row).queryByRole('button', { name: 'Split' })).toBeNull()
 })
