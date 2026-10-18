@@ -220,6 +220,7 @@ _SIGNATURE_TYPES = {
 _OPAQUE_TYPES = {"application/pkcs7-mime", "application/x-pkcs7-mime"}
 _ENCRYPTED_REASON = "Encrypted or opaque message part cannot be read"
 _DECORATIVE_REASON = "Small image (logo or icon)"
+_DECORATIVE_CONTAINER_REASON = "Contains only small images (logos or icons)"
 
 
 def _opaque_kind(part) -> str | None:
@@ -711,7 +712,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 entry.update(outcome="unsupported", reason="Archive contains no files")
                 return
             if not emit_members(members, path):
-                entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
+                entry.update(
+                    outcome="ignored_inline", reason=_DECORATIVE_CONTAINER_REASON
+                )
 
         def record_msg(part, path, data, depth):
             """An attached Outlook message is read as the mail it is, one level
@@ -754,7 +757,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 return
             entry = record(part, path, data, "archive" if members else "ignored_inline")
             if members and not emit_members(members, path, "t"):
-                entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
+                entry.update(
+                    outcome="ignored_inline", reason=_DECORATIVE_CONTAINER_REASON
+                )
 
         def emit_members(members, base, tag="z"):
             """Record a container's files; False when every one was ignored as a
@@ -783,7 +788,9 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 if entry["outcome"] == "pending":
                     source["attachments"].append(entry)
                 if member["members"] and not emit_members(member["members"], path, "z"):
-                    entry.update(outcome="ignored_inline", reason=_DECORATIVE_REASON)
+                    entry.update(
+                        outcome="ignored_inline", reason=_DECORATIVE_CONTAINER_REASON
+                    )
                 kept = kept or entry["outcome"] != "ignored_inline"
             return kept
 
