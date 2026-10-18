@@ -38,9 +38,10 @@ _FILENAME_ANLAGE_RE = re.compile(
     rf"(?:^|[\s_.\-]){_ANLAGE}[\s_.\-]*(?P<prefix>[A-Za-z]{{0,3}})[\s_.\-]*(?P<num>\d{{1,3}})(?P<suffix>[a-z]?)(?![\d])",
     re.IGNORECASE,
 )
-# AG/ASG are exhibit prefixes only after the word "Anlage": bare, "AG 3 C 123-26"
-# is a court and a file number.
-_BARE_PREFIXES = sorted(_PREFIXES - {"AG", "ASG"}, key=len, reverse=True)
+# AG/ASG are exhibit prefixes only after the word "Anlage", in filenames and on
+# list lines alike: bare, "AG 3 C 123-26" is a court and a file number.
+_NEEDS_ANLAGE = {"AG", "ASG"}
+_BARE_PREFIXES = sorted(_PREFIXES - _NEEDS_ANLAGE, key=len, reverse=True)
 _FILENAME_BARE_RE = re.compile(
     rf"^(?P<prefix>{'|'.join(_BARE_PREFIXES)})[\s_.\-]*(?P<num>\d{{1,3}})(?P<suffix>[a-z]?)(?![\d])",
     re.IGNORECASE,
@@ -67,8 +68,9 @@ def parse_label(text: str) -> str | None:
     prefix = match["prefix"].upper()
     if prefix and prefix not in _PREFIXES:
         return None
-    # A bare number is only an exhibit when the word "Anlage" says so.
-    if not prefix and not match["word"]:
+    # A bare number, or a court-like AG/ASG, is only an exhibit when the word
+    # "Anlage" says so.
+    if (not prefix or prefix in _NEEDS_ANLAGE) and not match["word"]:
         return None
     return _format(prefix, match["num"], match["suffix"])
 

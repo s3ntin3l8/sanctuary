@@ -2,9 +2,11 @@
 autoresponder mail is recorded as handled without becoming a document."""
 
 import email.message
+from pathlib import Path
 
 import pytest
 
+import app.config
 from app.models.database import Document
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.services.ingestion import converters
@@ -637,3 +639,59 @@ def test_a_heic_attachment_is_ingested(db_session):
         ),
     )
     assert _part_outcomes(batch)["IMG_0042.HEIC"][0] == "ingested"
+
+
+MAIL_FIXTURES = Path(__file__).parent.parent / "fixtures" / "mail"
+
+
+def _stored_under(tmp_path, monkeypatch):
+    # batch_orchestrator bound DATA_DIR at import: patch it there too, or the
+    # files land in the session-wide data dir.
+    monkeypatch.setattr(app.config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr("app.services.ingestion.batch_orchestrator.DATA_DIR", tmp_path)
+
+
+def _attached_fixture(name, filename, subtype):
+    return _typed_mail(
+        lambda m: m.add_attachment(
+            (MAIL_FIXTURES / name).read_bytes(),
+            maintype="application",
+            subtype=subtype,
+            filename=filename,
+        ),
+        message_id=f"<{name}@example.com>",
+    )
+
+
+@pytest.mark.integration
+def test_a_real_outlook_msg_is_read_as_a_nested_mail(db_session, tmp_path, monkeypatch):
+    _stored_under(tmp_path, monkeypatch)
+    batch = _ingest(
+        db_session,
+        _attached_fixture("test-outlook.msg", "Eingang.msg", "vnd.ms-outlook"),
+    )
+    assert _part_outcomes(batch)["Eingang.msg"] == ("nested_source", None)
+    child = next(s for s in batch.email_sources if s["parent_id"] == "0")
+    assert "Équipe Microsoft Outlook Express" in child["sender"]
+    docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
+    texts = [(tmp_path / d.file_path).read_text(errors="replace") for d in docs]
+    assert any("Messagerie et groupes de discussion" in t for t in texts)
+
+
+@pytest.mark.integration
+def test_a_real_winmail_dat_yields_its_files(db_session, tmp_path, monkeypatch):
+    _stored_under(tmp_path, monkeypatch)
+    batch = _ingest(
+        db_session,
+        _attached_fixture("testWINMAIL.dat", "winmail.dat", "ms-tnef"),
+    )
+    outcomes = _part_outcomes(batch)
+    assert outcomes["winmail.dat"] == ("archive", None)
+    for name in ("quick.html", "quick.pdf", "quick.txt"):
+        assert outcomes[name] == ("ingested", None), name
+    for name in ("quick.doc", "quick.xml"):  # formats the pipeline does not read
+        assert outcomes[name] == ("unsupported", "File format is not supported")
+    docs = db_session.query(Document).filter_by(ingest_batch_id=batch.id).all()
+    by_title = {d.title: d for d in docs}
+    assert "quick brown fox" in (tmp_path / by_title["quick.txt"].file_path).read_text()
+    assert (tmp_path / by_title["quick.pdf"].file_path).read_bytes().startswith(b"%PDF")

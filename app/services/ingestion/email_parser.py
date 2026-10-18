@@ -25,6 +25,7 @@ from app.services.ingestion.email_archive import (
     tnef_members,
 )
 from app.services.ingestion.email_msg import (
+    NESTING_LIMIT_HEADER,
     MsgNestingLimit,
     MsgUnreadable,
     is_msg,
@@ -708,7 +709,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         def record_msg(part, path, data, depth):
             """An attached Outlook message is read as the mail it is."""
             try:
-                rfc822 = msg_to_rfc822(data)
+                rfc822 = msg_to_rfc822(data, depth)
             except MsgNestingLimit:
                 record(part, path, data, "failed").update(
                     reason="Attached email nesting limit reached"
@@ -765,7 +766,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 source["parts"].append(entry)
                 if member["outcome"] == "pending":
                     source["attachments"].append(entry)
-                emit_members(member["members"], path, tag)
+                emit_members(member["members"], path, "z")
 
         walk(msg, source_id, source_bytes)
         html_body = "\n".join(html)
@@ -801,6 +802,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     record_msg(part, path, data, depth)
                 elif is_tnef(part.get_filename(), part.get_content_type(), data):
                     record_tnef(part, path, data)
+                elif not data and part.get(NESTING_LIMIT_HEADER):
+                    record(part, path, data, "failed").update(
+                        reason="Attached email nesting limit reached"
+                    )
                 else:
                     entry = record(part, path, data)
                     # An invitation travels as a sibling of the mail's own text

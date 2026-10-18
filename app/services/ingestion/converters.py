@@ -204,19 +204,28 @@ def validate_file_magic(file_path: str) -> str | None:
 ALLOWED_EXTENSIONS = _allowed_extensions
 
 
+_EXIF_ORIENTATION = 0x0112
+
+
 @contextlib.contextmanager
 def _ocr_readable_image(file_path: str):
-    """The path of an image Docling can read: HEIC/HEIF is converted to a PNG
-    (in a temporary directory that is removed afterwards); others pass through."""
-    if os.path.splitext(file_path)[1].lower() not in {".heic", ".heif"}:
+    """The path of an image Docling can read, upright: HEIC/HEIF, and any image
+    whose EXIF orientation is not 1 (a phone photo), is re-encoded to a PNG in a
+    temporary directory that is removed afterwards; others pass through."""
+    from PIL import Image, ImageOps
+
+    heif = os.path.splitext(file_path)[1].lower() in {".heic", ".heif"}
+    with Image.open(file_path) as image:
+        if not heif and image.getexif().get(_EXIF_ORIENTATION, 1) == 1:
+            upright = None
+        else:
+            upright = ImageOps.exif_transpose(image).convert("RGB")
+    if upright is None:
         yield file_path
         return
-    from PIL import Image
-
     with tempfile.TemporaryDirectory() as tmp:
         png = os.path.join(tmp, "image.png")
-        with Image.open(file_path) as image:
-            image.convert("RGB").save(png)
+        upright.save(png)
         yield png
 
 
