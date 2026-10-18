@@ -127,25 +127,13 @@ def test_full_retry_puts_the_bundle_back_under_confirmation(db_session, sample_c
     db_session.commit()
     assert doc.confirmed_at is not None
 
-    assert reset_batch_for_retry(batch, db_session, full=True) != -1
+    assert reset_batch_for_retry(batch, db_session) != -1
     db_session.commit()
 
     db_session.refresh(doc)
     assert doc.confirmed_at is None
     refresh_review_reasons(doc, db_session)
     assert "pending_confirmation" in doc.review_reasons
-
-
-def test_stage_retry_keeps_the_confirmation(db_session, sample_case):
-    batch = _batch(db_session, sample_case.id)
-    doc = _doc(db_session, batch, sample_case.id, "Doc")
-    db_session.commit()
-
-    assert reset_batch_for_retry(batch, db_session, full=False) != -1
-    db_session.commit()
-
-    db_session.refresh(doc)
-    assert doc.confirmed_at is not None
 
 
 def test_reworded_contradiction_stays_acknowledged_but_a_new_one_reraises():

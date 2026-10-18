@@ -247,7 +247,7 @@ export function TriagePage() {
             Assign to…
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setBulkRetryOpen(true)}>
-            Re-analyze ({picked.length})
+            Retry ({picked.length})
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setBulkDanger('dismiss')}>
             Archive ({picked.length})
@@ -478,9 +478,9 @@ export function TriagePage() {
             },
           )
         }}
-        title={`Re-analyze ${picked.length} bundle(s)?`}
-        body="All AI stages run again for the selected bundles. Bundles with a stage running now, and loose documents, are skipped."
-        label="Re-analyze"
+        title={`Retry ${picked.length} bundle(s)?`}
+        body="Extraction and every AI stage run again from the original files. Bundles with a stage running now, and loose documents, are skipped."
+        label="Retry"
         pending={batchRetry.isPending}
       />
       <IngestModal open={uploadOpen} caseId={uploadCase} onClose={() => setParams({})} />

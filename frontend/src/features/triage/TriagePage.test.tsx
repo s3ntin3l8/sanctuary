@@ -213,10 +213,10 @@ test('batch selection re-analyzes every selected bundle including stuck ones', a
   await screen.findByText('Klageerwiderung')
   expect(screen.queryByRole('button', { name: /Re-Analyze all/ })).not.toBeInTheDocument()
   await user.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
-  await user.click(screen.getByRole('button', { name: 'Re-analyze (2)' }))
+  await user.click(screen.getByRole('button', { name: 'Retry (2)' }))
   expect(await postedJson(fetch, '/batch/retry')).toBeUndefined()
-  const dialog = await screen.findByRole('dialog', { name: 'Re-analyze 2 bundle(s)?' })
-  await user.click(within(dialog).getByRole('button', { name: 'Re-analyze' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Retry 2 bundle(s)?' })
+  await user.click(within(dialog).getByRole('button', { name: 'Retry' }))
   await waitFor(async () =>
     expect(await postedJson(fetch, '/batch/retry')).toEqual({ keys: ['batch-42', 'batch-39'] }),
   )

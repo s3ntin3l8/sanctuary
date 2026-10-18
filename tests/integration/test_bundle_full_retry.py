@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/v1/triage/bundles/{id}/retry with full=true."""
+"""Integration tests for POST /api/v1/triage/bundles/{id}/retry."""
 
 from datetime import UTC, datetime
 from unittest.mock import patch
@@ -166,26 +166,6 @@ def test_full_retry_resets_draft_proceeding(app_client, db_session):
 
     db_session.refresh(doc)
     assert doc.proceeding_id is None
-
-
-@pytest.mark.integration
-def test_partial_reset_keeps_extract_and_stamp(db_session, sample_case):
-    """the batch retry resets with full=False: extraction and its stamp survive."""
-    from app.services.triage_retry import reset_batch_for_retry
-
-    batch = _make_batch(db_session, sample_case.id)
-    doc = _make_doc(db_session, batch)
-    doc.meta = {"extractor": "chandra-ocr-2", "chunks": [{"page": 1}]}
-    db_session.commit()
-
-    reset_batch_for_retry(batch, db_session, full=False)
-    db_session.refresh(doc)
-
-    assert (
-        stages_dict(doc)[PipelineStage.EXTRACT.value]["status"]
-        == StageStatus.COMPLETED.value
-    )
-    assert doc.meta["extractor"] == "chandra-ocr-2"
 
 
 @pytest.mark.integration

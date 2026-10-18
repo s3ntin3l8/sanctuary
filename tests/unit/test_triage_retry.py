@@ -233,13 +233,13 @@ def test_reset_batch_for_retry_blocks_on_retrying_stage(db_session):
     _set_stage(db_session, doc, PipelineStage.EXTRACT, StageStatus.RETRYING)
     db_session.refresh(batch)
 
-    result = reset_batch_for_retry(batch, db_session, full=False)
+    result = reset_batch_for_retry(batch, db_session)
 
     assert result == -1
 
 
 @pytest.mark.unit
-def test_reset_batch_for_retry_clears_metadata_phase_queued_at_on_full(db_session):
+def test_reset_batch_for_retry_clears_metadata_phase_queued_at(db_session):
     """metadata_phase_queued_at is a one-time CAS flag that never resets on
     its own. A full retry resets EXTRACT back to PENDING for every doc, so
     it must also clear this flag or the batch's METADATA phase can never
@@ -266,7 +266,7 @@ def test_reset_batch_for_retry_clears_metadata_phase_queued_at_on_full(db_sessio
     db_session.commit()
     db_session.refresh(batch)
 
-    result = reset_batch_for_retry(batch, db_session, full=True)
+    result = reset_batch_for_retry(batch, db_session)
 
     assert result != -1
     assert batch.metadata_phase_queued_at is None
@@ -290,53 +290,13 @@ def test_reset_batch_for_retry_leaves_the_triage_status_alone(db_session, status
     _make_doc(db_session, batch_id=batch.id)
     db_session.refresh(batch)
 
-    assert reset_batch_for_retry(batch, db_session, full=True) != -1
+    assert reset_batch_for_retry(batch, db_session) != -1
 
     assert batch.status == status
 
 
 @pytest.mark.unit
-def test_reset_batch_for_retry_partial_does_not_clear_metadata_phase_queued_at(
-    db_session,
-):
-    """A partial (non-full) retry leaves EXTRACT completed, so the metadata
-    phase already correctly fired once for this batch and must not be
-    cleared — clearing it here would let a second, redundant metadata-phase
-    dispatch fire once EXTRACT (untouched) is re-read as still completed."""
-    from datetime import UTC, datetime
-
-    case = Case(
-        id="_TR_TRETRY4",
-        title="T",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
-    db_session.add(case)
-    db_session.commit()
-
-    batch = IngestBatch(
-        source_type=IngestBatchSourceType.EMAIL,
-        status=IngestBatchStatus.OPEN,
-    )
-    queued_at = datetime.now(UTC).replace(tzinfo=None)
-    batch.metadata_phase_queued_at = queued_at
-    db_session.add(batch)
-    db_session.flush()
-    doc = _make_doc(db_session, case_id=case.id, batch_id=batch.id)
-    mark_completed(doc.id, PipelineStage.EXTRACT, db_session)
-    db_session.commit()
-    db_session.refresh(batch)
-
-    result = reset_batch_for_retry(batch, db_session, full=False)
-
-    assert result != -1
-    assert batch.metadata_phase_queued_at is not None
-    assert batch.metadata_phase_queued_at.replace(tzinfo=None) == queued_at
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("full", [False, True])
-def test_reset_batch_for_retry_keeps_user_structure(db_session, full):
+def test_reset_batch_for_retry_keeps_user_structure(db_session):
     """A batch with sub-groups (triage grouping or slicer bundles) keeps its
     roles and parent links on retry; only the AI-derived fields are cleared."""
     from app.models.database import BatchSubGroup
@@ -355,7 +315,7 @@ def test_reset_batch_for_retry_keeps_user_structure(db_session, full):
     db_session.commit()
     db_session.refresh(batch)
 
-    assert reset_batch_for_retry(batch, db_session, full=full) != -1
+    assert reset_batch_for_retry(batch, db_session) != -1
 
     assert cover.role == DocumentRole.COVER_LETTER and cover.court_relay is False
     assert att.role == DocumentRole.ENCLOSURE and att.parent_id == cover.id
@@ -377,7 +337,7 @@ def test_reset_batch_for_retry_without_sub_groups_resets_roles(db_session):
     db_session.commit()
     db_session.refresh(batch)
 
-    assert reset_batch_for_retry(batch, db_session, full=False) != -1
+    assert reset_batch_for_retry(batch, db_session) != -1
 
     assert cover.role == DocumentRole.STANDALONE
     assert att.role == DocumentRole.STANDALONE and att.parent_id is None

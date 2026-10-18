@@ -2878,7 +2878,7 @@ export interface paths {
         put?: never;
         /**
          * V1 Batch Retry
-         * @description Re-run every AI stage of each selected bundle (extraction is kept).
+         * @description Re-extract and re-run every AI stage of each selected bundle.
          *
          *     Loose documents, bundles with a stage actively running and bundles whose
          *     row is still locked are skipped and reported.
@@ -5932,11 +5932,18 @@ export interface components {
         PipelineState: "pending" | "running" | "completed" | "failed" | "dismissed" | "partial";
         /** PipelineView */
         PipelineView: {
+            /** Extraction Engine */
+            extraction_engine?: ("chandra" | "docling" | "tesseract") | null;
             /**
              * Ocr Crosscheck Unavailable
              * @default false
              */
             ocr_crosscheck_unavailable: boolean;
+            /**
+             * Ocr Fallback
+             * @default false
+             */
+            ocr_fallback: boolean;
             /** Ocr Page Failures */
             ocr_page_failures: number[];
             /** Ocr Unverified */

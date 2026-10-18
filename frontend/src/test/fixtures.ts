@@ -416,6 +416,8 @@ export const documentReview: Schemas['DocumentReview'] = {
     ocr_page_failures: [],
     ocr_unverified: [],
     ocr_crosscheck_unavailable: false,
+    extraction_engine: 'chandra',
+    ocr_fallback: false,
     state: 'completed',
     stages: [
       {

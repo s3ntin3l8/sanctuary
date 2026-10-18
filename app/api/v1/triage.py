@@ -449,22 +449,20 @@ def retry_bundle(
     """Re-extract and re-run every AI stage for every document in the bundle."""
 
     def _do_reset():
-        result = reset_batch_for_retry(batch, db, full=True)
-        if result == -1:
-            return -1, None
-        items, fallback = result
-        db.commit()
-        return items, fallback
+        result = reset_batch_for_retry(batch, db)
+        if result != -1:
+            db.commit()
+        return result
 
     try:
-        items, fallback = retry_on_db_locked(_do_reset, db)
+        items = retry_on_db_locked(_do_reset, db)
     except OperationalError as exc:
         raise ApiError(
             409, "worker_busy", "Worker busy — try again in a moment."
         ) from exc
     if items == -1:
         raise ApiError(409, "in_flight", "A pipeline stage is actively running.")
-    dispatch_batch_retry(items, batch_fallback=fallback, batch_id=batch.id, db=db)
+    dispatch_batch_retry(items, db)
     found = _bundle_by_key(db, user, f"batch-{batch.id}")
     if found is None:
         raise ApiError(404, "not_found", "Bundle is no longer in triage.")
@@ -625,7 +623,7 @@ def batch_retry(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Re-run every AI stage of each selected bundle (extraction is kept).
+    """Re-extract and re-run every AI stage of each selected bundle.
 
     Loose documents, bundles with a stage actively running and bundles whose
     row is still locked are skipped and reported.
@@ -643,12 +641,10 @@ def batch_retry(
             continue
 
         def _do_reset(b=batch):
-            res = reset_batch_for_retry(b, db, full=False)
-            if res == -1:
-                return -1
-            items, fallback = res
-            db.commit()
-            return items, fallback
+            res = reset_batch_for_retry(b, db)
+            if res != -1:
+                db.commit()
+            return res
 
         try:
             result = retry_on_db_locked(_do_reset, db)
@@ -659,8 +655,7 @@ def batch_retry(
         if result == -1:
             skipped.append(key)
             continue
-        items, fallback = result
-        dispatch_batch_retry(items, batch_fallback=fallback, batch_id=batch_id, db=db)
+        dispatch_batch_retry(result, db)
         retried.append(key)
     return BatchRetryResult(retried_keys=retried, skipped=skipped)
 
