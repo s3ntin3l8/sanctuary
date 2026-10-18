@@ -13,7 +13,7 @@ import {
   useProposalDecision,
   useTruthMap,
 } from '../../../api/caseDetail'
-import { formatShortDate } from '../../../format'
+import { formatShortDate } from '../../../time'
 import { AgentBadge } from '../../../ui/AgentBadge'
 import { Badge, type Tone } from '../../../ui/Badge'
 import { Button } from '../../../ui/Button'

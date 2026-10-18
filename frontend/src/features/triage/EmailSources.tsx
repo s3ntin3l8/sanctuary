@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { api, type Schemas, unwrap } from '../../api/client'
-import { formatShortDate } from '../../format'
+import { formatShortDate } from '../../time'
 import { Button } from '../../ui/Button'
 
 const labels: Record<string, string> = {

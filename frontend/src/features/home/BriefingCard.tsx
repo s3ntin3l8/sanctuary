@@ -1,8 +1,7 @@
 import { useBriefing, useRefreshBriefing } from '../../api/home'
+import { formatTime } from '../../time'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
-
-const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' })
 
 /**
  * The prototype's "Morning briefing": a few sentences from the local model
@@ -29,7 +28,7 @@ export function BriefingCard() {
         >
           <Icon name={view.external ? 'public' : 'lock'} size={12} />
           {view.external ? 'generated on an external endpoint' : 'generated locally'}
-          {view.generated_at && ` · ${time.format(new Date(view.generated_at))}`}
+          {view.generated_at && ` · ${formatTime(view.generated_at)}`}
           {view.model_label && ` · ${view.model_label}`}
         </span>
         <Button

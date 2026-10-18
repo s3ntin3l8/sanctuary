@@ -59,6 +59,15 @@ def test_shell_returns_user_and_triage_count(db_session):
     assert body["triage_count"] == 1
 
 
+def test_shell_carries_the_configured_timezone(db_session, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Pacific/Auckland"))
+    assert client.get("/api/v1/shell").json()["timezone"] == "Pacific/Auckland"
+
+
 def test_logout_clears_session(auth_enabled, db_session):
     auth_service.create_user(
         db_session,

@@ -243,3 +243,41 @@ def test_a_copy_folds_onto_its_original(db_session, sample_case):
     (event,) = payload["events"]
     assert event.source_document_id == original.id
     assert event.copy_count == 1
+
+
+@pytest.mark.unit
+def test_month_buckets_follow_the_reader_calendar(db_session, sample_case, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from app.services import timezone_service
+
+    monkeypatch.setattr(timezone_service, "_cached_tz", ZoneInfo("Pacific/Auckland"))
+    db_session.add_all(
+        [
+            # 13:00 UTC on 30 Jun is already 1 Jul in Auckland.
+            Document(
+                case_id=sample_case.id,
+                title="Instant",
+                issued_date=datetime(2025, 6, 30, 13, 0),
+                ingest_date=datetime(2025, 7, 1),
+                originator_type=OriginatorType.COURT,
+            ),
+            # A printed date (00:00) is not shifted.
+            Document(
+                case_id=sample_case.id,
+                title="Printed",
+                issued_date=datetime(2025, 6, 30),
+                ingest_date=datetime(2025, 7, 1),
+                originator_type=OriginatorType.COURT,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    buckets = CaseTimelineService(db_session).build_payload(sample_case.id)[
+        "month_buckets"
+    ]
+    assert [(b["key"], b["label"], b["total"]) for b in buckets] == [
+        ("2025-06", "Jun 2025", 1),
+        ("2025-07", "Jul 2025", 1),
+    ]

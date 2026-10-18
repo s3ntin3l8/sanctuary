@@ -15,6 +15,7 @@ import {
   useRenameConversation,
 } from '../../api/chat'
 import { ApiError } from '../../api/client'
+import { formatIsoDate } from '../../time'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
@@ -206,7 +207,7 @@ export function ChatDrawer({ scope, title, suggestions, onClose, proceeding, pre
               >
                 {h.title ?? 'Untitled conversation'}
                 <span className="ml-2 font-mono text-[10px] text-muted">
-                  {new Date(h.created_at).toLocaleDateString()}
+                  {formatIsoDate(h.created_at)}
                 </span>
               </button>
               <button

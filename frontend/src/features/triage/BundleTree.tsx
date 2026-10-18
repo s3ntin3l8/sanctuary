@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useState } from 'react'
 
 import { type TriageBundle, useGroupOp } from '../../api/triage'
-import { formatShortDate } from '../../format'
+import { formatShortDate } from '../../time'
 import { Badge } from '../../ui/Badge'
 import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'

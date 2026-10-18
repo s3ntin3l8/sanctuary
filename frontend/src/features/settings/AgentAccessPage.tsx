@@ -3,7 +3,7 @@ import { type FormEvent, useState } from 'react'
 import { useCasesDirectory } from '../../api/cases'
 import { useAgentAccess, useCreateAgentToken, useRevokeAgentToken } from '../../api/settings'
 import type { Schemas } from '../../api/client'
-import { formatAgo, formatShortDate } from '../../format'
+import { formatAgo, formatShortDate, isPast } from '../../time'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -30,8 +30,7 @@ function scopeLabel(token: Token) {
 
 function status(token: Token): { label: string; tone: 'success' | 'danger' | 'warning' } {
   if (token.revoked_at) return { label: 'Revoked', tone: 'danger' }
-  if (token.expires_at && new Date(token.expires_at) <= new Date())
-    return { label: 'Expired', tone: 'warning' }
+  if (token.expires_at && isPast(token.expires_at)) return { label: 'Expired', tone: 'warning' }
   return { label: 'Active', tone: 'success' }
 }
 

@@ -6345,6 +6345,8 @@ export interface components {
          * @description Everything the persistent app shell (rail, profile menu) renders.
          */
         ShellView: {
+            /** Timezone */
+            timezone: string;
             /** Triage Count */
             triage_count: number;
             user: components["schemas"]["CurrentUser"];

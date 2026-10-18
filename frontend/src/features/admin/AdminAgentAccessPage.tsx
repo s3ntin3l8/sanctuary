@@ -8,7 +8,7 @@ import {
   useAdminSetMcpEnabled,
   useAdminTokenActivity,
 } from '../../api/settings'
-import { formatAgo, formatShortDate } from '../../format'
+import { formatAgo, formatShortDate } from '../../time'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'

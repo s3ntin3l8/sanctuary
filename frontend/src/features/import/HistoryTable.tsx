@@ -2,7 +2,7 @@ import { Fragment, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import { useGmailMessages } from '../../api/gmailImport'
-import { formatIsoDate, formatMonthLabel, formatMonthYear } from '../../format'
+import { formatIsoDate, formatMonthLabel, formatMonthYear } from '../../time'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'

@@ -5,9 +5,11 @@ import { expect, test, vi } from 'vitest'
 import * as navigation from '../navigation'
 import { emptyQueue, notificationsView, shellView } from '../test/fixtures'
 import { renderAt, stubApi } from '../test/render'
+import { displayTimeZone, formatShortDate, setDisplayTimeZone } from '../time'
 import { Shell } from './Shell'
 
 function renderShell() {
+  setDisplayTimeZone(null)
   vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
   const fetch = stubApi({
     'GET /api/v1/shell': { body: shellView },
@@ -69,4 +71,42 @@ test('⌘K opens the palette and search results navigate', async () => {
   expect(await screen.findByRole('dialog')).toBeVisible()
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('the workspace timezone is applied before the page renders its dates', async () => {
+  stubApi({
+    'GET /api/v1/shell': { body: { ...shellView, timezone: 'Pacific/Auckland' } },
+    'GET /api/v1/notifications': { body: notificationsView },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+  })
+  setDisplayTimeZone(null)
+  // 22:00 UTC is already the next day in Auckland.
+  const Page = () => <p>{formatShortDate('2026-06-17T22:00:00')}</p>
+  renderAt('/', <Page />, <Shell />)
+  expect(await screen.findByText('18 Jun')).toBeVisible()
+  expect(displayTimeZone()).toBe('Pacific/Auckland')
+})
+
+test('a failed shell request shows an error with retry instead of dates in a guessed zone', async () => {
+  let fail = true
+  const fetch = vi.fn(async (request: Request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/v1/shell') {
+      return fail
+        ? Response.json({ detail: 'down', code: 'boom' }, { status: 500 })
+        : Response.json({ ...shellView, timezone: 'Pacific/Auckland' })
+    }
+    if (path === '/api/v1/notifications') return Response.json(notificationsView)
+    return Response.json(emptyQueue)
+  })
+  vi.stubGlobal('fetch', fetch)
+  setDisplayTimeZone(null)
+  const Page = () => <p>{formatShortDate('2026-06-17T22:00:00')}</p>
+  renderAt('/', <Page />, <Shell />)
+  const user = userEvent.setup()
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the workspace')
+  expect(screen.queryByText('17 Jun')).not.toBeInTheDocument()
+  fail = false
+  await user.click(screen.getByRole('button', { name: 'Retry' }))
+  expect(await screen.findByText('18 Jun')).toBeVisible()
 })

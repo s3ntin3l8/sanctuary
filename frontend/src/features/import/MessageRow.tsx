@@ -1,5 +1,5 @@
 import type { Schemas } from '../../api/client'
-import { formatIsoDate } from '../../format'
+import { formatIsoDate } from '../../time'
 import { Icon } from '../../ui/Icon'
 
 export type IndexedMessage = Schemas['GmailIndexedMessage']

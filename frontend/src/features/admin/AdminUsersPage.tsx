@@ -12,7 +12,7 @@ import {
   useAdminUsers,
 } from '../../api/settings'
 import { useShell } from '../../api/shell'
-import { formatIsoDate } from '../../format'
+import { formatIsoDate } from '../../time'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'

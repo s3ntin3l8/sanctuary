@@ -12,7 +12,7 @@ import {
   useSaveGmailFilters,
   useSetGmailSyncMode,
 } from '../../api/settings'
-import { formatIsoDate } from '../../format'
+import { formatIsoDate, todayIso } from '../../time'
 import { useCheckGmailNew } from '../../api/gmailImport'
 import { Alert } from '../../ui/Alert'
 import { Badge } from '../../ui/Badge'
@@ -309,7 +309,7 @@ function SyncPointModal({ open, onClose }: { open: boolean; onClose: () => void 
           <input
             id="gmail-since"
             type="date"
-            max={formatIsoDate(new Date().toISOString())}
+            max={todayIso()}
             value={since}
             onChange={(e) => setSince(e.target.value)}
             className={inputClass}

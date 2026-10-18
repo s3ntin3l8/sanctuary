@@ -1,6 +1,7 @@
 import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
 
 import { type Pin, useDeletePin, useUpdatePin } from '../../api/documents'
+import { formatDateTime } from '../../time'
 import { AgentBadge } from '../../ui/AgentBadge'
 import { useMediaQuery } from '../../ui/useMediaQuery'
 import { Icon } from '../../ui/Icon'
@@ -140,9 +141,7 @@ function PinCard({
         className="w-full resize-none rounded border border-transparent bg-transparent px-1 py-0.5 outline-none focus:border-line"
       />
       {pin.updated_at && (
-        <p className="font-mono text-[9px] text-muted2">
-          {new Date(pin.updated_at).toLocaleString()}
-        </p>
+        <p className="font-mono text-[9px] text-muted2">{formatDateTime(pin.updated_at)}</p>
       )}
     </article>
   )

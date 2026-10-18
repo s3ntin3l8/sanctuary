@@ -1,4 +1,5 @@
 import type { Schemas } from '../../api/client'
+import { civilDay, dayNumber } from '../../time'
 
 export type Group = Schemas['GmailGroup']
 
@@ -117,16 +118,17 @@ export type TimeAxis = {
 export function timeAxis(groups: Group[]): TimeAxis {
   if (groups.length === 0) return { pos: () => 0, years: [] }
   const t = groupTotals(groups)
-  const firstYear = new Date(t.first).getFullYear()
-  const lastYear = new Date(t.last).getFullYear()
-  const min = new Date(firstYear, 0, 1).getTime()
-  const max = new Date(lastYear + 1, 0, 1).getTime()
-  // Year edges are local midnight while stamps are UTC, so clamp at the axis ends.
+  const firstYear = Number(civilDay(t.first).slice(0, 4))
+  const lastYear = Number(civilDay(t.last).slice(0, 4))
+  const yearStart = (year: number) => dayNumber(`${year}-01-01`)
+  const min = yearStart(firstYear)
+  const max = yearStart(lastYear + 1)
+  // Positions are calendar days on the reader's calendar; clamp stamps outside the span.
   const pos = (iso: string) =>
-    Math.max(0, Math.min(1, (new Date(iso).getTime() - min) / (max - min)))
+    Math.max(0, Math.min(1, (dayNumber(civilDay(iso)) - min) / (max - min)))
   const years = []
   for (let year = firstYear; year <= lastYear; year++) {
-    years.push({ year, at: (new Date(year, 0, 1).getTime() - min) / (max - min) })
+    years.push({ year, at: (yearStart(year) - min) / (max - min) })
   }
   return { pos, years }
 }

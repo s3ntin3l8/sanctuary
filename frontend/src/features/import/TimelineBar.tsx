@@ -1,4 +1,4 @@
-import { formatIsoDate } from '../../format'
+import { formatIsoDate } from '../../time'
 import type { TimeAxis } from './historyModel'
 
 /** A span on the shared time axis; a single day collapses to a dot. */

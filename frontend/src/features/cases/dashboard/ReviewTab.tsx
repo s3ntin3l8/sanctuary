@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useOpenDocument } from '../../documents/useOpenDocument'
 
 import type { CaseDetail } from '../../../api/caseDetail'
-import { formatShortDate } from '../../../format'
+import { formatShortDate } from '../../../time'
 import { Badge } from '../../../ui/Badge'
 import { Icon } from '../../../ui/Icon'
 import { DocumentReview, ORIGINATOR_COLOR } from '../../documents/DocumentReview'

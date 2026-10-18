@@ -18,7 +18,6 @@ from app.schemas.settings import (
     TimezoneUpdate,
 )
 from app.services import audit_service, timezone_service
-from app.services.app_settings_service import get_json as app_settings_json
 from app.services.user_settings_service import (
     _user_settings,
     set_dashboard_cards,
@@ -34,11 +33,15 @@ def _view(db: Session, user: User) -> AppearanceView:
     theme: Literal["dark", "light"] = (
         "light" if mine.get("theme") == "light" else "dark"
     )
+    zone = timezone_service.get_user_tz().key
+    choices = timezone_service.get_timezone_choices()
     return AppearanceView(
         theme=theme,
         dashboard_cards=DashboardCards(**(mine.get("dashboard_cards") or {})),
-        timezone=app_settings_json(db).get("timezone") or "Europe/Berlin",
-        timezone_choices=timezone_service.get_timezone_choices(),
+        timezone=zone,
+        # The effective zone may come from TIMEZONE or any IANA name an admin saved;
+        # the select must always have its option.
+        timezone_choices=choices if zone in choices else [zone, *choices],
     )
 
 
@@ -88,4 +91,5 @@ def save_timezone(
         db, AuditEventType.SETTINGS_TIMEZONE_CHANGED, payload={"timezone": body.tz}
     )
     db.commit()
+    timezone_service.invalidate()  # re-read the committed value
     return _view(db, user)
