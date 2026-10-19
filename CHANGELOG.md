@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1](https://github.com/s3ntin3l8/sanctuary/compare/v0.6.0...v0.6.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **ingest:** bundle retry re-runs OCR, show OCR engine, fix enrich-reduce label ([#414](https://github.com/s3ntin3l8/sanctuary/issues/414)) ([e8a6d28](https://github.com/s3ntin3l8/sanctuary/commit/e8a6d28e1b0d25c580d02e13d54bdccbd1f4c382))
+* **spa:** fit split actions in triage row, space flag count in cases list ([#416](https://github.com/s3ntin3l8/sanctuary/issues/416)) ([c59ea36](https://github.com/s3ntin3l8/sanctuary/commit/c59ea366a8d9c30097c8556e9fd3eb7ea440c26a))
+* **spa:** mark bundles awaiting a split decision on home ([#417](https://github.com/s3ntin3l8/sanctuary/issues/417)) ([7ecd8a1](https://github.com/s3ntin3l8/sanctuary/commit/7ecd8a16d470c018383c542c139781d42a3331db))
+
 ## [0.6.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.5.0...v0.6.0) (2026-10-18)
 
 
