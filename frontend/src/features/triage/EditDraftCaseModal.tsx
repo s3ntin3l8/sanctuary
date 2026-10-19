@@ -27,11 +27,7 @@ export function EditDraftCaseModal({ open, onClose, currentCaseId, currentTitle 
   )
 }
 
-function EditDraftCaseForm({
-  onClose,
-  currentCaseId,
-  currentTitle,
-}: Omit<Props, 'open'>) {
+function EditDraftCaseForm({ onClose, currentCaseId, currentTitle }: Omit<Props, 'open'>) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [caseId, setCaseId] = useState(currentCaseId)
@@ -115,12 +111,7 @@ function EditDraftCaseForm({
           <Button variant="secondary" size="sm" type="submit" disabled={saving}>
             Save draft
           </Button>
-          <Button
-            size="sm"
-            type="button"
-            disabled={saving}
-            onClick={() => handleSave(true)}
-          >
+          <Button size="sm" type="button" disabled={saving} onClick={() => handleSave(true)}>
             Save &amp; ratify
           </Button>
         </div>

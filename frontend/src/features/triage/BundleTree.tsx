@@ -91,12 +91,15 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                   op: 'order',
                   subGroupId: g.sub_group_id ?? 0,
                   docIds: [...g.doc_ids, docId],
+                  leadDocId: g.lead_doc_id,
                 })
               }
               setDraggedDocId(null)
             }}
             className={`rounded-lg border transition-all ${
-              dropTargetGroupId === g.id && draggedDocId !== null && !g.doc_ids.includes(draggedDocId)
+              dropTargetGroupId === g.id &&
+              draggedDocId !== null &&
+              !g.doc_ids.includes(draggedDocId)
                 ? 'border-accent ring-2 ring-accent/40 bg-accent/5'
                 : 'border-line2'
             }`}
@@ -137,14 +140,23 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                       setDropTargetGroupId(null)
                     }}
                     onDragOver={(e) => {
-                      if (draggedDocId !== null && draggedDocId !== id && g.doc_ids.includes(draggedDocId)) {
+                      if (
+                        draggedDocId !== null &&
+                        draggedDocId !== id &&
+                        g.doc_ids.includes(draggedDocId)
+                      ) {
                         e.preventDefault()
                         e.stopPropagation()
                         e.dataTransfer.dropEffect = 'move'
                       }
                     }}
                     onDrop={(e) => {
-                      if (draggedDocId !== null && draggedDocId !== id && batchId !== null && g.doc_ids.includes(draggedDocId)) {
+                      if (
+                        draggedDocId !== null &&
+                        draggedDocId !== id &&
+                        batchId !== null &&
+                        g.doc_ids.includes(draggedDocId)
+                      ) {
                         e.preventDefault()
                         e.stopPropagation()
                         const reordered = g.doc_ids.filter((x) => x !== draggedDocId)
@@ -155,6 +167,7 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                           op: 'order',
                           subGroupId: g.sub_group_id ?? 0,
                           docIds: reordered,
+                          leadDocId: g.lead_doc_id,
                         })
                         setDraggedDocId(null)
                         setDropTargetGroupId(null)

@@ -377,7 +377,9 @@ def _apply_proceeding_extraction(
                     db.query(Proceeding)
                     .filter(
                         Proceeding.case_id == doc.case_id,
-                        Proceeding.court_name.in_(["General", "Unknown Court"]),
+                        Proceeding.court_name.in_(
+                            ["General", "Unknown Court", "Außergerichtlich"]
+                        ),
                         Proceeding.az_court.is_(None),
                     )
                     .first()
@@ -494,7 +496,8 @@ def _apply_proceeding_extraction(
         if (
             (
                 not current_proc.court_name
-                or current_proc.court_name in ("Unknown Court", "General")
+                or current_proc.court_name
+                in ("Unknown Court", "General", "Außergerichtlich")
             )
             and extracted_court_name
             and _looks_like_court(extracted_court_name)
@@ -507,7 +510,8 @@ def _apply_proceeding_extraction(
             and extracted_level != ProceedingCourtLevel.OTHER
             and (
                 current_proc.court_level == ProceedingCourtLevel.OTHER
-                or current_proc.court_name in ("Unknown Court", "General")
+                or current_proc.court_name
+                in ("Unknown Court", "General", "Außergerichtlich")
             )
         ):
             current_proc.court_level = extracted_level
@@ -716,6 +720,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                             Proceeding.case_id == matching_case.id,
                             Proceeding.az_court.is_(None),
                         )
+                        .order_by(Proceeding.id.asc())
                         .first()
                     )
 

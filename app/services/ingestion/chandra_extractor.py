@@ -263,19 +263,34 @@ def _ocr_one_page(
 
 
 _RE_THINK_TAGS = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
-_RE_LLM_MONOLOGUE = re.compile(
-    r"^(?:The user (?:wants|is asking)|I (?:need|will|see)|Here is the (?:text|extracted|OCR)|Based on the image|Looking at the image|This image shows|This page contains)[^\n]*?(?:\n+|\Z)",
-    re.IGNORECASE | re.MULTILINE,
+_RE_PREAMBLE_INDICATOR = re.compile(
+    r"(?:The user (?:wants|is asking)|I (?:need|will|see)|Here is the (?:text|extracted|OCR)|Based on the image|Looking at the image|This image shows|This page contains)",
+    re.IGNORECASE,
+)
+_RE_PLAIN_PREAMBLE = re.compile(
+    r"\A(?:\s*(?:The user (?:wants|is asking)|I (?:need|will|see)|Here is the (?:text|extracted|OCR)|Based on the image|Looking at the image|This image shows|This page contains)[^\n]*?\n+)+",
+    re.IGNORECASE,
 )
 
 
 def _sanitize_ocr_text(text: str) -> str:
-    """Strip reasoning monologues, <think> tags, and conversational preambles."""
+    """Strip reasoning monologues, <think> tags, and conversational preambles.
+
+    Only strips preamble preceding the first HTML layout block (e.g. before <p>
+    or <div>), or at the very start of plain text, avoiding accidental loss of
+    body content.
+    """
     if not text:
         return ""
-    text = _RE_THINK_TAGS.sub("", text)
-    text = _RE_LLM_MONOLOGUE.sub("", text)
-    return text.strip()
+    text = _RE_THINK_TAGS.sub("", text).strip()
+    first_tag = text.find("<")
+    if first_tag > 0:
+        preamble = text[:first_tag]
+        if _RE_PREAMBLE_INDICATOR.search(preamble):
+            text = text[first_tag:].strip()
+    elif first_tag == -1:
+        text = _RE_PLAIN_PREAMBLE.sub("", text).strip()
+    return text
 
 
 def _html_to_markdown(html: str) -> str:
@@ -292,8 +307,6 @@ def _html_to_markdown(html: str) -> str:
     lines: list[str] = []
     blank = 0
     for line in md.splitlines():
-        if _RE_LLM_MONOLOGUE.match(line.strip()):
-            continue
         if not line.strip():
             blank += 1
             if blank <= 2:
