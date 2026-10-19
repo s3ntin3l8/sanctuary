@@ -61,6 +61,17 @@ updates:
       frontend-deps:
         patterns:
           - "*"
+        # Bundle only minor/patch in the weekly group. Major bumps still get
+        # their own individual PRs (reviewable/testable).
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Held framework majors — adopt deliberately with tests, not automatically.
+      # openapi-typescript 7.13.0 caps typescript<^6.0 (^5.x); typescript-eslint
+      # 8.71.2 caps typescript<6.1.0. Neither supports TS 6 or 7 yet.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/"
