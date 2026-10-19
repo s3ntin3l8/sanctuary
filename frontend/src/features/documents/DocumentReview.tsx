@@ -224,7 +224,8 @@ export function KeepWholeButton({ docId, compact = false }: { docId: number; com
       title="Keep this PDF as one document and continue processing"
       onClick={() => keep.mutate(docId, { onError: (e) => toast(e.message, 'error') })}
     >
-      <Icon name="task" size={compact ? 16 : 12} /> {!compact && 'Keep as one'}
+      <Icon name={compact ? 'task' : 'check'} size={compact ? 16 : 12} />{' '}
+      {!compact && 'Keep as one'}
     </Button>
   )
 }

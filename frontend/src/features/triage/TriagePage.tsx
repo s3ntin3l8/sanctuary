@@ -825,7 +825,10 @@ function BundleRow({
             <span className="text-muted2">—</span>
           )}
         </span>
-        <span className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <span
+          className="flex flex-nowrap items-center justify-end gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
           {b.status === 'stuck' && (
             <Button
               size="icon"
