@@ -187,7 +187,7 @@ export function formatDueRelative(iso: string, now = new Date()) {
   return `in ${days}d`
 }
 
-/** "8m" · "3h" · "2d" · "18 Jun" — how long ago `iso` was, prototype-style. */
+/** "8m" · "3h" · "2d" · "18 Jun '26" — how long ago `iso` was, prototype-style. */
 export function formatAgo(iso: string, now = new Date()) {
   const then = parseApiDate(iso)
   const minutes = Math.round((now.getTime() - then.getTime()) / 60_000)

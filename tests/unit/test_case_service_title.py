@@ -380,3 +380,20 @@ def test_existing_draft_gets_eA_marker_added(db_session):
     db_session.commit()
     db_session.refresh(case)
     assert case.title == "Hansen ./. Liu - Umgangsrecht (eA)"
+
+
+@pytest.mark.unit
+def test_create_case_without_az_court_creates_aussergerichtlich_proceeding(db_session):
+    from app.models.enums import ProceedingCourtLevel
+
+    case, proc, created = get_or_create_case_from_reference(
+        db_session,
+        internal_id="7917-24",
+        is_draft=True,
+    )
+    db_session.flush()
+    assert created is True
+    assert proc is not None
+    assert proc.court_name == "Außergerichtlich"
+    assert proc.court_level == ProceedingCourtLevel.OTHER
+    assert proc.az_court is None
