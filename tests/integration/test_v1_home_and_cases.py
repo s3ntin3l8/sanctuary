@@ -148,6 +148,7 @@ def test_home_lists_deadlines_bundles_and_cases(db_session, sample_case):
             case_id=sample_case.id,
             ingest_batch_id=batch.id,
             pipeline_state=PipelineState.RUNNING,
+            held_for_split_at=now_utc(),
         )
     )
     db_session.commit()
@@ -173,6 +174,7 @@ def test_home_lists_deadlines_bundles_and_cases(db_session, sample_case):
         "pending": 0,
         "failed": 0,
         "completed": 0,
+        "held_for_split": 1,
     }
 
     (card,) = body["active_cases"]

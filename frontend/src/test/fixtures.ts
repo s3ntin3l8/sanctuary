@@ -79,7 +79,7 @@ export const homeView: Schemas['HomeView'] = {
       doc_count: 3,
       case_id: null,
       suggested_case_id: 'ADV-024-A',
-      pipeline: { total: 3, running: 1, pending: 0, failed: 0, completed: 2 },
+      pipeline: { total: 3, running: 1, pending: 0, failed: 0, completed: 2, held_for_split: 0 },
     },
   ],
   last_home_visit: '2026-06-16T08:00:00Z',

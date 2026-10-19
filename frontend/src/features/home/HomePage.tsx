@@ -263,12 +263,20 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
                       )}
                     </span>
                   </span>
+                  {/* A failure outranks a pending split decision: it needs the user too, and the bundle's triage view shows both. */}
                   {p.failed > 0 ? (
                     <Badge
                       tone="danger"
                       className="col-start-3 justify-self-start @min-[640px]:col-start-4"
                     >
                       {p.failed} failed
+                    </Badge>
+                  ) : p.held_for_split > 0 ? (
+                    <Badge
+                      tone="accent"
+                      className="col-start-3 justify-self-start @min-[640px]:col-start-4"
+                    >
+                      {p.held_for_split} awaiting split
                     </Badge>
                   ) : busy ? (
                     <Badge

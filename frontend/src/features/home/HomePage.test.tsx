@@ -34,6 +34,29 @@ test('renders greeting, KPIs and every panel from the home view', async () => {
   expect(within(activity).getByText('metadata stage · file too large')).toBeVisible()
 })
 
+test('a bundle held for a split decision shows it awaiting split instead of processing', async () => {
+  stubApi({
+    'GET /api/v1/home': {
+      body: {
+        ...homeView,
+        triage_bundles: homeView.triage_bundles.map((b) => ({
+          ...b,
+          pipeline: { ...b.pipeline, running: 2, held_for_split: 1 },
+        })),
+      },
+    },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
+  })
+  renderAt('/', <HomePage />)
+
+  const row = (await screen.findByRole('link', { name: /Open Klageerwiderung in triage/ })).closest(
+    'li',
+  ) as HTMLElement
+  expect(within(row).getByText('1 awaiting split')).toBeVisible()
+  expect(within(row).queryByText(/queued/)).not.toBeInTheDocument()
+})
+
 test('activity strip shows its empty state', async () => {
   stubApi({
     'GET /api/v1/home': { body: { ...homeView, activity: [] } },
