@@ -1,8 +1,7 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import pytest
 
-from app.core.timezone import now_utc
 from app.models.database import ActionItem, Document
 from app.models.enums import (
     ActionItemStatus,
@@ -12,6 +11,11 @@ from app.models.enums import (
 )
 from app.services.intelligence.chronology_context import format_chronology_for_case
 from app.services.timezone_service import local_day_bounds, local_today
+
+
+def _midnight_today() -> datetime:
+    """Today's printed calendar date (00:00) on the reader's calendar, as the overdue flag sees it."""
+    return datetime.combine(local_today(), time.min)
 
 
 def _item(case_id, title, due, status=ActionItemStatus.OPEN, doc_id=None, kind=None):
@@ -43,7 +47,7 @@ def test_empty_case_returns_empty_string(db_session, sample_case):
 
 @pytest.mark.unit
 def test_deadline_states_and_citations(db_session, sample_case):
-    now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = _midnight_today()
     doc = _doc(sample_case.id, "Ladung", now - timedelta(days=60))
     db_session.add(doc)
     db_session.flush()
@@ -90,7 +94,7 @@ def test_deadline_states_and_citations(db_session, sample_case):
 
 @pytest.mark.unit
 def test_silence_line_between_distant_events(db_session, sample_case):
-    now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = _midnight_today()
     db_session.add_all(
         [
             _doc(sample_case.id, "Old", now - timedelta(days=100)),
@@ -111,7 +115,7 @@ def test_silence_line_between_distant_events(db_session, sample_case):
 def test_trimming_drops_minor_documents_first_and_keeps_deadlines(
     db_session, sample_case
 ):
-    now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = _midnight_today()
     db_session.add_all(
         [
             _doc(sample_case.id, f"Minor {i}", now - timedelta(days=i + 1))
@@ -141,7 +145,7 @@ def test_trimming_drops_minor_documents_first_and_keeps_deadlines(
 def test_payment_and_open_past_hearing_and_late_due_time(
     db_session, sample_case, sample_cost
 ):
-    now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = _midnight_today()
     # one second before the reader's today began
     day_start, _ = local_day_bounds(local_today())
     late = _item(sample_case.id, "Late evening", day_start - timedelta(seconds=1))
@@ -165,7 +169,7 @@ def test_payment_and_open_past_hearing_and_late_due_time(
 
 @pytest.mark.unit
 def test_open_deadline_due_today_is_flagged(db_session, sample_case):
-    today = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = _midnight_today()
     db_session.add(_item(sample_case.id, "Due now", today))
     db_session.commit()
 

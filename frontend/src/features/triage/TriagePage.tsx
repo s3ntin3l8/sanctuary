@@ -825,7 +825,10 @@ function BundleRow({
             <span className="text-muted2">—</span>
           )}
         </span>
-        <span className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <span
+          className="flex flex-nowrap items-center justify-end gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
           {b.status === 'stuck' && (
             <Button
               size="icon"
@@ -858,20 +861,16 @@ function BundleRow({
               <Icon name="alt_route" size={16} />
             </Button>
           )}
-          {heldDocs.length > 0 ? (
+          {soleHeld ? (
             <>
-              <Badge tone="warning" pill>
-                awaiting split
-              </Badge>
-              {soleHeld && (
-                <>
-                  <SplitButton docId={soleHeld.id} />
-                  <KeepWholeButton docId={soleHeld.id} />
-                </>
-              )}
+              <SplitButton docId={soleHeld.id} compact />
+              <KeepWholeButton docId={soleHeld.id} compact />
             </>
           ) : (
-            processing && <Icon name="hourglass_top" size={16} className="text-warning" />
+            processing &&
+            heldDocs.length === 0 && (
+              <Icon name="hourglass_top" size={16} className="text-warning" />
+            )
           )}
           {(!processing || heldDocs.length > 0) && (
             <span className="relative">
