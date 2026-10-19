@@ -34,7 +34,7 @@ test('renders greeting, KPIs and every panel from the home view', async () => {
   expect(within(activity).getByText('metadata stage · file too large')).toBeVisible()
 })
 
-test('a bundle held for a split decision asks for it instead of showing as processing', async () => {
+test('a bundle held for a split decision shows it awaiting split instead of processing', async () => {
   stubApi({
     'GET /api/v1/home': {
       body: {
@@ -50,8 +50,11 @@ test('a bundle held for a split decision asks for it instead of showing as proce
   })
   renderAt('/', <HomePage />)
 
-  expect(await screen.findByText('split decision needed')).toBeVisible()
-  expect(screen.queryByText(/queued/)).not.toBeInTheDocument()
+  const row = (await screen.findByRole('link', { name: /Open Klageerwiderung in triage/ })).closest(
+    'li',
+  ) as HTMLElement
+  expect(within(row).getByText('1 awaiting split')).toBeVisible()
+  expect(within(row).queryByText(/queued/)).not.toBeInTheDocument()
 })
 
 test('activity strip shows its empty state', async () => {
