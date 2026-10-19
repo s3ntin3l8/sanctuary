@@ -697,15 +697,27 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
         if internal_id:
             matching_case = db.query(Case).filter(Case.id == internal_id).first()
-            if matching_case and az_court:
-                matching_proceeding = (
-                    db.query(Proceeding)
-                    .filter(
-                        Proceeding.case_id == matching_case.id,
-                        Proceeding.az_court == az_court,
+            if matching_case:
+                if az_court:
+                    matching_proceeding = (
+                        db.query(Proceeding)
+                        .filter(
+                            Proceeding.case_id == matching_case.id,
+                            Proceeding.az_court == az_court,
+                        )
+                        .first()
                     )
-                    .first()
-                )
+                else:
+                    # Pre-trial correspondence with no court Aktenzeichen:
+                    # attach to the case's existing pre-trial proceeding (az_court is None)
+                    matching_proceeding = (
+                        db.query(Proceeding)
+                        .filter(
+                            Proceeding.case_id == matching_case.id,
+                            Proceeding.az_court.is_(None),
+                        )
+                        .first()
+                    )
 
         if not matching_case and az_court:
             # internal_id/az_court came straight out of AI-extracted document

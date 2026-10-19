@@ -420,7 +420,7 @@ def get_or_create_case_from_reference(
     new_proc = Proceeding(
         case_id=internal_id,
         az_court=az_court,
-        court_name=court_name or "General",
+        court_name=court_name or "Außergerichtlich",
         court_level=resolved_level,
         status=ProceedingStatus.ACTIVE,
         is_draft=is_draft,
@@ -1075,7 +1075,7 @@ class CaseService:
         if not active_proc and case.proceedings:
             active_proc = case.proceedings[0]
 
-        proceeding_name = active_proc.court_name if active_proc else "General"
+        proceeding_name = active_proc.court_name if active_proc else "Außergerichtlich"
 
         # Extract client and opposing names from the parties list.
         parties: list[dict[str, Any]] = case.parties or []

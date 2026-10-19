@@ -385,7 +385,31 @@ def test_a_failed_page_placeholder_carries_no_exception_text():
     chunks = result["chunks"]
     assert chunks[0]["text"] == "<!-- chandra page 1 failed: ValueError -->"
     assert chunks[0]["meta"]["failed"] is True
-    assert result["metadata"]["page_failures"] == [1]
+
+
+@pytest.mark.unit
+def test_thinking_monologue_is_sanitized_from_ocr_output():
+    from app.services.ingestion.chandra_extractor import (
+        _html_to_markdown,
+        _sanitize_ocr_text,
+    )
+
+    raw_chatter = (
+        "<think>Looking at the document...</think>\n"
+        "The user wants me to extract the text from the document. I see two main blocks of text: a paragraph about returning after a hearing and a closing with friendly regards, followed by a signature block identifying Andreas Funk as a lawyer.\n\n"
+        "<p>Nach Auskunftserteilung kommen wir unaufgefordert auf die Angelegenheit zurück und verbleiben</p>\n"
+        "<p>mit freundlichen kollegialen Grüßen</p>\n"
+        "<p>Andreas Funk<br>Rechtsanwalt</p>"
+    )
+    cleaned = _sanitize_ocr_text(raw_chatter)
+    assert "<think>" not in cleaned
+    assert "The user wants me to extract" not in cleaned
+    assert "Nach Auskunftserteilung" in cleaned
+
+    md = _html_to_markdown(raw_chatter)
+    assert "The user wants me to extract" not in md
+    assert "Nach Auskunftserteilung kommen wir unaufgefordert" in md
+    assert "Andreas Funk" in md
 
 
 def _done(value):

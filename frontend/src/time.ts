@@ -127,9 +127,20 @@ export function dayToApi(day: string) {
   return new Date(`${day}T00:00:00Z`).toISOString()
 }
 
-/** "18 Jun" */
+/** "18 Jun '26" */
 export function formatShortDate(iso: string | null | undefined) {
-  return iso ? format(iso, { day: '2-digit', month: 'short' }) : ''
+  if (!iso) return ''
+  const d = parseApiDate(iso)
+  const zone = isPrinted(d) ? 'UTC' : activeZone()
+  const parts = formatter('en-GB', zone, {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit',
+  }).formatToParts(d)
+  const day = parts.find((p) => p.type === 'day')?.value ?? ''
+  const month = parts.find((p) => p.type === 'month')?.value ?? ''
+  const year = parts.find((p) => p.type === 'year')?.value ?? ''
+  return `${day} ${month} '${year}`
 }
 
 /** "Tuesday, 17 June 2026" */

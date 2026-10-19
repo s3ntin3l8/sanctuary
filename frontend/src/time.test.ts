@@ -54,7 +54,7 @@ describe('configured zone', () => {
     // 22:00 UTC is already the next morning in Auckland (UTC+12 in June).
     expect(civilDay('2026-06-17T22:00:00')).toBe('2026-06-18')
     expect(formatIsoDate('2026-06-17T22:00:00')).toBe('2026-06-18')
-    expect(formatShortDate('2026-06-17T22:00:00')).toBe('18 Jun')
+    expect(formatShortDate('2026-06-17T22:00:00')).toBe("18 Jun '26")
     expect(formatLongDate('2026-06-17T22:00:00')).toBe('Thursday, 18 June 2026')
     expect(formatMonthYear('2026-06-30T13:00:00')).toBe('07.26')
     expect(formatMonthLabel('2026-06-30T13:00:00')).toBe('Jul 2026')
@@ -80,7 +80,7 @@ describe('printed calendar dates', () => {
     for (const tz of ['Pacific/Auckland', 'America/Los_Angeles', 'UTC', 'Pacific/Kiritimati']) {
       setDisplayTimeZone(tz)
       expect(civilDay('2026-06-18T00:00:00')).toBe('2026-06-18')
-      expect(formatShortDate('2026-06-18T00:00:00Z')).toBe('18 Jun')
+      expect(formatShortDate('2026-06-18T00:00:00Z')).toBe("18 Jun '26")
       expect(formatLongDate('2026-06-18T00:00:00')).toBe('Thursday, 18 June 2026')
       expect(formatMonthYear('2026-06-01T00:00:00')).toBe('06.26')
       expect(formatMonthLabel('2026-06-01T00:00:00')).toBe('Jun 2026')
@@ -189,7 +189,7 @@ describe('formatAgo', () => {
   })
 
   test('older than two weeks falls back to the configured-zone date', () => {
-    expect(formatAgo('2026-05-01T12:00:00Z', now)).toBe('02 May')
-    expect(formatAgo('2026-05-01T00:00:00Z', now)).toBe('01 May')
+    expect(formatAgo('2026-05-01T12:00:00Z', now)).toBe("02 May '26")
+    expect(formatAgo('2026-05-01T00:00:00Z', now)).toBe("01 May '26")
   })
 })

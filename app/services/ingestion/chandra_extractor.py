@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import re
 import threading
 import time
 from collections.abc import Generator
@@ -157,6 +158,8 @@ Use the following labels:
 - Blank-Page
 
 {_PROMPT_ENDING}
+
+CRITICAL: Output ONLY valid HTML layout blocks. Do NOT output any preamble, explanation, thought process, conversational commentary, or thinking. Start directly with the first HTML block.
 """.strip()
 
 
@@ -242,6 +245,8 @@ def _ocr_one_page(
         "temperature": CHANDRA_TEMPERATURE,
         "top_p": CHANDRA_TOP_P,
         "max_tokens": CHANDRA_MAX_OUTPUT_TOKENS,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "enable_thinking": False,
     }
     with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
         resp = client.post(url, json=payload, headers=headers)
@@ -251,9 +256,26 @@ def _ocr_one_page(
     # Chandra is built on Qwen3.5 base, which often emits schema-constrained
     # output through reasoning_content rather than content even with thinking
     # disabled. Production _ai_call.py applies the same fallback.
-    return (msg.get("content") or "").strip() or (
+    raw = (msg.get("content") or "").strip() or (
         msg.get("reasoning_content") or ""
     ).strip()
+    return _sanitize_ocr_text(raw)
+
+
+_RE_THINK_TAGS = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
+_RE_LLM_MONOLOGUE = re.compile(
+    r"^(?:The user (?:wants|is asking)|I (?:need|will|see)|Here is the (?:text|extracted|OCR)|Based on the image|Looking at the image|This image shows|This page contains)[^\n]*?(?:\n+|\Z)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _sanitize_ocr_text(text: str) -> str:
+    """Strip reasoning monologues, <think> tags, and conversational preambles."""
+    if not text:
+        return ""
+    text = _RE_THINK_TAGS.sub("", text)
+    text = _RE_LLM_MONOLOGUE.sub("", text)
+    return text.strip()
 
 
 def _html_to_markdown(html: str) -> str:
@@ -265,10 +287,13 @@ def _html_to_markdown(html: str) -> str:
     """
     if not html.strip():
         return ""
-    md = markdownify(html, heading_style="ATX", strip=["div"])
+    cleaned_html = _sanitize_ocr_text(html)
+    md = markdownify(cleaned_html, heading_style="ATX", strip=["div"])
     lines: list[str] = []
     blank = 0
     for line in md.splitlines():
+        if _RE_LLM_MONOLOGUE.match(line.strip()):
+            continue
         if not line.strip():
             blank += 1
             if blank <= 2:

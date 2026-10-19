@@ -83,7 +83,7 @@ test('the workspace timezone is applied before the page renders its dates', asyn
   // 22:00 UTC is already the next day in Auckland.
   const Page = () => <p>{formatShortDate('2026-06-17T22:00:00')}</p>
   renderAt('/', <Page />, <Shell />)
-  expect(await screen.findByText('18 Jun')).toBeVisible()
+  expect(await screen.findByText("18 Jun '26")).toBeVisible()
   expect(displayTimeZone()).toBe('Pacific/Auckland')
 })
 
@@ -105,8 +105,8 @@ test('a failed shell request shows an error with retry instead of dates in a gue
   renderAt('/', <Page />, <Shell />)
   const user = userEvent.setup()
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the workspace')
-  expect(screen.queryByText('17 Jun')).not.toBeInTheDocument()
+  expect(screen.queryByText("17 Jun '26")).not.toBeInTheDocument()
   fail = false
   await user.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(await screen.findByText('18 Jun')).toBeVisible()
+  expect(await screen.findByText("18 Jun '26")).toBeVisible()
 })
