@@ -8693,6 +8693,10 @@
             "title": "Failed",
             "type": "integer"
           },
+          "held_for_split": {
+            "title": "Held For Split",
+            "type": "integer"
+          },
           "pending": {
             "title": "Pending",
             "type": "integer"
@@ -8711,7 +8715,8 @@
           "running",
           "pending",
           "failed",
-          "completed"
+          "completed",
+          "held_for_split"
         ],
         "title": "PipelineCounts",
         "type": "object"

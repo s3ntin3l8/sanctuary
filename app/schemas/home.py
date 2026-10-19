@@ -27,6 +27,7 @@ class PipelineCounts(BaseModel):
     pending: int
     failed: int
     completed: int
+    held_for_split: int  # docs waiting on the user's Split / Keep-as-one decision
 
 
 class HomeTriageBundle(BaseModel):

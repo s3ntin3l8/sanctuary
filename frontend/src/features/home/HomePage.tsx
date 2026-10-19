@@ -270,6 +270,13 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
                     >
                       {p.failed} failed
                     </Badge>
+                  ) : p.held_for_split > 0 ? (
+                    <Badge
+                      tone="accent"
+                      className="col-start-3 justify-self-start @min-[640px]:col-start-4"
+                    >
+                      split decision needed
+                    </Badge>
                   ) : busy ? (
                     <Badge
                       tone="warning"

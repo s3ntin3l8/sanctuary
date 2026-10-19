@@ -5913,6 +5913,8 @@ export interface components {
             completed: number;
             /** Failed */
             failed: number;
+            /** Held For Split */
+            held_for_split: number;
             /** Pending */
             pending: number;
             /** Running */

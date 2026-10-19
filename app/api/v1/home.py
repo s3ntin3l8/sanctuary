@@ -60,6 +60,7 @@ def _triage_bundle(batch: IngestBatch) -> HomeTriageBundle:
             pending=summary.get("pending", 0),
             failed=summary.get("failed", 0),
             completed=summary.get("completed", 0),
+            held_for_split=sum(1 for d in docs if d.held_for_split_at is not None),
         ),
     )
 
