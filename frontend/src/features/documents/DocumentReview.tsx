@@ -29,6 +29,7 @@ import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
 import { ReviewChecklist } from '../triage/ReviewChecklist'
 import { EmailSources } from '../triage/EmailSources'
+import { EditDraftCaseModal } from '../triage/EditDraftCaseModal'
 import { type Routing, RoutingCards } from '../triage/RoutingPickers'
 
 type Review = Schemas['DocumentReview']
@@ -530,6 +531,7 @@ function ReferenceNote({ reference }: { reference: Review['reference'] }) {
 function CaseAndProceeding({ review, routing }: { review: Review; routing?: Routing }) {
   const draft = useDraftDecision()
   const toast = useToast()
+  const [editingDraft, setEditingDraft] = useState(false)
   return (
     <section id="review-case" className="border-b border-line2 px-4.5 py-3">
       <h4 className={`${SECTION_TITLE} mb-2 text-muted`}>
@@ -613,6 +615,14 @@ function CaseAndProceeding({ review, routing }: { review: Review; routing?: Rout
           </Button>
           <Button
             size="sm"
+            variant="secondary"
+            disabled={draft.isPending}
+            onClick={() => setEditingDraft(true)}
+          >
+            Edit
+          </Button>
+          <Button
+            size="sm"
             variant="danger-outline"
             disabled={draft.isPending}
             onClick={() =>
@@ -627,6 +637,14 @@ function CaseAndProceeding({ review, routing }: { review: Review; routing?: Rout
           >
             Reject
           </Button>
+          {review.case && (
+            <EditDraftCaseModal
+              open={editingDraft}
+              onClose={() => setEditingDraft(false)}
+              currentCaseId={review.case.id}
+              currentTitle={review.case.title}
+            />
+          )}
         </div>
       )}
     </section>

@@ -27,6 +27,9 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
   const run = (vars: Parameters<typeof op.mutate>[0]) =>
     op.mutate(vars, { onError: (e) => toast(e.message, 'error') })
 
+  const [draggedDocId, setDraggedDocId] = useState<number | null>(null)
+  const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null)
+
   return (
     <div className="flex flex-col">
       <div className="mb-2 flex items-center gap-2">
@@ -61,7 +64,46 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
       </div>
       <div className="space-y-2">
         {bundle.sub_groups.map((g) => (
-          <div key={g.id} className="rounded-lg border border-line2">
+          <div
+            key={g.id}
+            onDragOver={(e) => {
+              if (draggedDocId !== null && batchId !== null) {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                if (dropTargetGroupId !== g.id) {
+                  setDropTargetGroupId(g.id)
+                }
+              }
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                if (dropTargetGroupId === g.id) setDropTargetGroupId(null)
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDropTargetGroupId(null)
+              if (draggedDocId === null || batchId === null) return
+              const docId = draggedDocId
+              if (!g.doc_ids.includes(docId)) {
+                run({
+                  batchId,
+                  op: 'order',
+                  subGroupId: g.sub_group_id ?? 0,
+                  docIds: [...g.doc_ids, docId],
+                  leadDocId: g.lead_doc_id,
+                })
+              }
+              setDraggedDocId(null)
+            }}
+            className={`rounded-lg border transition-all ${
+              dropTargetGroupId === g.id &&
+              draggedDocId !== null &&
+              !g.doc_ids.includes(draggedDocId)
+                ? 'border-accent ring-2 ring-accent/40 bg-accent/5'
+                : 'border-line2'
+            }`}
+          >
             <GroupHeader
               group={g}
               batchId={batchId}
@@ -87,15 +129,68 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                 return (
                   <li
                     key={id}
-                    className={`group/doc flex items-center gap-1 pr-2 ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
+                    draggable={batchId !== null}
+                    onDragStart={(e) => {
+                      setDraggedDocId(id)
+                      e.dataTransfer.setData('text/plain', String(id))
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragEnd={() => {
+                      setDraggedDocId(null)
+                      setDropTargetGroupId(null)
+                    }}
+                    onDragOver={(e) => {
+                      if (
+                        draggedDocId !== null &&
+                        draggedDocId !== id &&
+                        g.doc_ids.includes(draggedDocId)
+                      ) {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        e.dataTransfer.dropEffect = 'move'
+                      }
+                    }}
+                    onDrop={(e) => {
+                      if (
+                        draggedDocId !== null &&
+                        draggedDocId !== id &&
+                        batchId !== null &&
+                        g.doc_ids.includes(draggedDocId)
+                      ) {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const reordered = g.doc_ids.filter((x) => x !== draggedDocId)
+                        const targetIdx = reordered.indexOf(id)
+                        reordered.splice(targetIdx, 0, draggedDocId)
+                        run({
+                          batchId,
+                          op: 'order',
+                          subGroupId: g.sub_group_id ?? 0,
+                          docIds: reordered,
+                          leadDocId: g.lead_doc_id,
+                        })
+                        setDraggedDocId(null)
+                        setDropTargetGroupId(null)
+                      }
+                    }}
+                    className={`group/doc flex items-center gap-1 pr-2 transition-opacity ${
+                      draggedDocId === id ? 'opacity-40' : ''
+                    } ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
                   >
                     <button
                       type="button"
                       onClick={() => onSelect(id)}
                       aria-current={activeDocId === id ? 'true' : undefined}
-                      className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[11.5px]"
+                      className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[11.5px] cursor-grab active:cursor-grabbing"
                       style={{ paddingLeft: 8 + d.depth * 12 }}
                     >
+                      {batchId !== null && (
+                        <Icon
+                          name="drag_indicator"
+                          size={12}
+                          className="shrink-0 text-muted/30 group-hover/doc:text-muted"
+                        />
+                      )}
                       <span
                         className={`h-1.5 w-1.5 shrink-0 rounded-full ${ORIGINATOR_COLOR[d.originator_type]}`}
                       />

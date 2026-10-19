@@ -185,3 +185,56 @@ def test_a_new_instance_moves_its_family_not_the_whole_bundle(setup):
     assert cover.proceeding_id != proc.id
     assert enclosure.proceeding_id == cover.proceeding_id
     assert unrelated.proceeding_id == proc.id
+
+
+def test_pre_trial_correspondence_attaches_to_existing_out_of_court_proceeding(
+    db_session,
+):
+    from app.services.ai_summary import enrich_document_with_ai
+    from app.services.case_service import get_or_create_case_from_reference
+
+    owner = db_session.query(User).filter_by(email="admin@localhost").one()
+    # 1. Draft case created from pre-trial reference
+    case, proc, _ = get_or_create_case_from_reference(
+        db_session, "7917-24", is_draft=True
+    )
+    assert proc.court_name == "Außergerichtlich"
+    assert proc.az_court is None
+
+    # 2. Subsequent out-of-court document arrives matching internal_id with no court AZ
+    batch = IngestBatch(
+        owner_id=owner.id,
+        source_type=IngestBatchSourceType.EMAIL,
+        status=IngestBatchStatus.OPEN,
+        received_at=datetime(2026, 10, 19, tzinfo=UTC),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    doc = Document(
+        owner_id=owner.id,
+        ingest_batch_id=batch.id,
+        title="Schreiben Gegenanwalt",
+        case_id="_TRIAGE",
+        role=DocumentRole.STANDALONE,
+        originator_type=OriginatorType.OPPOSING,
+    )
+    db_session.add(doc)
+    db_session.flush()
+
+    enrich_document_with_ai(
+        doc,
+        {
+            "internal_id": "7917-24",
+            "az_court": None,
+            "document_type": "letter",
+            "significance_tier": "significant",
+            "action_items": [],
+            "passages": [],
+        },
+        db_session,
+    )
+    db_session.flush()
+
+    assert doc.case_id == case.id
+    assert doc.proceeding_id == proc.id

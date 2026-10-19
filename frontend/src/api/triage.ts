@@ -203,7 +203,7 @@ type GroupOp =
   | { op: 'cover'; docId: number }
   | { op: 'rename'; subGroupId: number; label: string }
   | { op: 'delete'; subGroupId: number }
-  | { op: 'order'; subGroupId: number; docIds: number[] }
+  | { op: 'order'; subGroupId: number; docIds: number[]; leadDocId?: number | null }
 
 export function useGroupOp() {
   const patch = useBundlePatch()
@@ -239,7 +239,7 @@ export function useGroupOp() {
           return unwrap(
             api.PUT('/api/v1/triage/bundles/{batch_id}/groups/{sub_group_id}/order', {
               params: { path: { batch_id: batchId, sub_group_id: op.subGroupId } },
-              body: { doc_ids: op.docIds },
+              body: { doc_ids: op.docIds, lead_doc_id: op.leadDocId ?? null },
             }),
           )
       }
