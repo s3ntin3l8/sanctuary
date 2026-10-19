@@ -68,8 +68,8 @@ updates:
           - "patch"
     ignore:
       # Held framework majors — adopt deliberately with tests, not automatically.
-      # openapi-typescript (caps ^5.x) and typescript-eslint (caps <6.1.0) do not
-      # support TypeScript 7 yet.
+      # openapi-typescript 7.13.0 caps typescript<^6.0 (^5.x); typescript-eslint
+      # 8.71.2 caps typescript<6.1.0. Neither supports TS 6 or 7 yet.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
 
