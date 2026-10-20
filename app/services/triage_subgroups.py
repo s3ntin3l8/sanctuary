@@ -5,11 +5,12 @@ Free-function module (no class). Owns the batch sub-group lifecycle:
 - create/rename/reorder/delete/reset sub-groups
 - set_cover_letter (lives here because cover-letter is a sub-group-scoped role)
 
-Sub-groups are explicit BatchSubGroup rows that override the implicit
-parent-root grouping when the user manually reorganises a bundle. The lazy
-initialisation pattern means: until the user touches a bundle, it stays in
-"auto mode" (no rows); the first mutation materialises rows mirroring the
-auto layout, then subsequent mutations operate on the explicit rows.
+Sub-groups are explicit BatchSubGroup rows that override the automatic
+grouping when the user manually reorganises a bundle. The lazy initialisation
+pattern means: until the user touches a bundle, it stays in "auto mode" (no
+rows); the first mutation materialises rows mirroring the automatic layout
+(see `app.services.triage_grouping`), then subsequent mutations operate on
+the explicit rows.
 """
 
 from sqlalchemy import func
@@ -66,7 +67,8 @@ def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGr
     docs.sort(key=document_sort_key)
 
     sub_groups: list[BatchSubGroup] = []
-    for group_idx, group in enumerate(group_bundle_documents(docs)):
+    groups = group_bundle_documents(docs) or [[]]
+    for group_idx, group in enumerate(groups):
         sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=group_idx)
         db.add(sg)
         db.flush()

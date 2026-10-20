@@ -31,10 +31,10 @@ STATUS_NEEDS_REVIEW = "needs_review"
 
 @dataclass
 class SubBundleView:
-    """One parent-root subtree inside a `BundleView`, shaped for the redesigned UI."""
+    """One group of a `BundleView`, shaped for the redesigned UI."""
 
     id: str  # f"{bundle.key}-g{group_index}"
-    label: str  # cover doc title or "Group A"
+    label: str  # cover doc title, "Standalone documents" or "Group A"
     lead_doc: Document | None  # None for empty groups
     docs: list[tuple[int, Document]] = field(default_factory=list)  # (depth, doc)
     suggested_case_id: str | None = None
@@ -129,7 +129,7 @@ def _majority_case(docs: list[Document]) -> str | None:
 def build_sub_bundles(bundle) -> list[SubBundleView]:  # bundle: BundleView
     """Aggregate bundle documents into SubBundleView rows.
 
-    Auto mode: uses bundle.parent_groups (existing parent_id hierarchy).
+    Auto mode: derives the groups from the parent_id hierarchy.
     Manual mode: activates when any doc has sub_group_id set; uses BatchSubGroup rows.
     """
     docs_with_sg = [d for d in bundle.documents if d.sub_group_id is not None]
@@ -149,7 +149,7 @@ def _build_sub_bundles_auto(bundle) -> list[SubBundleView]:
     docs = bundle.documents
     if not docs:
         return sub_bundles
-    _, children_of = parent_tree(docs)
+    roots, children_of = parent_tree(docs)
 
     for idx, group in enumerate(group_bundle_documents(docs)):
         leaf_docs = [d for _, d in group]
@@ -172,9 +172,9 @@ def _build_sub_bundles_auto(bundle) -> list[SubBundleView]:
         ):
             suggested_title = bundle.suggested_case_title
         confidence = (lead.extraction_confidence or {}).get("case_id") if lead else None
-        label = standalone_group_label(leaf_docs, children_of) or _label_for_group(
-            lead, idx
-        )
+        label = standalone_group_label(
+            leaf_docs, roots, children_of
+        ) or _label_for_group(lead, idx)
         sub_bundles.append(
             SubBundleView(
                 id=f"{bundle.key}-g{idx}",
@@ -197,7 +197,7 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
     groups_by_sgid: dict[int, list] = defaultdict(list)
     sg_meta: dict[int, BatchSubGroup] = {}
     depth_by_doc = depth_map(bundle.documents)
-    _, children_of = parent_tree(bundle.documents)
+    roots, children_of = parent_tree(bundle.documents)
 
     for d in sorted(
         bundle.documents, key=lambda x: (x.sub_group_sort_order or 0, x.id)
@@ -240,7 +240,7 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
         ):
             suggested_title = bundle.suggested_case_title
         confidence = (lead.extraction_confidence or {}).get("case_id") if lead else None
-        standalone_label = standalone_group_label(leaf_docs, children_of)
+        standalone_label = standalone_group_label(leaf_docs, roots, children_of)
 
         label: str
         if sg and sg.label:

@@ -85,19 +85,28 @@ def group_bundle_documents(docs: list[Document]) -> list[list[tuple[int, Documen
 
     `docs` is expected in bundle order (significance first); the groups and
     the documents inside them keep that order. Each group is a list of
-    `(depth, doc)` entries, its root first. The shared group of standalone
-    documents comes last.
+    `(depth, doc)` entries, its root first. The loose roots share one group,
+    placed where their most significant member falls in the bundle order.
     """
     roots, children_of = parent_tree(docs)
     groups: list[list[tuple[int, Document]]] = []
     loose: list[Document] = []
+    loose_at: int | None = None
     for root in roots:
         if not is_structured(root, children_of):
+            if loose_at is None:
+                loose_at = len(groups)
             loose.append(root)
             continue
         groups.append(_subtree(root, children_of))
     if loose:
-        groups.append([(0, d) for d in loose])
+        if loose_at is None:
+            loose_at = len(groups)
+        groups.insert(loose_at, [(0, d) for d in loose])
+    if not groups and docs:
+        # A `parent_id` cycle leaves no root at all; keep the documents
+        # visible in one group rather than dropping them from the bundle.
+        groups.append([(0, d) for d in docs])
     return groups
 
 
@@ -115,14 +124,23 @@ def _subtree(
 
 
 def standalone_group_label(
-    docs: list[Document], children_of: dict[int, list[Document]]
+    docs: list[Document],
+    roots: list[Document],
+    children_of: dict[int, list[Document]],
 ) -> str | None:
     """`Standalone documents` for a group that holds only loose documents.
+
+    Loose means: a root of the bundle tree, no children of its own and not a
+    cover letter. A document whose parent lives in another group is an
+    enclosure of that document, not a standalone one.
 
     `None` for every other group — the caller falls back to the lead
     document's title.
     """
     if not docs:
+        return None
+    root_ids = {d.id for d in roots}
+    if any(d.id not in root_ids for d in docs):
         return None
     if any(d.role == DocumentRole.COVER_LETTER for d in docs):
         return None

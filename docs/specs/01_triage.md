@@ -62,6 +62,10 @@ The bundle's contents are grouped, and the groups follow one rule
   group of standalone documents, labelled "Standalone documents". An email
   with nothing but attachments is one group, not one group per attachment.
 
+The groups keep the bundle's significance order: the shared group of
+standalone documents sits where its most significant member falls, so a
+critical attachment is never pushed below a mere cover letter.
+
 A group has exactly one heading: its cover letter. "Mark as cover letter"
 moves the heading — the promoted document becomes the group's cover, the
 previous cover becomes its first enclosure, and the group is re-ordered so

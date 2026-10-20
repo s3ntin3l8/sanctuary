@@ -240,33 +240,36 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                         )}
                         <span className="font-mono text-[10px] text-muted">{d.page_count} pp</span>
                       </button>
-                      {batchId !== null && bundle.has_manual_groups && otherGroups.length > 0 && (
-                        <select
-                          aria-label={`Move ${d.title} to group`}
-                          value=""
-                          onChange={(e) => {
-                            const target = otherGroups.find(
-                              (x) => String(x.sub_group_id) === e.target.value,
-                            )
-                            if (target && target.sub_group_id !== null)
-                              run({
-                                batchId,
-                                op: 'order',
-                                subGroupId: target.sub_group_id,
-                                docIds: [...target.doc_ids, id],
-                              })
-                          }}
-                          className="w-5 cursor-pointer bg-transparent text-[10px] text-muted"
-                          title="Move to group"
-                        >
-                          <option value="">⇄</option>
-                          {otherGroups.map((x) => (
-                            <option key={x.id} value={String(x.sub_group_id)}>
-                              → {x.label}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      {batchId !== null &&
+                        bundle.has_manual_groups &&
+                        otherGroups.length > 0 &&
+                        !isHeading && (
+                          <select
+                            aria-label={`Move ${d.title} to group`}
+                            value=""
+                            onChange={(e) => {
+                              const target = otherGroups.find(
+                                (x) => String(x.sub_group_id) === e.target.value,
+                              )
+                              if (target && target.sub_group_id !== null)
+                                run({
+                                  batchId,
+                                  op: 'order',
+                                  subGroupId: target.sub_group_id,
+                                  docIds: [...target.doc_ids, id],
+                                })
+                            }}
+                            className="w-5 cursor-pointer bg-transparent text-[10px] text-muted"
+                            title="Move to group"
+                          >
+                            <option value="">⇄</option>
+                            {otherGroups.map((x) => (
+                              <option key={x.id} value={String(x.sub_group_id)}>
+                                → {x.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       {batchId !== null && d.role !== 'cover_letter' && (
                         <button
                           type="button"

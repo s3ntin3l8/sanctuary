@@ -1,6 +1,7 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { expect, test } from 'vitest'
 
+import type { Schemas } from '../../api/client'
 import { triageBundle } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
 
@@ -27,6 +28,39 @@ test('the cover letter leads its group and cannot be dragged away', () => {
   expect(rows[0]).toHaveAttribute('draggable', 'false')
   expect(rows[1]).toHaveAttribute('draggable', 'true')
   expect(rows[2]).toHaveAttribute('draggable', 'true')
+})
+
+test('the cover letter cannot be moved into another group', () => {
+  const bundle: Schemas['TriageBundle'] = {
+    ...triageBundle,
+    has_manual_groups: true,
+    sub_groups: [
+      {
+        id: 'batch-42-g0',
+        sub_group_id: 1,
+        label: 'Klageerwiderung.pdf',
+        lead_doc_id: 2210,
+        suggested_case_id: null,
+        suggested_case_title: null,
+        case_confidence: null,
+        doc_ids: [2210, 2211, 2212],
+      },
+      {
+        id: 'batch-42-g1',
+        sub_group_id: 2,
+        label: 'Anlagen',
+        lead_doc_id: null,
+        suggested_case_id: null,
+        suggested_case_title: null,
+        case_confidence: null,
+        doc_ids: [],
+      },
+    ],
+  }
+  renderAt('/triage', <BundleTree bundle={bundle} activeDocId={null} onSelect={() => {}} />)
+  const rows = screen.getAllByRole('listitem')
+  expect(within(rows[0] as HTMLElement).queryByLabelText(/^Move /)).toBeNull()
+  expect(within(rows[1] as HTMLElement).getByLabelText(/^Move /)).toBeVisible()
 })
 
 test('dropping a document never puts it above the cover letter', async () => {

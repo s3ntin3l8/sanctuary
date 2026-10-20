@@ -147,6 +147,65 @@ def test_build_sub_bundles_cover_group_and_standalone_group(db_session):
 
 
 @pytest.mark.unit
+def test_build_sub_bundles_standalone_group_keeps_the_significance_order(db_session):
+    """The shared group sits where its most significant member falls."""
+    cover = _make_doc(
+        db_session,
+        title="Begleitschreiben",
+        role=DocumentRole.COVER_LETTER,
+        significance=SignificanceTier.ADMINISTRATIVE,
+    )
+    loose = _make_doc(
+        db_session, title="Kontoauszug", significance=SignificanceTier.CRITICAL
+    )
+    bundle = _bundle([loose, cover])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert [sb.label for sb in sub_bundles] == [
+        "Standalone documents",
+        "Begleitschreiben",
+    ]
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_manual_group_of_enclosures_is_not_standalone(db_session):
+    """A group whose documents hang under another group keeps the lead's title."""
+    from app.services.triage_view import build_sub_bundles
+
+    sg_cover = make_sg(id=1, sort_order=0)
+    sg_annex = make_sg(id=2, sort_order=1)
+    cover = make_doc(
+        id=20, role=DocumentRole.COVER_LETTER, sub_group_id=1, sub_group=sg_cover
+    )
+    enclosure = make_doc(
+        id=21, role=DocumentRole.ENCLOSURE, sub_group_id=2, sub_group=sg_annex
+    )
+    enclosure.parent_id = 20
+    bundle = FakeBundle(batch_id=1, documents=[cover, enclosure])
+
+    result = build_sub_bundles(bundle)
+
+    annex_group = next(sb for sb in result if sb.sub_group_id == 2)
+    assert annex_group.label == "Doc 21"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_survives_a_parent_cycle(db_session):
+    """A `parent_id` cycle leaves no root — the documents stay visible."""
+    a = _make_doc(db_session, title="A")
+    b = _make_doc(db_session, title="B")
+    a.parent_id = b.id
+    b.parent_id = a.id
+    bundle = _bundle([a, b])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert len(sub_bundles) == 1
+    assert {d.id for _, d in sub_bundles[0].docs} == {a.id, b.id}
+
+
+@pytest.mark.unit
 def test_lead_doc_is_the_root_even_when_an_exhibit_is_more_significant(db_session):
     """In a sliced scan a "cover letter" is just the first slice of a letter
     group; the motion that heads the group owns its identity, not its exhibit."""
