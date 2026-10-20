@@ -28,6 +28,9 @@ test('the cover letter leads its group and cannot be dragged away', () => {
   expect(rows[0]).toHaveAttribute('draggable', 'false')
   expect(rows[1]).toHaveAttribute('draggable', 'true')
   expect(rows[2]).toHaveAttribute('draggable', 'true')
+  // The heading does not advertise a drag it cannot do.
+  expect(within(rows[0] as HTMLElement).queryByText('drag_indicator')).toBeNull()
+  expect(within(rows[1] as HTMLElement).getByText('drag_indicator')).toBeVisible()
 })
 
 test('the cover letter cannot be moved into another group', () => {

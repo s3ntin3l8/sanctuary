@@ -103,10 +103,13 @@ def group_bundle_documents(docs: list[Document]) -> list[list[tuple[int, Documen
         if loose_at is None:
             loose_at = len(groups)
         groups.insert(loose_at, [(0, d) for d in loose])
-    if not groups and docs:
-        # A `parent_id` cycle leaves no root at all; keep the documents
-        # visible in one group rather than dropping them from the bundle.
-        groups.append([(0, d) for d in docs])
+    # Documents in a `parent_id` cycle belong to no root's subtree. Keep every
+    # document visible in a group of its own rather than dropping it from the
+    # bundle.
+    grouped = {d.id for group in groups for _, d in group}
+    missing = [d for d in docs if d.id not in grouped]
+    if missing:
+        groups.append([(0, d) for d in missing])
     return groups
 
 

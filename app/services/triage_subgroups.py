@@ -67,6 +67,8 @@ def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGr
     docs.sort(key=document_sort_key)
 
     sub_groups: list[BatchSubGroup] = []
+    # Always at least one group: a batch whose documents are all dismissed
+    # still gets one (empty) group, so a group id always exists.
     groups = group_bundle_documents(docs) or [[]]
     for group_idx, group in enumerate(groups):
         sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=group_idx)

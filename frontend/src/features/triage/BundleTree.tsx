@@ -199,13 +199,18 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
                         }`}
                         style={{ paddingLeft: 8 + d.depth * 12 }}
                       >
-                        {batchId !== null && (
-                          <Icon
-                            name="drag_indicator"
-                            size={12}
-                            className="shrink-0 text-muted/30 group-hover/doc:text-muted"
-                          />
-                        )}
+                        {batchId !== null &&
+                          (isHeading ? (
+                            // The heading cannot be dragged — keep the space so
+                            // the titles stay aligned.
+                            <span className="w-3 shrink-0" />
+                          ) : (
+                            <Icon
+                              name="drag_indicator"
+                              size={12}
+                              className="shrink-0 text-muted/30 group-hover/doc:text-muted"
+                            />
+                          ))}
                         <span
                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${ORIGINATOR_COLOR[d.originator_type]}`}
                         />

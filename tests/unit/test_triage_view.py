@@ -206,6 +206,22 @@ def test_build_sub_bundles_survives_a_parent_cycle(db_session):
 
 
 @pytest.mark.unit
+def test_build_sub_bundles_survives_a_partial_parent_cycle(db_session):
+    """Documents in a cycle stay visible next to the healthy part of the bundle."""
+    a = _make_doc(db_session, title="A")
+    b = _make_doc(db_session, title="B")
+    root = _make_doc(db_session, title="C")
+    a.parent_id = b.id
+    b.parent_id = a.id
+    bundle = _bundle([a, b, root])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    grouped = {d.id for sb in sub_bundles for _, d in sb.docs}
+    assert grouped == {a.id, b.id, root.id}
+
+
+@pytest.mark.unit
 def test_lead_doc_is_the_root_even_when_an_exhibit_is_more_significant(db_session):
     """In a sliced scan a "cover letter" is just the first slice of a letter
     group; the motion that heads the group owns its identity, not its exhibit."""
