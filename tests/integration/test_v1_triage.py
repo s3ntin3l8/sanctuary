@@ -18,6 +18,7 @@ from app.models.database import (
 from app.models.enums import (
     ActionItemType,
     CaseStatus,
+    DocumentRole,
     IngestBatchSourceType,
     IngestBatchStatus,
     PipelineState,
@@ -487,6 +488,70 @@ def test_title_and_sub_group_lifecycle(db_session):
     )
     reset = client.post(f"/api/v1/triage/bundles/{batch.id}/groups/reset")
     assert reset.json()["has_manual_groups"] is False
+
+
+def test_promoting_an_enclosure_to_cover_reheads_the_group(db_session):
+    """The promoted cover leads its group; the demoted one sits below it."""
+    admin = _admin(db_session)
+    batch, docs = _batch(db_session, admin.id, docs=2)
+    cover, enclosure = docs
+    cover.role = DocumentRole.COVER_LETTER
+    enclosure.role = DocumentRole.ENCLOSURE
+    enclosure.parent_id = cover.id
+    db_session.commit()
+
+    resp = client.put(
+        f"/api/v1/triage/bundles/{batch.id}/cover", json={"doc_id": enclosure.id}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    group = body["sub_groups"][0]
+    assert group["doc_ids"][0] == enclosure.id
+    documents = {d["id"]: d for d in body["documents"]}
+    assert documents[enclosure.id]["role"] == "cover_letter"
+    assert documents[enclosure.id]["depth"] == 0
+    assert documents[cover.id]["role"] == "enclosure"
+    assert documents[cover.id]["depth"] == 1
+
+
+def test_bundle_of_standalone_documents_is_one_group(db_session):
+    """An email with nothing but attachments is one group, not N groups."""
+    admin = _admin(db_session)
+    batch, docs = _batch(db_session, admin.id, docs=3)
+    db_session.commit()
+
+    body = client.get("/api/v1/triage").json()
+    bundle = next(b for b in body["bundles"] if b["batch_id"] == batch.id)
+
+    assert len(bundle["sub_groups"]) == 1
+    group = bundle["sub_groups"][0]
+    assert group["label"] == "Standalone documents"
+    assert sorted(group["doc_ids"]) == sorted(d.id for d in docs)
+
+
+def test_a_document_moved_to_another_group_is_not_indented(db_session):
+    """Its parent lives in another group, so it heads the group it moved to."""
+    admin = _admin(db_session)
+    batch, docs = _batch(db_session, admin.id, docs=2)
+    cover, enclosure = docs
+    cover.role = DocumentRole.COVER_LETTER
+    enclosure.role = DocumentRole.ENCLOSURE
+    enclosure.parent_id = cover.id
+    db_session.commit()
+
+    created = client.post(f"/api/v1/triage/bundles/{batch.id}/groups")
+    assert created.status_code == 200, created.text
+    empty = next(g for g in created.json()["sub_groups"] if not g["doc_ids"])
+    moved = client.put(
+        f"/api/v1/triage/bundles/{batch.id}/groups/{empty['sub_group_id']}/order",
+        json={"doc_ids": [enclosure.id]},
+    )
+    assert moved.status_code == 200, moved.text
+
+    documents = {d["id"]: d for d in moved.json()["documents"]}
+    assert documents[enclosure.id]["depth"] == 0
+    assert documents[cover.id]["depth"] == 0
 
 
 def test_sub_group_errors_are_422(db_session):

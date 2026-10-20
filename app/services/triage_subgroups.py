@@ -5,17 +5,17 @@ Free-function module (no class). Owns the batch sub-group lifecycle:
 - create/rename/reorder/delete/reset sub-groups
 - set_cover_letter (lives here because cover-letter is a sub-group-scoped role)
 
-Sub-groups are explicit BatchSubGroup rows that override the implicit
-parent-root grouping when the user manually reorganises a bundle. The lazy
-initialisation pattern means: until the user touches a bundle, it stays in
-"auto mode" (no rows); the first mutation materialises rows mirroring the
-auto layout, then subsequent mutations operate on the explicit rows.
+Sub-groups are explicit BatchSubGroup rows that override the automatic
+grouping when the user manually reorganises a bundle. The lazy initialisation
+pattern means: until the user touches a bundle, it stays in "auto mode" (no
+rows); the first mutation materialises rows mirroring the automatic layout
+(see `app.services.triage_grouping`), then subsequent mutations operate on
+the explicit rows.
 """
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.constants import SIG_ORDER as _SIG_ORDER
 from app.models.database import (
     BatchSubGroup,
     Document,
@@ -25,16 +25,22 @@ from app.models.database import (
 from app.models.enums import DocumentRole, DocumentStatus, RelationshipType
 from app.repositories.document_relationship import insert_edge_if_absent
 from app.services import family_context
-from app.services.ingestion import exhibits
 from app.services.ingestion.service import apply_review_reasons
+from app.services.triage_grouping import (
+    document_sort_key,
+    group_bundle_documents,
+    group_roots,
+)
 
 
 def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGroup]:
     """Materialize BatchSubGroup rows for a batch on first user mutation.
 
     Idempotent: if rows already exist, returns them as-is. On first call,
-    mirrors the auto parent_groups hierarchy into explicit BatchSubGroup rows
-    and assigns each doc its sub_group_id + sub_group_sort_order.
+    mirrors the automatic grouping into explicit BatchSubGroup rows and
+    assigns each doc its sub_group_id + sub_group_sort_order. The mirror is
+    exact — the same grouping rules the automatic view uses — so the layout
+    does not shift when the user first touches the bundle.
     """
     existing = (
         db.query(BatchSubGroup)
@@ -57,62 +63,22 @@ def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGr
         )
         .all()
     )
-    docs_by_id = {d.id: d for d in docs}
-    children_of: dict[int, list] = {}
-    roots: list[Document] = []
-    for d in docs:
-        if not d.parent_id or d.parent_id not in docs_by_id:
-            roots.append(d)
-        else:
-            children_of.setdefault(d.parent_id, []).append(d)
-
-    # Enclosures keep the order their sender gave them (Anlage K 1, K 2, …).
-    for siblings in children_of.values():
-        siblings.sort(key=lambda d: exhibits.sort_key(d.meta))
-
-    roots.sort(
-        key=lambda d: (
-            _SIG_ORDER.get(d.significance_tier, 99)
-            if d.significance_tier is not None
-            else 99,
-            d.id or 0,
-        )
-    )
-
-    if not roots:
-        roots = list(docs)
-
-    # Flat bundle: all docs are roots with no children → collapse into one group.
-    # Creating one group per doc produces a confusing N-group UI with no useful structure.
-    if len(roots) == len(docs):
-        sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=0)
-        db.add(sg)
-        db.flush()
-        for order, doc in enumerate(roots):
-            doc.sub_group_id = sg.id
-            doc.sub_group_sort_order = order
-        db.flush()
-        return [sg]
+    # The automatic view orders a bundle by significance; mirror it here so
+    # both modes show the documents in the same order.
+    docs.sort(key=document_sort_key)
 
     sub_groups: list[BatchSubGroup] = []
-    for group_idx, root in enumerate(roots):
+    # Always at least one group: a batch whose documents are all dismissed
+    # still gets one (empty) group, so a group id always exists.
+    groups = group_bundle_documents(docs) or [[]]
+    for group_idx, group in enumerate(groups):
         sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=group_idx)
         db.add(sg)
         db.flush()
-
-        sort_order = 0
-        queue = [root]
-        visited: set[int] = set()
-        while queue:
-            node = queue.pop(0)
-            if node.id in visited:
-                continue
-            visited.add(node.id)
-            node.sub_group_id = sg.id
-            node.sub_group_sort_order = sort_order
-            sort_order += 1
-            queue.extend(children_of.get(node.id, []))
-
+        for order, (_depth, doc) in enumerate(group):
+            doc.sub_group_id = sg.id
+            doc.sub_group_sort_order = order
+        db.flush()
         sub_groups.append(sg)
 
     db.flush()
@@ -165,6 +131,16 @@ def set_cover_letter(db: Session, doc_id: int, batch_id: int) -> Document:
                 relationship_type=RelationshipType.ENCLOSES,
                 notes="user-chosen cover letter",
             )
+    db.flush()
+    # The promoted cover heads its group: it takes the first slot, the rest
+    # keep their relative order, so the demoted cover lands right below it.
+    # Without this the group would still list the old cover on top and the
+    # rendered hierarchy would contradict the tree.
+    ordered = sorted(members, key=lambda m: (m.sub_group_sort_order or 0, m.id))
+    leading = [m for m in ordered if m.id == doc.id]
+    rest = [m for m in ordered if m.id != doc.id]
+    for order, m in enumerate([*leading, *rest]):
+        m.sub_group_sort_order = order
     db.flush()
     for m in members:
         apply_review_reasons(m)
@@ -269,6 +245,12 @@ def reorder_documents(
         if not target_sub_group_id:
             raise ValueError(f"No sub-groups in batch {batch_id}")
 
+    # The group's heading — its cover letter — always leads the list, so the
+    # stored order mirrors the tree and the rendered hierarchy stays true.
+    ordered_doc_ids = _heading_first_order(
+        db, batch_id, target_sub_group_id, ordered_doc_ids
+    )
+
     for order, doc_id in enumerate(ordered_doc_ids):
         db.query(Document).filter(
             Document.id == doc_id,
@@ -279,6 +261,71 @@ def reorder_documents(
     # A document moved into a group takes that group's case.
     family_context.propagate_batch(db, batch_id)
     db.flush()
+
+
+def _heading_first_order(
+    db: Session,
+    batch_id: int,
+    sub_group_id: int | None,
+    ordered_doc_ids: list[int],
+) -> list[int]:
+    """The group's order with its heading first.
+
+    The heading is the cover letter that heads the group — the group's own
+    cover letter, or a cover letter that moves in (its parent stays in the
+    group it came from, so it heads the one it joins).
+    """
+    members = _group_documents(db, sub_group_id)
+    member_ids = {d.id for d in members}
+    heading = _group_heading(members)
+    if heading is None:
+        incoming = (
+            db.query(Document)
+            .filter(
+                Document.id.in_(ordered_doc_ids),
+                Document.ingest_batch_id == batch_id,
+                Document.status != DocumentStatus.DISMISSED,
+            )
+            .all()
+        )
+        heading = _group_heading(
+            [d for d in incoming if d.id not in member_ids] + members
+        )
+    if heading is None or heading.id not in ordered_doc_ids:
+        return ordered_doc_ids
+    return [heading.id, *[doc_id for doc_id in ordered_doc_ids if doc_id != heading.id]]
+
+
+def _group_documents(db: Session, sub_group_id: int | None) -> list[Document]:
+    """The documents in a group."""
+    if sub_group_id is None:
+        return []
+    return (
+        db.query(Document)
+        .filter(
+            Document.sub_group_id == sub_group_id,
+            Document.status != DocumentStatus.DISMISSED,
+        )
+        .all()
+    )
+
+
+def _group_heading(docs: list[Document]) -> Document | None:
+    """The cover letter that heads a group, if the group has one.
+
+    Which documents head a group is `group_roots`' rule; a cover letter is
+    the one that leads it.
+    """
+    return next(
+        (
+            d
+            for d in sorted(
+                group_roots(docs), key=lambda d: (d.sub_group_sort_order or 0, d.id)
+            )
+            if d.role == DocumentRole.COVER_LETTER
+        ),
+        None,
+    )
 
 
 def delete_sub_group(

@@ -679,7 +679,7 @@ db.commit()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BUNDLE 5 — MULTI_ROOT: one email, two cover-letter subtrees
-#   Tests: parent_groups yields 2 groups → Bundle A / Bundle B labels
+#   Tests: two cover-letter subtrees → two groups → Bundle A / Bundle B labels
 # ═══════════════════════════════════════════════════════════════════════════
 b5 = make_batch(
     IngestBatchSourceType.EMAIL,

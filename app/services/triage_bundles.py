@@ -11,12 +11,11 @@ for dismiss/delete.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from app.constants import SIG_ORDER as _SIG_ORDER
 from app.core.timezone import now_utc
 from app.models.database import (
     BatchSubGroup,
@@ -27,15 +26,14 @@ from app.models.database import (
     Proceeding,
 )
 from app.models.enums import (
-    DocumentRole,
     DocumentStatus,
     IngestBatchSourceType,
     IngestBatchStatus,
     RelationshipType,
 )
-from app.services.ingestion import exhibits
 from app.services.pipeline_status import stages_dict
 from app.services.triage_confirmation import _sanitize_case_title
+from app.services.triage_grouping import document_sort_key
 
 IGNORABLE_REVIEW_REASONS = frozenset({"pending_confirmation", "missing_parent"})
 
@@ -192,7 +190,7 @@ class BundleView:
 
     @property
     def sub_bundles(self) -> list:
-        """Per parent-root subtree views for the inline expand + drawer spine.
+        """The bundle's groups for the inline expand + drawer spine.
 
         See `app.services.triage_view.build_sub_bundles`. Cached lazily.
         """
@@ -201,38 +199,6 @@ class BundleView:
 
             self._sub_bundles_cache = build_sub_bundles(self)
         return self._sub_bundles_cache
-
-    @property
-    def parent_groups(self) -> list[list[tuple[int, Document]]]:
-        """Group the bundle's documents by their parent-root subtree.
-
-        Returns one list per parent-root, each entry a `(depth, doc)` tuple in
-        BFS order so the template can indent enclosures consistently.
-
-        A doc is a parent-root if its `parent_id` is None OR points to a
-        document outside this bundle (orphaned child).
-        """
-        docs_by_id = {d.id: d for d in self.documents}
-        children_of: dict[int, list[Document]] = {}
-        roots: list[Document] = []
-        for d in self.documents:
-            if not d.parent_id or d.parent_id not in docs_by_id:
-                roots.append(d)
-            else:
-                children_of.setdefault(d.parent_id, []).append(d)
-
-        groups: list[list[tuple[int, Document]]] = []
-        for root in roots:
-            group: list[tuple[int, Document]] = [(0, root)]
-            queue: list[tuple[int, Document]] = [
-                (1, c) for c in children_of.get(root.id, [])
-            ]
-            while queue:
-                depth, node = queue.pop(0)
-                group.append((depth, node))
-                queue.extend((depth + 1, c) for c in children_of.get(node.id, []))
-            groups.append(group)
-        return groups
 
 
 def _bundle_pipeline_label(bundle: BundleView) -> str:
@@ -598,16 +564,7 @@ def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
         if not has_manual_groups:
             # Significance-first within the bundle (§5b), cover-letter as in-tier
             # tiebreaker so the user's eye lands on high-impact docs first.
-            bundle.documents.sort(
-                key=lambda d: (
-                    _SIG_ORDER.get(d.significance_tier, 99)
-                    if d.significance_tier is not None
-                    else 99,
-                    0 if d.role == DocumentRole.COVER_LETTER else 1,
-                    exhibits.sort_key(d.meta),
-                    d.ingest_date or datetime.min.replace(tzinfo=UTC),
-                )
-            )
+            bundle.documents.sort(key=document_sort_key)
         doc_ids = [d.id for d in bundle.documents]
         if doc_ids:
             bundle_items: list = []

@@ -51,6 +51,33 @@ EMAIL  12. Apr  anwalt@kanzlei.de   [ADV-031-B]    2 docs ⚠
 
 Parent-child tree shown inline (uses existing `parent_id`).
 
+### Bundle contents
+
+The bundle's contents are grouped, and the groups follow one rule
+(`app/services/triage_grouping.py`):
+
+- A **structured** root — a document with children, or a cover letter — heads
+  its own group: the cover letter and its enclosures.
+- Every **loose** root — no children, not a cover letter — joins one shared
+  group of standalone documents, labelled "Standalone documents". An email
+  with nothing but attachments is one group, not one group per attachment.
+
+The groups keep the bundle's significance order: the shared group of
+standalone documents sits where its most significant member falls, so a
+critical attachment is never pushed below a mere cover letter.
+
+A group has exactly one heading: its cover letter. "Mark as cover letter"
+moves the heading — the promoted document becomes the group's cover, the
+previous cover becomes its first enclosure, and the group is re-ordered so
+the rendered hierarchy mirrors the tree. The heading cannot be dragged away
+and no document is dropped above it. The same rules apply in automatic and
+in manual grouping mode, so the layout never shifts when the user first
+reorganises a bundle.
+
+The nesting a document is drawn with is the nesting *inside its group*: a
+document whose parent lives in another group heads its own group, so it is
+never indented under a parent that is not shown.
+
 ### Batch header chips
 
 - **Case chip** — `[ADV-024-A]` shows the AI-detected or confirmed case. `?` suffix (`[ADV-024-A?]`) means AI-suggested but unconfirmed; a solid chip means user-confirmed. `[?]` means no detection yet.

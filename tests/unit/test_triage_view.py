@@ -93,9 +93,12 @@ def test_build_sub_bundles_single_root_returns_one(db_session):
 
 
 @pytest.mark.unit
-def test_build_sub_bundles_two_roots_returns_two(db_session):
-    root_a = _make_doc(db_session, title="Schriftsatz")
-    root_b = _make_doc(db_session, title="Deckungszusage")
+def test_build_sub_bundles_two_cover_letters_returns_two(db_session):
+    """Two letters in one bundle are two groups — each heads its own."""
+    root_a = _make_doc(db_session, title="Schriftsatz", role=DocumentRole.COVER_LETTER)
+    root_b = _make_doc(
+        db_session, title="Deckungszusage", role=DocumentRole.COVER_LETTER
+    )
     bundle = _bundle([root_a, root_b])
 
     sub_bundles = build_sub_bundles(bundle)
@@ -103,6 +106,137 @@ def test_build_sub_bundles_two_roots_returns_two(db_session):
     assert len(sub_bundles) == 2
     lead_ids = {sb.lead_doc.id for sb in sub_bundles}
     assert lead_ids == {root_a.id, root_b.id}
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_standalone_docs_share_one_group(db_session):
+    """A bundle of loose documents is one group, not N one-document groups."""
+    a = _make_doc(db_session, title="Kontoauszug")
+    b = _make_doc(db_session, title="Buchungsbestätigung")
+    c = _make_doc(db_session, title="Überweisungsbeleg")
+    bundle = _bundle([a, b, c])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert len(sub_bundles) == 1
+    assert [d.id for _, d in sub_bundles[0].docs] == [a.id, b.id, c.id]
+    assert sub_bundles[0].label == "Standalone documents"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_cover_group_and_standalone_group(db_session):
+    """A cover letter keeps its own group; the loose documents share another."""
+    cover = _make_doc(
+        db_session, title="Begleitschreiben", role=DocumentRole.COVER_LETTER
+    )
+    enclosure = _make_doc(
+        db_session,
+        title="Anlage K 1",
+        role=DocumentRole.ENCLOSURE,
+        parent_id=cover.id,
+    )
+    loose = _make_doc(db_session, title="Kontoauszug")
+    loose2 = _make_doc(db_session, title="Buchungsbestätigung")
+    bundle = _bundle([cover, enclosure, loose, loose2])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert len(sub_bundles) == 2
+    assert [d.id for _, d in sub_bundles[0].docs] == [cover.id, enclosure.id]
+    assert [d.id for _, d in sub_bundles[1].docs] == [loose.id, loose2.id]
+    assert sub_bundles[1].label == "Standalone documents"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_single_loose_document_keeps_its_title(db_session):
+    """A one-document bundle is that document — the group says its name."""
+    doc = _make_doc(db_session, title="Antrag auf Bewilligung")
+    bundle = _bundle([doc])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert len(sub_bundles) == 1
+    assert sub_bundles[0].label == "Antrag auf Bewilligung"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_standalone_group_keeps_the_significance_order(db_session):
+    """The shared group sits where its most significant member falls."""
+    cover = _make_doc(
+        db_session,
+        title="Begleitschreiben",
+        role=DocumentRole.COVER_LETTER,
+        significance=SignificanceTier.ADMINISTRATIVE,
+    )
+    loose = _make_doc(
+        db_session, title="Kontoauszug", significance=SignificanceTier.CRITICAL
+    )
+    loose2 = _make_doc(
+        db_session,
+        title="Buchungsbestätigung",
+        significance=SignificanceTier.INFORMATIONAL,
+    )
+    bundle = _bundle([loose, cover, loose2])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert [sb.label for sb in sub_bundles] == [
+        "Standalone documents",
+        "Begleitschreiben",
+    ]
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_manual_group_of_enclosures_is_not_standalone(db_session):
+    """A group whose documents hang under another group keeps the lead's title."""
+    from app.services.triage_view import build_sub_bundles
+
+    sg_cover = make_sg(id=1, sort_order=0)
+    sg_annex = make_sg(id=2, sort_order=1)
+    cover = make_doc(
+        id=20, role=DocumentRole.COVER_LETTER, sub_group_id=1, sub_group=sg_cover
+    )
+    enclosure = make_doc(
+        id=21, role=DocumentRole.ENCLOSURE, sub_group_id=2, sub_group=sg_annex
+    )
+    enclosure.parent_id = 20
+    bundle = FakeBundle(batch_id=1, documents=[cover, enclosure])
+
+    result = build_sub_bundles(bundle)
+
+    annex_group = next(sb for sb in result if sb.sub_group_id == 2)
+    assert annex_group.label == "Doc 21"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_survives_a_parent_cycle(db_session):
+    """A `parent_id` cycle leaves no root — the documents stay visible."""
+    a = _make_doc(db_session, title="A")
+    b = _make_doc(db_session, title="B")
+    a.parent_id = b.id
+    b.parent_id = a.id
+    bundle = _bundle([a, b])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert len(sub_bundles) == 1
+    assert {d.id for _, d in sub_bundles[0].docs} == {a.id, b.id}
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_survives_a_partial_parent_cycle(db_session):
+    """Documents in a cycle stay visible next to the healthy part of the bundle."""
+    a = _make_doc(db_session, title="A")
+    b = _make_doc(db_session, title="B")
+    root = _make_doc(db_session, title="C")
+    a.parent_id = b.id
+    b.parent_id = a.id
+    bundle = _bundle([a, b, root])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    grouped = {d.id for sb in sub_bundles for _, d in sb.docs}
+    assert grouped == {a.id, b.id, root.id}
 
 
 @pytest.mark.unit
@@ -195,9 +329,9 @@ def test_lead_doc_falls_back_to_significance_then_id(db_session):
 
     sub_bundles = build_sub_bundles(bundle)
 
-    leads = sorted(sb.lead_doc.id for sb in sub_bundles)
-    # Two root sub-bundles; each picks its sole doc.
-    assert leads == sorted([a.id, b.id])
+    # Loose documents share one group; the most significant one leads it.
+    assert len(sub_bundles) == 1
+    assert sub_bundles[0].lead_doc.id == b.id
 
 
 @pytest.mark.unit
@@ -517,7 +651,6 @@ class FakeBundle:
     batch_id: int | None
     documents: list
     key: str = "batch-1"
-    parent_groups: list | None = None
     suggested_case_id: str | None = None
     suggested_case_title: str | None = None
     confirmed_case_id: str | None = None
@@ -592,10 +725,8 @@ def test_build_sub_bundles_auto_mode_no_sub_group_ids():
     from app.services.triage_view import build_sub_bundles
 
     docs = [make_doc(id=10, sub_group_id=None), make_doc(id=11, sub_group_id=None)]
-    bundle = FakeBundle(
-        batch_id=1,
-        documents=docs,
-        parent_groups=[[(0, docs[0])], [(0, docs[1])]],
-    )
+    bundle = FakeBundle(batch_id=1, documents=docs)
     result = build_sub_bundles(bundle)
-    assert len(result) == 2
+    # Loose documents share one group.
+    assert len(result) == 1
+    assert [d.id for _, d in result[0].docs] == [10, 11]

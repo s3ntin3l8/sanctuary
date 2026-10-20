@@ -63,234 +63,258 @@ export function BundleTree({ bundle, activeDocId, onSelect, onDocAction, footer 
         )}
       </div>
       <div className="space-y-2">
-        {bundle.sub_groups.map((g) => (
-          <div
-            key={g.id}
-            onDragOver={(e) => {
-              if (draggedDocId !== null && batchId !== null) {
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-                if (dropTargetGroupId !== g.id) {
-                  setDropTargetGroupId(g.id)
+        {bundle.sub_groups.map((g) => {
+          // The heading — the group's cover letter — always leads the list and
+          // cannot be dragged: it is what the group hangs on.
+          const headingId = g.doc_ids.find((id) => {
+            const d = docsById.get(id)
+            return d?.role === 'cover_letter' && d.depth === 0
+          })
+          return (
+            <div
+              key={g.id}
+              onDragOver={(e) => {
+                if (draggedDocId !== null && batchId !== null) {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  if (dropTargetGroupId !== g.id) {
+                    setDropTargetGroupId(g.id)
+                  }
                 }
-              }
-            }}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                if (dropTargetGroupId === g.id) setDropTargetGroupId(null)
-              }
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              setDropTargetGroupId(null)
-              if (draggedDocId === null || batchId === null) return
-              const docId = draggedDocId
-              if (!g.doc_ids.includes(docId)) {
-                run({
-                  batchId,
-                  op: 'order',
-                  subGroupId: g.sub_group_id ?? 0,
-                  docIds: [...g.doc_ids, docId],
-                  leadDocId: g.lead_doc_id,
-                })
-              }
-              setDraggedDocId(null)
-            }}
-            className={`rounded-lg border transition-all ${
-              dropTargetGroupId === g.id &&
-              draggedDocId !== null &&
-              !g.doc_ids.includes(draggedDocId)
-                ? 'border-accent ring-2 ring-accent/40 bg-accent/5'
-                : 'border-line2'
-            }`}
-          >
-            <GroupHeader
-              group={g}
-              batchId={batchId}
-              manual={bundle.has_manual_groups}
-              onRename={(label) =>
-                g.sub_group_id !== null &&
-                batchId !== null &&
-                run({ batchId, op: 'rename', subGroupId: g.sub_group_id, label })
-              }
-              onDelete={() =>
-                g.sub_group_id !== null &&
-                batchId !== null &&
-                run({ batchId, op: 'delete', subGroupId: g.sub_group_id })
-              }
-            />
-            <ul>
-              {g.doc_ids.map((id) => {
-                const d = docsById.get(id)
-                if (!d) return null
-                const otherGroups = bundle.sub_groups.filter(
-                  (x) => x.sub_group_id !== null && x.id !== g.id,
-                )
-                return (
-                  <li
-                    key={id}
-                    draggable={batchId !== null}
-                    onDragStart={(e) => {
-                      setDraggedDocId(id)
-                      e.dataTransfer.setData('text/plain', String(id))
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onDragEnd={() => {
-                      setDraggedDocId(null)
-                      setDropTargetGroupId(null)
-                    }}
-                    onDragOver={(e) => {
-                      if (
-                        draggedDocId !== null &&
-                        draggedDocId !== id &&
-                        g.doc_ids.includes(draggedDocId)
-                      ) {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        e.dataTransfer.dropEffect = 'move'
-                      }
-                    }}
-                    onDrop={(e) => {
-                      if (
-                        draggedDocId !== null &&
-                        draggedDocId !== id &&
-                        batchId !== null &&
-                        g.doc_ids.includes(draggedDocId)
-                      ) {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        const reordered = g.doc_ids.filter((x) => x !== draggedDocId)
-                        const targetIdx = reordered.indexOf(id)
-                        reordered.splice(targetIdx, 0, draggedDocId)
-                        run({
-                          batchId,
-                          op: 'order',
-                          subGroupId: g.sub_group_id ?? 0,
-                          docIds: reordered,
-                          leadDocId: g.lead_doc_id,
-                        })
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  if (dropTargetGroupId === g.id) setDropTargetGroupId(null)
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                setDropTargetGroupId(null)
+                if (draggedDocId === null || batchId === null) return
+                const docId = draggedDocId
+                if (!g.doc_ids.includes(docId)) {
+                  run({
+                    batchId,
+                    op: 'order',
+                    subGroupId: g.sub_group_id ?? 0,
+                    docIds: [...g.doc_ids, docId],
+                    leadDocId: g.lead_doc_id,
+                  })
+                }
+                setDraggedDocId(null)
+              }}
+              className={`rounded-lg border transition-all ${
+                dropTargetGroupId === g.id &&
+                draggedDocId !== null &&
+                !g.doc_ids.includes(draggedDocId)
+                  ? 'border-accent ring-2 ring-accent/40 bg-accent/5'
+                  : 'border-line2'
+              }`}
+            >
+              <GroupHeader
+                group={g}
+                batchId={batchId}
+                manual={bundle.has_manual_groups}
+                onRename={(label) =>
+                  g.sub_group_id !== null &&
+                  batchId !== null &&
+                  run({ batchId, op: 'rename', subGroupId: g.sub_group_id, label })
+                }
+                onDelete={() =>
+                  g.sub_group_id !== null &&
+                  batchId !== null &&
+                  run({ batchId, op: 'delete', subGroupId: g.sub_group_id })
+                }
+              />
+              <ul>
+                {g.doc_ids.map((id) => {
+                  const d = docsById.get(id)
+                  if (!d) return null
+                  const isHeading = id === headingId
+                  const otherGroups = bundle.sub_groups.filter(
+                    (x) => x.sub_group_id !== null && x.id !== g.id,
+                  )
+                  return (
+                    <li
+                      key={id}
+                      draggable={batchId !== null && !isHeading}
+                      onDragStart={(e) => {
+                        setDraggedDocId(id)
+                        e.dataTransfer.setData('text/plain', String(id))
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragEnd={() => {
                         setDraggedDocId(null)
                         setDropTargetGroupId(null)
-                      }
-                    }}
-                    className={`group/doc flex items-center gap-1 pr-2 transition-opacity ${
-                      draggedDocId === id ? 'opacity-40' : ''
-                    } ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onSelect(id)}
-                      aria-current={activeDocId === id ? 'true' : undefined}
-                      className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[11.5px] cursor-grab active:cursor-grabbing"
-                      style={{ paddingLeft: 8 + d.depth * 12 }}
-                    >
-                      {batchId !== null && (
-                        <Icon
-                          name="drag_indicator"
-                          size={12}
-                          className="shrink-0 text-muted/30 group-hover/doc:text-muted"
-                        />
-                      )}
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${ORIGINATOR_COLOR[d.originator_type]}`}
-                      />
-                      <Icon
-                        name={
-                          d.role === 'cover_letter'
-                            ? 'description'
-                            : d.is_proof
-                              ? 'verified'
-                              : 'attach_file'
+                      }}
+                      onDragOver={(e) => {
+                        if (
+                          draggedDocId !== null &&
+                          draggedDocId !== id &&
+                          g.doc_ids.includes(draggedDocId)
+                        ) {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          e.dataTransfer.dropEffect = 'move'
                         }
-                        size={14}
-                        className="text-muted"
-                      />
-                      {d.exhibit_label && (
-                        <span className="shrink-0 rounded-sm bg-accent/10 px-1 font-mono text-[10px] text-muted">
-                          {d.exhibit_label}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                      {d.reference_inherited && (
-                        <span title="Case taken over from its bundle">
-                          <Icon name="link" size={12} className="text-muted2" />
-                        </span>
-                      )}
-                      {d.pipeline_state === 'failed' && <Badge tone="danger">failed</Badge>}
-                      {d.needs_review && d.pipeline_state === 'completed' && (
-                        <span
-                          className="h-1.5 w-1.5 rounded-full bg-warning"
-                          title="needs review"
-                        />
-                      )}
-                      <span className="font-mono text-[10px] text-muted">{d.page_count} pp</span>
-                    </button>
-                    {batchId !== null && bundle.has_manual_groups && otherGroups.length > 0 && (
-                      <select
-                        aria-label={`Move ${d.title} to group`}
-                        value=""
-                        onChange={(e) => {
-                          const target = otherGroups.find(
-                            (x) => String(x.sub_group_id) === e.target.value,
-                          )
-                          if (target && target.sub_group_id !== null)
-                            run({
-                              batchId,
-                              op: 'order',
-                              subGroupId: target.sub_group_id,
-                              docIds: [...target.doc_ids, id],
-                            })
-                        }}
-                        className="w-5 cursor-pointer bg-transparent text-[10px] text-muted"
-                        title="Move to group"
-                      >
-                        <option value="">⇄</option>
-                        {otherGroups.map((x) => (
-                          <option key={x.id} value={String(x.sub_group_id)}>
-                            → {x.label}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {batchId !== null && d.role !== 'cover_letter' && (
+                      }}
+                      onDrop={(e) => {
+                        if (
+                          draggedDocId !== null &&
+                          draggedDocId !== id &&
+                          batchId !== null &&
+                          g.doc_ids.includes(draggedDocId)
+                        ) {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const reordered = g.doc_ids.filter((x) => x !== draggedDocId)
+                          const targetIdx = reordered.indexOf(id)
+                          // Nothing lands above the heading — it leads the group.
+                          const headingIdx =
+                            headingId === undefined ? -1 : reordered.indexOf(headingId)
+                          const insertAt =
+                            headingIdx >= 0 ? Math.max(targetIdx, headingIdx + 1) : targetIdx
+                          reordered.splice(insertAt, 0, draggedDocId)
+                          run({
+                            batchId,
+                            op: 'order',
+                            subGroupId: g.sub_group_id ?? 0,
+                            docIds: reordered,
+                            leadDocId: g.lead_doc_id,
+                          })
+                          setDraggedDocId(null)
+                          setDropTargetGroupId(null)
+                        }
+                      }}
+                      className={`group/doc flex items-center gap-1 pr-2 transition-opacity ${
+                        draggedDocId === id ? 'opacity-40' : ''
+                      } ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
+                    >
                       <button
                         type="button"
-                        title="Mark as cover letter"
-                        aria-label={`Mark ${d.title} as cover letter`}
-                        onClick={() => run({ batchId, op: 'cover', docId: id })}
-                        className="text-muted hover:text-ink"
+                        onClick={() => onSelect(id)}
+                        aria-current={activeDocId === id ? 'true' : undefined}
+                        className={`flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[11.5px] ${
+                          isHeading ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+                        }`}
+                        style={{ paddingLeft: 8 + d.depth * 12 }}
                       >
-                        <Icon name="bookmark" size={13} />
+                        {batchId !== null &&
+                          (isHeading ? (
+                            // The heading cannot be dragged — keep the space so
+                            // the titles stay aligned.
+                            <span className="w-3 shrink-0" />
+                          ) : (
+                            <Icon
+                              name="drag_indicator"
+                              size={12}
+                              className="shrink-0 text-muted/30 group-hover/doc:text-muted"
+                            />
+                          ))}
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${ORIGINATOR_COLOR[d.originator_type]}`}
+                        />
+                        <Icon
+                          name={
+                            d.role === 'cover_letter'
+                              ? 'description'
+                              : d.is_proof
+                                ? 'verified'
+                                : 'attach_file'
+                          }
+                          size={14}
+                          className="text-muted"
+                        />
+                        {d.exhibit_label && (
+                          <span className="shrink-0 rounded-sm bg-accent/10 px-1 font-mono text-[10px] text-muted">
+                            {d.exhibit_label}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                        {d.reference_inherited && (
+                          <span title="Case taken over from its bundle">
+                            <Icon name="link" size={12} className="text-muted2" />
+                          </span>
+                        )}
+                        {d.pipeline_state === 'failed' && <Badge tone="danger">failed</Badge>}
+                        {d.needs_review && d.pipeline_state === 'completed' && (
+                          <span
+                            className="h-1.5 w-1.5 rounded-full bg-warning"
+                            title="needs review"
+                          />
+                        )}
+                        <span className="font-mono text-[10px] text-muted">{d.page_count} pp</span>
                       </button>
-                    )}
-                    {onDocAction && bundle.doc_count > 1 && (
-                      <span className="flex gap-1 opacity-0 group-focus-within/doc:opacity-100 group-hover/doc:opacity-100">
+                      {batchId !== null &&
+                        bundle.has_manual_groups &&
+                        otherGroups.length > 0 &&
+                        !isHeading && (
+                          <select
+                            aria-label={`Move ${d.title} to group`}
+                            value=""
+                            onChange={(e) => {
+                              const target = otherGroups.find(
+                                (x) => String(x.sub_group_id) === e.target.value,
+                              )
+                              if (target && target.sub_group_id !== null)
+                                run({
+                                  batchId,
+                                  op: 'order',
+                                  subGroupId: target.sub_group_id,
+                                  docIds: [...target.doc_ids, id],
+                                })
+                            }}
+                            className="w-5 cursor-pointer bg-transparent text-[10px] text-muted"
+                            title="Move to group"
+                          >
+                            <option value="">⇄</option>
+                            {otherGroups.map((x) => (
+                              <option key={x.id} value={String(x.sub_group_id)}>
+                                → {x.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      {batchId !== null && d.role !== 'cover_letter' && (
                         <button
                           type="button"
-                          title="Archive document"
-                          aria-label={`Archive ${d.title}`}
-                          onClick={() => onDocAction(d, 'dismiss')}
+                          title="Mark as cover letter"
+                          aria-label={`Mark ${d.title} as cover letter`}
+                          onClick={() => run({ batchId, op: 'cover', docId: id })}
                           className="text-muted hover:text-ink"
                         >
-                          <Icon name="archive" size={13} />
+                          <Icon name="bookmark" size={13} />
                         </button>
-                        <button
-                          type="button"
-                          title="Delete document"
-                          aria-label={`Delete ${d.title}`}
-                          onClick={() => onDocAction(d, 'delete')}
-                          className="text-muted hover:text-danger"
-                        >
-                          <Icon name="delete" size={13} />
-                        </button>
-                      </span>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        ))}
+                      )}
+                      {onDocAction && bundle.doc_count > 1 && (
+                        <span className="flex gap-1 opacity-0 group-focus-within/doc:opacity-100 group-hover/doc:opacity-100">
+                          <button
+                            type="button"
+                            title="Archive document"
+                            aria-label={`Archive ${d.title}`}
+                            onClick={() => onDocAction(d, 'dismiss')}
+                            className="text-muted hover:text-ink"
+                          >
+                            <Icon name="archive" size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Delete document"
+                            aria-label={`Delete ${d.title}`}
+                            onClick={() => onDocAction(d, 'delete')}
+                            className="text-muted hover:text-danger"
+                          >
+                            <Icon name="delete" size={13} />
+                          </button>
+                        </span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )
+        })}
       </div>
       <div className="mt-2 space-y-0.5 font-mono text-[10px] text-muted">
         <div>source · {bundle.sender_email ?? bundle.source_type}</div>
