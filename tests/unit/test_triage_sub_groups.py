@@ -171,6 +171,9 @@ def test_group_heading_is_the_cover_letter_that_heads_the_group(db_session):
     nested = _make_doc(
         db_session, batch.id, "B", role=DocumentRole.COVER_LETTER, parent_id=cover.id
     )
+    # The nested cover letter sorts first — it is still not the heading.
+    cover.sub_group_sort_order = 1
+    nested.sub_group_sort_order = 0
 
     heading = _group_heading([cover, nested])
 

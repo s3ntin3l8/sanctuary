@@ -29,6 +29,7 @@ from app.services.ingestion.service import apply_review_reasons
 from app.services.triage_grouping import (
     document_sort_key,
     group_bundle_documents,
+    group_roots,
 )
 
 
@@ -316,12 +317,13 @@ def _group_heading(docs: list[Document]) -> Document | None:
     enclosure of that document, not a heading; one whose parent lives in
     another group heads this one.
     """
-    ids = {d.id for d in docs}
     return next(
         (
             d
-            for d in sorted(docs, key=lambda d: (d.sub_group_sort_order or 0, d.id))
-            if d.role == DocumentRole.COVER_LETTER and d.parent_id not in ids
+            for d in sorted(
+                group_roots(docs), key=lambda d: (d.sub_group_sort_order or 0, d.id)
+            )
+            if d.role == DocumentRole.COVER_LETTER
         ),
         None,
     )
