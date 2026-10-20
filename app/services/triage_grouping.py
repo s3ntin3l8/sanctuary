@@ -40,6 +40,17 @@ def document_sort_key(doc: Document) -> tuple:
     )
 
 
+def group_roots(docs: list[Document]) -> list[Document]:
+    """The documents that head a group: their parent is not in the group.
+
+    A document whose parent lives elsewhere has no visible parent here — it
+    heads the group it is in. One rule, spelled once: the bundle tree, the
+    group nesting and the heading all agree on what a root is.
+    """
+    ids = {d.id for d in docs}
+    return [d for d in docs if not d.parent_id or d.parent_id not in ids]
+
+
 def parent_tree(
     docs: list[Document],
 ) -> tuple[list[Document], dict[int, list[Document]]]:
@@ -72,12 +83,10 @@ def group_depths(groups: list[list[tuple[int, Document]]]) -> dict[int, int]:
     for group in groups:
         by_id = {d.id: d for _, d in group}
         children: dict[int, list[Document]] = {}
-        roots: list[Document] = []
         for _depth, doc in group:
             if doc.parent_id in by_id:
                 children.setdefault(doc.parent_id, []).append(doc)
-            else:
-                roots.append(doc)
+        roots = group_roots(list(by_id.values()))
         depths.update({d.id: 0 for d in roots})
         queue = list(roots)
         while queue:

@@ -246,12 +246,9 @@ def reorder_documents(
 
     # The group's heading — its cover letter — always leads the list, so the
     # stored order mirrors the tree and the rendered hierarchy stays true.
-    heading = _group_heading(db, target_sub_group_id)
-    if heading is not None and heading.id in ordered_doc_ids:
-        ordered_doc_ids = [
-            heading.id,
-            *[doc_id for doc_id in ordered_doc_ids if doc_id != heading.id],
-        ]
+    ordered_doc_ids = _heading_first_order(
+        db, batch_id, target_sub_group_id, ordered_doc_ids
+    )
 
     for order, doc_id in enumerate(ordered_doc_ids):
         db.query(Document).filter(
@@ -265,16 +262,44 @@ def reorder_documents(
     db.flush()
 
 
-def _group_heading(db: Session, sub_group_id: int | None) -> Document | None:
-    """The cover letter that heads a group, if the group has one.
+def _heading_first_order(
+    db: Session,
+    batch_id: int,
+    sub_group_id: int | None,
+    ordered_doc_ids: list[int],
+) -> list[int]:
+    """The group's order with its heading first.
 
-    A cover letter nested under another document of the same group is an
-    enclosure of that document, not a heading; one whose parent lives in
-    another group heads this one.
+    The heading is the cover letter that heads the group — the group's own
+    cover letter, or a cover letter that moves in (its parent stays in the
+    group it came from, so it heads the one it joins).
     """
+    members = _group_documents(db, sub_group_id)
+    member_ids = {d.id for d in members}
+    heading = _group_heading(members)
+    if heading is None:
+        incoming = (
+            db.query(Document)
+            .filter(
+                Document.id.in_(ordered_doc_ids),
+                Document.ingest_batch_id == batch_id,
+                Document.status != DocumentStatus.DISMISSED,
+            )
+            .all()
+        )
+        heading = _group_heading(
+            [d for d in incoming if d.id not in member_ids] + members
+        )
+    if heading is None or heading.id not in ordered_doc_ids:
+        return ordered_doc_ids
+    return [heading.id, *[doc_id for doc_id in ordered_doc_ids if doc_id != heading.id]]
+
+
+def _group_documents(db: Session, sub_group_id: int | None) -> list[Document]:
+    """The documents in a group."""
     if sub_group_id is None:
-        return None
-    docs = (
+        return []
+    return (
         db.query(Document)
         .filter(
             Document.sub_group_id == sub_group_id,
@@ -282,6 +307,15 @@ def _group_heading(db: Session, sub_group_id: int | None) -> Document | None:
         )
         .all()
     )
+
+
+def _group_heading(docs: list[Document]) -> Document | None:
+    """The cover letter that heads a group, if the group has one.
+
+    A cover letter nested under another document of the same group is an
+    enclosure of that document, not a heading; one whose parent lives in
+    another group heads this one.
+    """
     ids = {d.id for d in docs}
     return next(
         (

@@ -19,6 +19,7 @@ from app.services.family_context import is_relay
 from app.services.triage_grouping import (
     group_bundle_documents,
     group_depths,
+    group_roots,
     parent_tree,
     standalone_group_label,
 )
@@ -72,8 +73,7 @@ def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document | None:
     docs = [d for _, d in group]
     if not docs:
         return None
-    ids = {d.id for d in docs}
-    roots = [d for d in docs if d.parent_id is None or d.parent_id not in ids]
+    roots = group_roots(docs)
     root = min(
         roots or docs,
         key=lambda d: (

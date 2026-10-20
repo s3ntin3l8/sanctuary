@@ -5,6 +5,7 @@ import pytest
 from app.models.database import BatchSubGroup, Document, IngestBatch
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
 from app.services.triage_subgroups import (
+    _group_heading,
     create_sub_group,
     ensure_sub_groups_initialized,
     rename_sub_group,
@@ -160,6 +161,39 @@ def test_reorder_documents_keeps_the_cover_letter_first(db_session):
     db_session.refresh(doc_b)
     assert doc_a.sub_group_sort_order == 0
     assert doc_b.sub_group_sort_order == 1
+
+
+@pytest.mark.unit
+def test_group_heading_is_the_cover_letter_that_heads_the_group(db_session):
+    """A cover letter nested under another document is an enclosure, not a heading."""
+    batch = _make_batch(db_session)
+    cover = _make_doc(db_session, batch.id, "A", role=DocumentRole.COVER_LETTER)
+    nested = _make_doc(
+        db_session, batch.id, "B", role=DocumentRole.COVER_LETTER, parent_id=cover.id
+    )
+
+    heading = _group_heading([cover, nested])
+
+    assert heading is not None
+    assert heading.id == cover.id
+
+
+@pytest.mark.unit
+def test_reorder_documents_pins_a_cover_letter_that_moves_in(db_session):
+    """A cover letter that joins a group heads it right away."""
+    batch = _make_batch(db_session)
+    cover = _make_doc(db_session, batch.id, "A", role=DocumentRole.COVER_LETTER)
+    other = _make_doc(db_session, batch.id, "B")
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
+    target = groups[-1].id
+
+    reorder_documents(db_session, batch.id, [other.id, cover.id], target)
+
+    db_session.refresh(cover)
+    db_session.refresh(other)
+    assert cover.sub_group_id == target
+    assert cover.sub_group_sort_order == 0
+    assert other.sub_group_sort_order == 1
 
 
 @pytest.mark.unit
