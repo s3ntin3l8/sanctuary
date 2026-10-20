@@ -313,9 +313,8 @@ def _group_documents(db: Session, sub_group_id: int | None) -> list[Document]:
 def _group_heading(docs: list[Document]) -> Document | None:
     """The cover letter that heads a group, if the group has one.
 
-    A cover letter nested under another document of the same group is an
-    enclosure of that document, not a heading; one whose parent lives in
-    another group heads this one.
+    Which documents head a group is `group_roots`' rule; a cover letter is
+    the one that leads it.
     """
     return next(
         (
