@@ -268,21 +268,28 @@ def reorder_documents(
 def _group_heading(db: Session, sub_group_id: int | None) -> Document | None:
     """The cover letter that heads a group, if the group has one.
 
-    A cover letter nested under another document is an enclosure of that
-    document, not a heading, so only a root cover letter heads its group.
+    A cover letter nested under another document of the same group is an
+    enclosure of that document, not a heading; one whose parent lives in
+    another group heads this one.
     """
     if sub_group_id is None:
         return None
-    return (
+    docs = (
         db.query(Document)
         .filter(
             Document.sub_group_id == sub_group_id,
-            Document.role == DocumentRole.COVER_LETTER,
-            Document.parent_id.is_(None),
             Document.status != DocumentStatus.DISMISSED,
         )
-        .order_by(Document.sub_group_sort_order)
-        .first()
+        .all()
+    )
+    ids = {d.id for d in docs}
+    return next(
+        (
+            d
+            for d in sorted(docs, key=lambda d: (d.sub_group_sort_order or 0, d.id))
+            if d.role == DocumentRole.COVER_LETTER and d.parent_id not in ids
+        ),
+        None,
     )
 
 

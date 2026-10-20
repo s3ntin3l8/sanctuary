@@ -74,6 +74,10 @@ and no document is dropped above it. The same rules apply in automatic and
 in manual grouping mode, so the layout never shifts when the user first
 reorganises a bundle.
 
+The nesting a document is drawn with is the nesting *inside its group*: a
+document whose parent lives in another group heads its own group, so it is
+never indented under a parent that is not shown.
+
 ### Batch header chips
 
 - **Case chip** — `[ADV-024-A]` shows the AI-detected or confirmed case. `?` suffix (`[ADV-024-A?]`) means AI-suggested but unconfirmed; a solid chip means user-confirmed. `[?]` means no detection yet.

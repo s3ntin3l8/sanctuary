@@ -530,6 +530,30 @@ def test_bundle_of_standalone_documents_is_one_group(db_session):
     assert sorted(group["doc_ids"]) == sorted(d.id for d in docs)
 
 
+def test_a_document_moved_to_another_group_is_not_indented(db_session):
+    """Its parent lives in another group, so it heads the group it moved to."""
+    admin = _admin(db_session)
+    batch, docs = _batch(db_session, admin.id, docs=2)
+    cover, enclosure = docs
+    cover.role = DocumentRole.COVER_LETTER
+    enclosure.role = DocumentRole.ENCLOSURE
+    enclosure.parent_id = cover.id
+    db_session.commit()
+
+    created = client.post(f"/api/v1/triage/bundles/{batch.id}/groups")
+    assert created.status_code == 200, created.text
+    empty = next(g for g in created.json()["sub_groups"] if not g["doc_ids"])
+    moved = client.put(
+        f"/api/v1/triage/bundles/{batch.id}/groups/{empty['sub_group_id']}/order",
+        json={"doc_ids": [enclosure.id]},
+    )
+    assert moved.status_code == 200, moved.text
+
+    documents = {d["id"]: d for d in moved.json()["documents"]}
+    assert documents[enclosure.id]["depth"] == 0
+    assert documents[cover.id]["depth"] == 0
+
+
 def test_sub_group_errors_are_422(db_session):
     admin = _admin(db_session)
     batch, docs = _batch(db_session, admin.id)

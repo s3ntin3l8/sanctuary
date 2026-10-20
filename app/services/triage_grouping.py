@@ -59,15 +59,36 @@ def parent_tree(
     return roots, children_of
 
 
-def depth_map(docs: list[Document]) -> dict[int, int]:
-    """Each document's depth in the bundle tree (0 for a root)."""
-    roots, children_of = parent_tree(docs)
+def group_depths(groups: list[list[tuple[int, Document]]]) -> dict[int, int]:
+    """Each document's depth *within its group*.
+
+    The panel nests a document under the ancestors it shares with its group.
+    A document whose parent lives in another group has no visible parent
+    here, so it heads its group (depth 0) instead of hanging under a parent
+    that is not shown. A group whose documents form a cycle has no root at
+    all — they all sit at the top.
+    """
     depths: dict[int, int] = {}
-    queue: list[tuple[int, Document]] = [(0, root) for root in roots]
-    while queue:
-        depth, node = queue.pop(0)
-        depths[node.id] = depth
-        queue.extend((depth + 1, c) for c in children_of.get(node.id, []))
+    for group in groups:
+        by_id = {d.id: d for _, d in group}
+        children: dict[int, list[Document]] = {}
+        roots: list[Document] = []
+        for _depth, doc in group:
+            if doc.parent_id in by_id:
+                children.setdefault(doc.parent_id, []).append(doc)
+            else:
+                roots.append(doc)
+        depths.update({d.id: 0 for d in roots})
+        queue = list(roots)
+        while queue:
+            node = queue.pop(0)
+            for child in children.get(node.id, []):
+                if child.id in depths:
+                    continue
+                depths[child.id] = depths[node.id] + 1
+                queue.append(child)
+        for _depth, doc in group:
+            depths.setdefault(doc.id, 0)
     return depths
 
 
@@ -137,10 +158,13 @@ def standalone_group_label(
     cover letter. A document whose parent lives in another group is an
     enclosure of that document, not a standalone one.
 
+    A group of one document does not need the label — the document's own
+    title says more.
+
     `None` for every other group — the caller falls back to the lead
     document's title.
     """
-    if not docs:
+    if len(docs) < 2:
         return None
     root_ids = {d.id for d in roots}
     if any(d.id not in root_ids for d in docs):

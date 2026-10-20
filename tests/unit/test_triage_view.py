@@ -136,14 +136,27 @@ def test_build_sub_bundles_cover_group_and_standalone_group(db_session):
         parent_id=cover.id,
     )
     loose = _make_doc(db_session, title="Kontoauszug")
-    bundle = _bundle([cover, enclosure, loose])
+    loose2 = _make_doc(db_session, title="Buchungsbestätigung")
+    bundle = _bundle([cover, enclosure, loose, loose2])
 
     sub_bundles = build_sub_bundles(bundle)
 
     assert len(sub_bundles) == 2
     assert [d.id for _, d in sub_bundles[0].docs] == [cover.id, enclosure.id]
-    assert [d.id for _, d in sub_bundles[1].docs] == [loose.id]
+    assert [d.id for _, d in sub_bundles[1].docs] == [loose.id, loose2.id]
     assert sub_bundles[1].label == "Standalone documents"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_single_loose_document_keeps_its_title(db_session):
+    """A one-document bundle is that document — the group says its name."""
+    doc = _make_doc(db_session, title="Antrag auf Bewilligung")
+    bundle = _bundle([doc])
+
+    sub_bundles = build_sub_bundles(bundle)
+
+    assert len(sub_bundles) == 1
+    assert sub_bundles[0].label == "Antrag auf Bewilligung"
 
 
 @pytest.mark.unit
@@ -158,7 +171,12 @@ def test_build_sub_bundles_standalone_group_keeps_the_significance_order(db_sess
     loose = _make_doc(
         db_session, title="Kontoauszug", significance=SignificanceTier.CRITICAL
     )
-    bundle = _bundle([loose, cover])
+    loose2 = _make_doc(
+        db_session,
+        title="Buchungsbestätigung",
+        significance=SignificanceTier.INFORMATIONAL,
+    )
+    bundle = _bundle([loose, cover, loose2])
 
     sub_bundles = build_sub_bundles(bundle)
 

@@ -71,7 +71,7 @@ from app.services.triage_confirmation import (
     get_bundle_suggestion,
 )
 from app.services.triage_dismissal import delete_bundle, dismiss_bundle
-from app.services.triage_grouping import depth_map
+from app.services.triage_grouping import group_depths
 from app.services.triage_retry import dispatch_batch_retry, reset_batch_for_retry
 from app.services.triage_routing_service import (
     RoutingError,
@@ -171,8 +171,10 @@ def _bundle_title(bundle: BundleView) -> str:
 def bundle_dto(bundle: BundleView) -> TriageBundle:
     summary = bundle.pipeline_summary
     counts = {state: summary.get(state.value, 0) for state in PipelineState}
-    depth_by_doc = depth_map(bundle.documents)
     sub_bundles = bundle.sub_bundles
+    # The nesting shown in the panel: a document is indented under the
+    # ancestors it shares with its own group.
+    depth_by_doc = group_depths([sb.docs for sb in sub_bundles])
     lead = sub_bundles[0].lead_doc if sub_bundles and sub_bundles[0].lead_doc else None
     return TriageBundle(
         key=bundle.key,

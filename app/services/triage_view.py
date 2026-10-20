@@ -17,8 +17,8 @@ from app.models.enums import (
 )
 from app.services.family_context import is_relay
 from app.services.triage_grouping import (
-    depth_map,
     group_bundle_documents,
+    group_depths,
     parent_tree,
     standalone_group_label,
 )
@@ -104,6 +104,9 @@ def _heading_first(group: list[tuple[int, Document]]) -> list[tuple[int, Documen
     The rendered order must mirror the tree: the cover first, its enclosures
     below it. Every other document keeps the order the user arranged, so a
     promoted cover always heads the group it was promoted in.
+
+    Only a cover letter that heads the group counts: one nested under another
+    document is an enclosure of that document, not a heading.
     """
     heading = next(
         (
@@ -196,14 +199,13 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
 
     groups_by_sgid: dict[int, list] = defaultdict(list)
     sg_meta: dict[int, BatchSubGroup] = {}
-    depth_by_doc = depth_map(bundle.documents)
     roots, children_of = parent_tree(bundle.documents)
 
     for d in sorted(
         bundle.documents, key=lambda x: (x.sub_group_sort_order or 0, x.id)
     ):
         if d.sub_group_id is not None:
-            groups_by_sgid[d.sub_group_id].append((depth_by_doc.get(d.id, 0), d))
+            groups_by_sgid[d.sub_group_id].append((0, d))
             if d.sub_group and d.sub_group_id not in sg_meta:
                 sg_meta[d.sub_group_id] = d.sub_group
 
@@ -223,7 +225,12 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
 
     sub_bundles: list[SubBundleView] = []
     for idx, sgid in enumerate(ordered_sgids):
-        group = _heading_first(groups_by_sgid[sgid])
+        # The nesting shown in the panel is the nesting *inside* the group: a
+        # document whose parent lives in another group heads this one.
+        depths = group_depths([groups_by_sgid[sgid]])
+        group = _heading_first(
+            [(depths.get(d.id, 0), d) for _depth, d in groups_by_sgid[sgid]]
+        )
         sg = sg_meta.get(sgid)
         lead = _pick_lead_doc(group)
         leaf_docs = [d for _, d in group]
