@@ -825,7 +825,7 @@ class BatchSubGroup(Base):
     """A manually-created grouping of documents within an IngestBatch.
 
     When BatchSubGroup rows exist for a batch, the triage tree picker uses them
-    for grouping instead of the auto parent_groups hierarchy.
+    for grouping instead of the automatic parent_id hierarchy.
     """
 
     __tablename__ = "batch_sub_groups"

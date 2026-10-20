@@ -71,6 +71,7 @@ from app.services.triage_confirmation import (
     get_bundle_suggestion,
 )
 from app.services.triage_dismissal import delete_bundle, dismiss_bundle
+from app.services.triage_grouping import depth_map
 from app.services.triage_retry import dispatch_batch_retry, reset_batch_for_retry
 from app.services.triage_routing_service import (
     RoutingError,
@@ -146,15 +147,20 @@ def _failed_error(bundle: BundleView) -> str | None:
 
 def _bundle_title(bundle: BundleView) -> str:
     """Email subject, else (scan / upload, where the subject is a file name)
-    the first group's lead title, noting how many more groups follow."""
+    the first group's lead title, noting how many more documents follow."""
     if bundle.source_type == IngestBatchSourceType.EMAIL and bundle.subject:
         return bundle.subject
     groups = bundle.sub_bundles
     if bundle.source_type != IngestBatchSourceType.EMAIL and groups:
         first = groups[0]
         if first.lead_doc is not None and first.lead_doc.title:
-            more = len(groups) - 1
-            return f"{first.label} (+{more} more)" if more else first.label
+            # The lead document's own title, not the group's label — a group
+            # label can be generic ("Standalone documents").
+            # Documents, not groups: a bundle of loose attachments is one
+            # group but still holds every document.
+            more = bundle.doc_count - 1
+            title = first.lead_doc.title
+            return f"{title} (+{more} more)" if more else title
     return (
         bundle.subject
         or (bundle.documents[0].title if bundle.documents else None)
@@ -165,7 +171,7 @@ def _bundle_title(bundle: BundleView) -> str:
 def bundle_dto(bundle: BundleView) -> TriageBundle:
     summary = bundle.pipeline_summary
     counts = {state: summary.get(state.value, 0) for state in PipelineState}
-    depth_by_doc = {d.id: depth for group in bundle.parent_groups for depth, d in group}
+    depth_by_doc = depth_map(bundle.documents)
     sub_bundles = bundle.sub_bundles
     lead = sub_bundles[0].lead_doc if sub_bundles and sub_bundles[0].lead_doc else None
     return TriageBundle(

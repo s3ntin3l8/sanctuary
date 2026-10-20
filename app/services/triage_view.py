@@ -16,6 +16,12 @@ from app.models.enums import (
     PipelineState,
 )
 from app.services.family_context import is_relay
+from app.services.triage_grouping import (
+    depth_map,
+    group_bundle_documents,
+    parent_tree,
+    standalone_group_label,
+)
 
 STATUS_STUCK = "stuck"
 STATUS_PROCESSING = "processing"
@@ -92,6 +98,26 @@ def _label_for_group(lead: Document | None, fallback_index: int) -> str:
     return f"Group {chr(ord('A') + fallback_index)}"
 
 
+def _heading_first(group: list[tuple[int, Document]]) -> list[tuple[int, Document]]:
+    """The group's heading — its cover letter — leads the list.
+
+    The rendered order must mirror the tree: the cover first, its enclosures
+    below it. Every other document keeps the order the user arranged, so a
+    promoted cover always heads the group it was promoted in.
+    """
+    heading = next(
+        (
+            entry
+            for entry in group
+            if entry[1].role == DocumentRole.COVER_LETTER and entry[0] == 0
+        ),
+        None,
+    )
+    if heading is None:
+        return group
+    return [heading, *[entry for entry in group if entry is not heading]]
+
+
 def _majority_case(docs: list[Document]) -> str | None:
     candidates = [d.case_id for d in docs if d.case_id and d.case_id != "_TRIAGE"]
     if not candidates:
@@ -113,17 +139,21 @@ def build_sub_bundles(bundle) -> list[SubBundleView]:  # bundle: BundleView
 
 
 def _build_sub_bundles_auto(bundle) -> list[SubBundleView]:
-    """Original auto logic using parent_groups."""
-    sub_bundles: list[SubBundleView] = []
-    groups = bundle.parent_groups or []
-    if not groups and bundle.documents:
-        groups = [[(0, d) for d in bundle.documents]]
+    """Automatic grouping: one group per structured root, plus the shared
+    group of standalone documents.
 
-    for idx, group in enumerate(groups):
-        if not group:
-            continue
-        lead = _pick_lead_doc(group)
+    A bundle of loose documents (an email with nothing but attachments) must
+    not render as N one-document groups — they share one group instead.
+    """
+    sub_bundles: list[SubBundleView] = []
+    docs = bundle.documents
+    if not docs:
+        return sub_bundles
+    _, children_of = parent_tree(docs)
+
+    for idx, group in enumerate(group_bundle_documents(docs)):
         leaf_docs = [d for _, d in group]
+        lead = _pick_lead_doc(group)
         suggested_case = _majority_case(leaf_docs) or bundle.suggested_case_id
         suggested_title = (
             bundle.suggested_case_title
@@ -142,12 +172,13 @@ def _build_sub_bundles_auto(bundle) -> list[SubBundleView]:
         ):
             suggested_title = bundle.suggested_case_title
         confidence = (lead.extraction_confidence or {}).get("case_id") if lead else None
+        label = standalone_group_label(leaf_docs, children_of) or _label_for_group(
+            lead, idx
+        )
         sub_bundles.append(
             SubBundleView(
                 id=f"{bundle.key}-g{idx}",
-                label=_label_for_group(lead, idx)
-                if lead
-                else f"Group {chr(ord('A') + idx)}",
+                label=label,
                 lead_doc=lead,
                 docs=group,
                 suggested_case_id=suggested_case,
@@ -165,12 +196,14 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
 
     groups_by_sgid: dict[int, list] = defaultdict(list)
     sg_meta: dict[int, BatchSubGroup] = {}
+    depth_by_doc = depth_map(bundle.documents)
+    _, children_of = parent_tree(bundle.documents)
 
     for d in sorted(
         bundle.documents, key=lambda x: (x.sub_group_sort_order or 0, x.id)
     ):
         if d.sub_group_id is not None:
-            groups_by_sgid[d.sub_group_id].append((0, d))
+            groups_by_sgid[d.sub_group_id].append((depth_by_doc.get(d.id, 0), d))
             if d.sub_group and d.sub_group_id not in sg_meta:
                 sg_meta[d.sub_group_id] = d.sub_group
 
@@ -190,7 +223,7 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
 
     sub_bundles: list[SubBundleView] = []
     for idx, sgid in enumerate(ordered_sgids):
-        group = groups_by_sgid[sgid]
+        group = _heading_first(groups_by_sgid[sgid])
         sg = sg_meta.get(sgid)
         lead = _pick_lead_doc(group)
         leaf_docs = [d for _, d in group]
@@ -207,10 +240,13 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
         ):
             suggested_title = bundle.suggested_case_title
         confidence = (lead.extraction_confidence or {}).get("case_id") if lead else None
+        standalone_label = standalone_group_label(leaf_docs, children_of)
 
         label: str
         if sg and sg.label:
             label = sg.label
+        elif standalone_label:
+            label = standalone_label
         elif lead:
             label = _label_for_group(lead, idx)
         else:

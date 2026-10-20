@@ -23,11 +23,18 @@ def _make_batch(db_session) -> IngestBatch:
     return batch
 
 
-def _make_doc(db_session, batch_id: int, title="Doc", parent_id=None) -> Document:
+def _make_doc(
+    db_session,
+    batch_id: int,
+    title="Doc",
+    parent_id=None,
+    role=DocumentRole.STANDALONE,
+) -> Document:
     doc = Document(
         title=title,
         ingest_batch_id=batch_id,
         parent_id=parent_id,
+        role=role,
         case_id="_TRIAGE",
     )
     db_session.add(doc)
@@ -58,6 +65,50 @@ def test_ensure_sub_groups_one_per_root(db_session):
 
 
 @pytest.mark.unit
+def test_ensure_sub_groups_standalone_docs_share_one_group(db_session):
+    """Loose documents share one group — a bundle of attachments is not N groups."""
+    batch = _make_batch(db_session)
+    docs = [_make_doc(db_session, batch.id, f"Doc {i}") for i in range(3)]
+
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
+
+    assert len(groups) == 1
+    for doc in docs:
+        db_session.refresh(doc)
+        assert doc.sub_group_id == groups[0].id
+    assert sorted(d.sub_group_sort_order for d in docs) == [0, 1, 2]
+
+
+@pytest.mark.unit
+def test_ensure_sub_groups_mirrors_the_automatic_layout(db_session):
+    """A cover letter keeps its own group; the loose documents share another."""
+    batch = _make_batch(db_session)
+    cover = _make_doc(
+        db_session, batch.id, "Begleitschreiben", role=DocumentRole.COVER_LETTER
+    )
+    enclosure = _make_doc(
+        db_session,
+        batch.id,
+        "Anlage K 1",
+        role=DocumentRole.ENCLOSURE,
+        parent_id=cover.id,
+    )
+    loose = _make_doc(db_session, batch.id, "Kontoauszug")
+
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
+
+    assert len(groups) == 2
+    db_session.refresh(cover)
+    db_session.refresh(enclosure)
+    db_session.refresh(loose)
+    assert cover.sub_group_id == enclosure.sub_group_id
+    assert loose.sub_group_id != cover.sub_group_id
+    # The cover leads its group, the loose document leads the other one.
+    assert cover.sub_group_sort_order == 0
+    assert loose.sub_group_sort_order == 0
+
+
+@pytest.mark.unit
 def test_set_cover_letter_clears_previous(db_session):
     batch = _make_batch(db_session)
     # Make doc_b a child of doc_a so they end up in the same sub-group.
@@ -71,6 +122,44 @@ def test_set_cover_letter_clears_previous(db_session):
     db_session.refresh(doc_b)
     assert doc_a.role != DocumentRole.COVER_LETTER
     assert doc_b.role == DocumentRole.COVER_LETTER
+
+
+@pytest.mark.unit
+def test_set_cover_letter_makes_the_promoted_doc_lead_the_group(db_session):
+    """A promoted cover heads its group: it takes the first slot."""
+    batch = _make_batch(db_session)
+    doc_a = _make_doc(db_session, batch.id, "A")
+    doc_b = _make_doc(db_session, batch.id, "B", parent_id=doc_a.id)
+    set_cover_letter(db_session, doc_a.id, batch.id)
+
+    set_cover_letter(db_session, doc_b.id, batch.id)
+
+    db_session.refresh(doc_a)
+    db_session.refresh(doc_b)
+    assert doc_b.role == DocumentRole.COVER_LETTER
+    assert doc_b.parent_id is None
+    assert doc_a.role == DocumentRole.ENCLOSURE
+    assert doc_a.parent_id == doc_b.id
+    # The promoted cover leads; the demoted one sits right below it.
+    assert doc_b.sub_group_sort_order == 0
+    assert doc_a.sub_group_sort_order == 1
+
+
+@pytest.mark.unit
+def test_reorder_documents_keeps_the_cover_letter_first(db_session):
+    """The group's cover letter leads the list, whatever order the client sends."""
+    batch = _make_batch(db_session)
+    doc_a = _make_doc(db_session, batch.id, "A", role=DocumentRole.COVER_LETTER)
+    doc_b = _make_doc(db_session, batch.id, "B", parent_id=doc_a.id)
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
+    sg_id = groups[0].id
+
+    reorder_documents(db_session, batch.id, [doc_b.id, doc_a.id], sg_id)
+
+    db_session.refresh(doc_a)
+    db_session.refresh(doc_b)
+    assert doc_a.sub_group_sort_order == 0
+    assert doc_b.sub_group_sort_order == 1
 
 
 @pytest.mark.unit
