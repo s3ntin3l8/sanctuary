@@ -9,7 +9,7 @@ RUN npm run build
 # --- Stage 2: Python builder ---
 # Compiles/installs every dependency into an isolated venv. build-essential lives
 # ONLY here so it never reaches the shipped image (it was ~560 MB of dead weight).
-FROM python:3.14-slim AS py-builder
+FROM python:3.15-slim AS py-builder
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -50,7 +50,7 @@ RUN SP=/opt/venv/lib/python3.14/site-packages \
 RUN python -c "import cv2, torch, onnxruntime; from rapidocr import RapidOCR; from docling.document_converter import DocumentConverter; from googleapiclient.discovery import build; build('gmail', 'v1', developerKey='x', cache_discovery=False)"
 
 # --- Stage 3: Final runtime image ---
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
