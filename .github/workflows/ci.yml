@@ -25,6 +25,10 @@ jobs:
       # 4→5) that need their own compatibility pass. Flip to true once pip-audit is
       # also clean.
       strict-checks: false
+      # Only the files this push touched can have introduced a secret. The
+      # baseline is keyed by filename and line number, so an unchanged file
+      # keeps its entry and the scan stays consistent.
+      detect-secrets-scope: "changed"
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
