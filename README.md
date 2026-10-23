@@ -350,6 +350,9 @@ from `AI_EMBED_DIM` (default 768) and changed by Settings → AI → Rebuild Ind
 
 ## License
 
-Copyright © 2025-2026 Björn Hansen
+Copyright (C) 2025-2026 Björn Hansen
 
-Released under the [GNU Affero General Public License v3.0](LICENSE).
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See [LICENSE](LICENSE).
