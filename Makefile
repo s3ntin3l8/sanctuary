@@ -16,7 +16,7 @@ BEAT := $(CELERY) beat --loglevel=INFO
 
 NPM_FE := npm --prefix frontend
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -63,7 +63,10 @@ help: ## Show this help message
 	$(PYTHON_EXE) -m venv .venv
 	$(PYTHON) -m pip install --upgrade pip
 
-setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
+_check-venv-python: ## Internal: refuse an existing .venv built with Python older than 3.14
+	@if [ -x $(PYTHON) ]; then $(PYTHON) -c 'import sys; sys.exit(sys.version_info < (3, 14))' || (echo "ERROR: .venv was built with Python older than 3.14 (the tree uses 3.14-only syntax). Run: rm -rf .venv && make setup" && exit 1); fi
+
+setup: _check-venv-python .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
 	$(PYTHON) -m pip install -r requirements-dev.txt
 	$(PYTHON) -m playwright install chromium
 	$(NPM_FE) ci
