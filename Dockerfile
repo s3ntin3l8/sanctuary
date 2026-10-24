@@ -39,7 +39,8 @@ RUN pip uninstall -y opencv-python \
 #   tests/test dirs, torch headers/test binaries (torch.testing is imported by torch
 #   itself, keep it), the 600+ Google API discovery
 #   docs (only gmail.v1 is used), and pip/setuptools.
-RUN SP="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
+RUN SP="$(/opt/venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
+    && [ -d "$SP/torch" ] \
     && find "$SP" -mindepth 2 -type d \( -name tests -o -name test \) -prune -exec rm -rf {} + \
     && rm -rf "$SP/torch/include" \
     && find "$SP/torch/bin" -type f ! -name torch_shm_manager -delete \
