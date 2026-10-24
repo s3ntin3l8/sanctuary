@@ -21,7 +21,7 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.12+ / FastAPI |
+| Backend | Python 3.14 / FastAPI |
 | Task queue | Celery + Redis (background AI pipeline) |
 | Frontend | React 19 + Vite + TypeScript SPA (`frontend/`), typed against the `/api/v1` OpenAPI schema |
 | Styling | Tailwind CSS v4 (semantic design tokens, dark/light themes) |
@@ -31,7 +31,7 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 
 ## Quick Start
 
-Python venv: python3.12 -m venv .venv
+Python venv: python3.14 -m venv .venv
 You can use the provided `Makefile` for common development tasks:
 
 ```bash

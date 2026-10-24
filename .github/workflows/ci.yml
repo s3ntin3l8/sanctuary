@@ -11,7 +11,7 @@ jobs:
       contents: read
     uses: s3ntin3l8/.github/.github/workflows/ci-python.yml@main
     with:
-      python-version: "3.12"
+      python-version: "3.14"
       coverage-source: "app"
       # Measured ~70% locally (full suite, e2e skipped). Floor set below that for
       # margin; ratchet up as coverage grows. Codecov tracks the exact number.
@@ -107,7 +107,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: "pip"
       - name: Install dependencies
         run: |

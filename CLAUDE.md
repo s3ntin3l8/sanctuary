@@ -17,7 +17,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * **No magic numbers** — cost deltas are factual; timelines are ranges with rationale; no synthetic probabilities
 
 ## Stack
-* **Backend:** Python 3.12+ / FastAPI + Celery (background tasks)
+* **Backend:** Python 3.14 / FastAPI + Celery (background tasks)
 * **Frontend:** React 19 + Vite + TypeScript SPA in `frontend/` (React Router, TanStack Query, `openapi-fetch`); FastAPI serves the built bundle from `frontend/dist` and returns `spa_index()` for every page route. No server-rendered HTML.
 * **Styling:** Tailwind CSS v4 via `@tailwindcss/vite` — tokens in `frontend/src/styles/index.css` (design reference in `docs/design/`); fonts self-hosted through `@fontsource`
 * **DB:** PostgreSQL + Alembic + `pgvector`

@@ -1,6 +1,6 @@
 # Sanctuary Development Makefile
 
-PYTHON_EXE ?= $(shell command -v python3.12 2>/dev/null || command -v python3 2>/dev/null || command -v python 2>/dev/null)
+PYTHON_EXE ?= $(shell command -v python3.14 2>/dev/null || command -v python3 2>/dev/null || command -v python 2>/dev/null)
 PYTHON := .venv/bin/python
 UVICORN := .venv/bin/uvicorn
 PYTEST := $(PYTHON) -m pytest
@@ -58,7 +58,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .venv: ## Create virtual environment
-	@test -n "$(PYTHON_EXE)" || (echo "ERROR: No python3.12/python3/python found on PATH. Install Python 3.12 first." && exit 1)
+	@test -n "$(PYTHON_EXE)" || (echo "ERROR: No python3.14/python3/python found on PATH. Install Python 3.14 first." && exit 1)
 	$(PYTHON_EXE) -m venv .venv
 	$(PYTHON) -m pip install --upgrade pip
 
