@@ -27,11 +27,12 @@ dill==0.4.1
 defusedxml==0.7.1
 # docling 2.92+ is a thin meta-package; the real code ships in docling-slim
 # (which provides the `docling.*` import namespace). Keep both pinned in lockstep.
-docling==2.101.0
-docling-slim==2.101.0
-docling-core==2.81.0
-docling-ibm-models==3.13.3
-docling-parse==6.2.0
+docling==2.142.1
+docling-slim==2.142.1
+docling-core==2.104.0
+docling-ibm-models==4.0.4
+docling-parse==7.23.0
+doclang==0.8.0
 easygui==0.98.3
 ebcdic==2.0.1
 et_xmlfile==2.0.0
@@ -83,7 +84,7 @@ opentelemetry-api==1.45.1
 packaging==26.3
 pandas==3.0.6
 pcodedmp==1.2.6
-pillow==12.3.0
+pillow==13.0.0
 pillow-heif==1.8.1
 pluggy==1.7.0
 polyfactory==3.5.0
