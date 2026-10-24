@@ -59,6 +59,7 @@ help: ## Show this help message
 
 .venv: ## Create virtual environment
 	@test -n "$(PYTHON_EXE)" || (echo "ERROR: No python3.14/python3/python found on PATH. Install Python 3.14 first." && exit 1)
+	@$(PYTHON_EXE) -c 'import sys; sys.exit(sys.version_info < (3, 14))' || (echo "ERROR: $(PYTHON_EXE) is older than Python 3.14 (the tree uses 3.14-only syntax). Install Python 3.14 first." && exit 1)
 	$(PYTHON_EXE) -m venv .venv
 	$(PYTHON) -m pip install --upgrade pip
 
