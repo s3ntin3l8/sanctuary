@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.6.1...v0.7.0) (2026-10-24)
+
+
+### Features
+
+* **triage:** editable draft cases, pre-trial proceeding, short year date, drag-and-drop, and OCR sanitization ([#423](https://github.com/s3ntin3l8/sanctuary/issues/423)) ([89c1924](https://github.com/s3ntin3l8/sanctuary/commit/89c19240720387ebee1e633f558e1b73d520168d))
+
+
+### Bug Fixes
+
+* **deps:** bump docling stack to 2.142.1 for pillow 13 ([#441](https://github.com/s3ntin3l8/sanctuary/issues/441)) ([e308f46](https://github.com/s3ntin3l8/sanctuary/commit/e308f4674452e4005787977adf506543a0b110fa))
+* **docker:** derive site-packages path in prune step ([#438](https://github.com/s3ntin3l8/sanctuary/issues/438)) ([4e1ebf7](https://github.com/s3ntin3l8/sanctuary/commit/4e1ebf72a218e3bb8a0befe42a71c05b986689a3))
+* **triage:** cover letter heads its group, loose documents share one group ([a70f001](https://github.com/s3ntin3l8/sanctuary/commit/a70f00149479d69e220634d15f1597c2df9533eb))
+
 ## [0.6.1](https://github.com/s3ntin3l8/sanctuary/compare/v0.6.0...v0.6.1) (2026-10-19)
 
 
