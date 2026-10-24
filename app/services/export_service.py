@@ -117,7 +117,7 @@ def build_export_zip(db: Session) -> tuple[bytes, dict]:
                         else:
                             zf.write(f, arcname=f"files/{rel}")
                         files_included += 1
-                    except (PermissionError, OSError):
+                    except PermissionError, OSError:
                         pass
 
         _write_manifest(
@@ -379,7 +379,7 @@ def _write_own_raw_mail(
             continue  # a leftover temp file, or already exported with its batch
         try:
             raw = secrets.decrypt_bytes(path.read_bytes())
-        except (secrets.SecretsError, OSError):
+        except secrets.SecretsError, OSError:
             left_out += 1
             continue
         if raw:

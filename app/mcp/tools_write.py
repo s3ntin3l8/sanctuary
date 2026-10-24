@@ -490,7 +490,7 @@ def create_relationship(
         try:
             recompute_thread_open(target.id, db)
             refresh_review_reasons(source, db, commit=False)
-        except (SQLAlchemyError, RuntimeError):
+        except SQLAlchemyError, RuntimeError:
             # The edge and its audit row are already durable; a stale thread
             # flag is repaired by the next scan, so don't fail the call for it.
             db.rollback()

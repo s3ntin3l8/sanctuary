@@ -374,7 +374,7 @@ def _session_is_fresh(iat_raw) -> bool:
         return False
     try:
         iat = datetime.fromisoformat(iat_raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     if iat.tzinfo is None:
         iat = iat.replace(tzinfo=UTC)

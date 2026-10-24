@@ -319,7 +319,7 @@ def model_gate(
     *,
     timeout: float = _DEFAULT_ACQUIRE_TIMEOUT,
     label: str | None = None,
-) -> Generator[str | None, None, None]:
+) -> Generator[str | None]:
     """Acquire the gate for ``family`` for the duration of the with-block.
 
     Args:

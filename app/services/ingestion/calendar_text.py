@@ -72,7 +72,7 @@ def _when(value: str, params: dict[str, str]) -> str:
         else:
             moment = naive.replace(tzinfo=ZoneInfo(params.get("TZID") or local.key))
         return moment.astimezone(local).strftime("%d.%m.%Y %H:%M")
-    except (ValueError, KeyError, OSError):
+    except ValueError, KeyError, OSError:
         return value
 
 

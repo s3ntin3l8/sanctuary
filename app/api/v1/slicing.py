@@ -252,7 +252,7 @@ def _is_stale(slicing: dict) -> bool:
 
     try:
         stamped = ensure_utc(datetime.fromisoformat(slicing["dispatched_at"]))
-    except (KeyError, ValueError, TypeError):
+    except KeyError, ValueError, TypeError:
         return True
     return stamped is None or stamped < now_utc() - timedelta(
         seconds=CELERY_TASK_TIME_LIMIT

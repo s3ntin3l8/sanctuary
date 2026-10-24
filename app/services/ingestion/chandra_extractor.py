@@ -178,9 +178,7 @@ def _page_count(file_path: str) -> int:
         pdf.close()
 
 
-def _render_pages(
-    file_path: str, *, dpi: int = CHANDRA_DPI
-) -> Generator[bytes, None, None]:
+def _render_pages(file_path: str, *, dpi: int = CHANDRA_DPI) -> Generator[bytes]:
     """Lazily render a PDF's pages, in order, to PNG bytes with pypdfium2.
 
     Matches the rendering convention used by `app/services/ingestion/converters.py`

@@ -305,7 +305,7 @@ def _derive_case_title_from_subject(
     return remainder.strip()[:80] or None
 
 
-def _maybe_set_case_type_from_az(case: "Case", az: str) -> None:
+def _maybe_set_case_type_from_az(case: Case, az: str) -> None:
     """Update case.case_type from a canonical AZ if still at the CIVIL default.
 
     Only writes when case_type == CIVIL (the unset sentinel).  Also flips

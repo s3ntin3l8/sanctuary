@@ -246,7 +246,7 @@ def _maybe_warn(exc: Exception) -> None:
 
 
 @contextlib.contextmanager
-def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
+def _user_sync_lock(user_id: int) -> Generator[bool]:
     """The mailbox mutex (see ``_acquire_user_lock``) around one whole run: cached
     mail the key cannot open is summarised in a single warning when it ends, not
     once per Gmail page. A prefork worker runs one task at a time, so the
@@ -262,7 +262,7 @@ def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
 
 
 @contextlib.contextmanager
-def _acquire_user_lock(user_id: int) -> Generator[bool, None, None]:
+def _acquire_user_lock(user_id: int) -> Generator[bool]:
     """Best-effort mutex so only one sync (incremental, index refresh or import) runs per
     mailbox at a time.
 
@@ -542,7 +542,7 @@ def _index_chunk(db: Session, service, user_id: int, chunk: list[str]) -> int:
     for raw in raws:
         try:
             metas.append(parse_metadata(raw))
-        except (KeyError, ValueError, TypeError, AttributeError):
+        except KeyError, ValueError, TypeError, AttributeError:
             # One malformed message must not lose the rest of the chunk.
             skipped += 1
             logger.warning("Gmail index: unparseable message %s", raw.get("id"))
@@ -779,7 +779,7 @@ def _import_one(
             own_addresses=own_addresses,
             **_delivery_context(db, user_id, gmail_id),
         )
-    except (GmailReconnectRequired, SecretsError):
+    except GmailReconnectRequired, SecretsError:
         raise  # not this message's fault: end the run and ask for a reconnect
     except GmailMessageGone:
         db.rollback()

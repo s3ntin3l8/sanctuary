@@ -1175,7 +1175,7 @@ def recover_orphaned_running_stages(
                         ):
                             stuck.append((key, True))
                             continue
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         pass
             elif status == StageStatus.RETRYING.value:
                 next_at = val.get("next_at")
@@ -1187,7 +1187,7 @@ def recover_orphaned_running_stages(
                         ):
                             stuck.append((key, True))
                             continue
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         pass
 
             # Heuristic gates (see docstring): skip stages that started
@@ -1199,7 +1199,7 @@ def recover_orphaned_running_stages(
                     parsed = ensure_utc(datetime.fromisoformat(started_at))
                     if parsed > cutoff:
                         continue
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass  # unparseable → treat as old, reset
             # Second gate (see docstring): even past min_age, presume the
             # stage is gate-waiting rather than orphaned when workers are
@@ -1752,7 +1752,7 @@ def recover_stuck_pending_dispatches(
             module_path, name = head_spec.retry_task.rsplit(".", 1)
             try:
                 task = getattr(importlib.import_module(module_path), name)
-            except (ImportError, AttributeError):
+            except ImportError, AttributeError:
                 logger.exception(
                     "Stuck-pending recovery: cannot resolve retry_task %s for doc %d",
                     head_spec.retry_task,
@@ -1848,7 +1848,7 @@ def recover_stuck_slicing_prep(
             dispatched_at = (
                 ensure_utc(datetime.fromisoformat(stamped)) if stamped else None
             )
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             dispatched_at = None
         if dispatched_at is None:
             # Pre-dates the timestamp: the batch's own age is the best bound we

@@ -92,7 +92,7 @@ def _decode_cursor(cursor: str | None) -> int:
         return 0
     try:
         offset = int(json.loads(base64.urlsafe_b64decode(cursor.encode()))["o"])
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         raise ToolError("Invalid cursor.") from None
     if offset < 0:
         raise ToolError("Invalid cursor.")

@@ -516,7 +516,7 @@ def parse_metadata(message: dict) -> dict:
             sent_at = parsedate_to_datetime(headers["date"])
             if sent_at.tzinfo is None:
                 sent_at = sent_at.replace(tzinfo=UTC)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             sent_at = None
     if sent_at is None:  # unparseable/missing Date: fall back to Gmail's receipt time
         sent_at = datetime.fromtimestamp(int(message["internalDate"]) / 1000, tz=UTC)

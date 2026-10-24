@@ -35,7 +35,7 @@ def _manifest_version() -> str | None:
         manifest = json.loads(
             (PROJECT_ROOT / ".release-please-manifest.json").read_text()
         )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     version = manifest.get(".") if isinstance(manifest, dict) else None
     return version if isinstance(version, str) and version else None
@@ -51,7 +51,7 @@ def _git(*args: str) -> str | None:
             timeout=2,
             check=True,
         ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     return out or None
 
