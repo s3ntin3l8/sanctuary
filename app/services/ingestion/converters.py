@@ -323,6 +323,7 @@ def _build_converter(force_full_page_ocr: bool = False):
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
             LayoutOptions,
+            OcrMode,
             PdfPipelineOptions,
             TableFormerMode,
             TableStructureOptions,
@@ -346,7 +347,7 @@ def _build_converter(force_full_page_ocr: bool = False):
         pipeline_options.accelerator_options = _accelerator_options()
         pipeline_options.ocr_options = TesseractCliOcrOptions(
             lang=["deu", "eng"],
-            force_full_page_ocr=force_full_page_ocr,
+            mode=OcrMode.FULL_PAGE if force_full_page_ocr else OcrMode.DEFAULT,
         )
         # EGRET_LARGE outperforms the default HERON on German legal-document
         # layouts (footer detection, heading consistency, reading order,
@@ -416,6 +417,7 @@ def _build_image_ocr_converter():
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
         LayoutOptions,
+        OcrMode,
         PdfPipelineOptions,
         TableFormerMode,
         TesseractCliOcrOptions,
@@ -430,7 +432,7 @@ def _build_image_ocr_converter():
     pipeline_options.layout_options = LayoutOptions(model_spec=_layout_model_spec())
     pipeline_options.ocr_options = TesseractCliOcrOptions(
         lang=["deu", "eng"],
-        force_full_page_ocr=True,
+        mode=OcrMode.FULL_PAGE,
     )
     pipeline_options.images_scale = 1.0  # pre-rendered at 300 DPI, no extra scaling
 
