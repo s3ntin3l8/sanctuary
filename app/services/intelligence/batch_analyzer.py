@@ -50,7 +50,7 @@ def _local_stamp(iso: str | None) -> str:
         return "?"
     try:
         return to_local(datetime.fromisoformat(iso)).strftime("%d.%m.%Y %H:%M")
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return iso
 
 

@@ -319,7 +319,7 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                     tzinfo=UTC
                 )
                 doc.issued_date = parsed
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
 
     # significance_tier

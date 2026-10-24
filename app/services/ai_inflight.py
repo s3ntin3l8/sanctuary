@@ -83,7 +83,7 @@ def _new_async_client() -> aioredis.Redis:
 
 
 @contextlib.contextmanager
-def track_ai_call(label: str) -> Generator[None, None, None]:
+def track_ai_call(label: str) -> Generator[None]:
     """Sync context manager — wraps a blocking AI HTTP call (Celery workers).
 
     Usage::
@@ -109,7 +109,7 @@ def track_ai_call(label: str) -> Generator[None, None, None]:
 
 
 @contextlib.asynccontextmanager
-async def track_ai_call_async(label: str) -> AsyncGenerator[None, None]:
+async def track_ai_call_async(label: str) -> AsyncGenerator[None]:
     """Async context manager — wraps an async AI HTTP call (FastAPI / async tasks).
 
     A fresh Redis client is created and closed per call so the client never

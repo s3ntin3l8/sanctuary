@@ -25,7 +25,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py314"
 src = ["app"]
 
 [tool.ruff.lint]

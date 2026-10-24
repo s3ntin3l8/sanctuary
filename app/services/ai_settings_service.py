@@ -127,7 +127,7 @@ async def fetch_models(inst: dict) -> dict[str, list[str]]:
             if provider == "auto"
             else ProviderType(provider)
         )
-    except (RuntimeError, Exception):
+    except RuntimeError, Exception:
         return categorize_models([])
 
     all_models: list[str] = []

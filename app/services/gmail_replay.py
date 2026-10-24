@@ -102,7 +102,7 @@ def capture(db, *, online: bool = False, replace: bool = False) -> dict:
         if raw is None and online:
             try:
                 raw = _raw_message(owner, gmail_id, lambda owner=owner: service(owner))
-            except (GmailMessageGone, GmailMessageTooLarge):
+            except GmailMessageGone, GmailMessageTooLarge:
                 raw = None  # deleted in Gmail since it was listed, or too large to hold
         row = (
             db.query(GmailMessageIndex)

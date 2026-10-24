@@ -377,7 +377,7 @@ def check_scope_access(db: Session, user: User, scope_type: str, scope_id: str) 
     if scope_type == "document":
         try:
             doc_id = int(scope_id)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return False
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if doc is None:

@@ -64,7 +64,7 @@ def _key(kind: RunKind, user_id: int) -> str:
 def get_run(kind: RunKind, user_id: int) -> dict[str, Any] | None:
     try:
         raw = _get_client().get(_key(kind, user_id))
-    except (redis.RedisError, OSError):
+    except redis.RedisError, OSError:
         return None
     return json.loads(raw) if raw else None
 

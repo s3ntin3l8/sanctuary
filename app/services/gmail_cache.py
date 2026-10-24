@@ -111,7 +111,7 @@ def cached_ids(user_id: int, gmail_ids: list[str]) -> set[str]:
         try:
             if _path(user_id, gmail_id).stat().st_size > 0:
                 out.add(gmail_id)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
     return out
 

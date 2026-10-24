@@ -328,7 +328,7 @@ def reconcile_processed_orphans(
         owner_id = default_owner_id
         try:
             owner_id = int((batch_dir / _OWNER_SIDECAR).read_text().strip())
-        except (OSError, ValueError):
+        except OSError, ValueError:
             pass
         logger.warning(
             "scan_and_ingest: %s was archived but has no batch row (a crash "

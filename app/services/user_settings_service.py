@@ -127,7 +127,7 @@ def get_last_home_visit(db, user_id: int) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -261,7 +261,7 @@ def _keep_refresh_token(user_id: int, new_json: str, stored: str | None) -> str:
             return new_json
         old = json.loads(secrets.decrypt(stored))
         refresh_token = old.get("refresh_token")
-    except (ValueError, AttributeError, secrets.SecretsError):
+    except ValueError, AttributeError, secrets.SecretsError:
         logger.warning(
             "Could not carry over the stored Gmail refresh token for user %s", user_id
         )
@@ -554,7 +554,7 @@ def _is_stale(started_at_iso: str | None) -> bool:
         return False
     try:
         started = datetime.fromisoformat(started_at_iso)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return now_utc() - started > timedelta(seconds=STALE_JOB_THRESHOLD_SECONDS)
 

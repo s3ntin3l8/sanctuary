@@ -123,7 +123,7 @@ def normalize_entity_name(
     return s
 
 
-def build_party_canonical_map(case: "Case | None") -> dict[str, str]:
+def build_party_canonical_map(case: Case | None) -> dict[str, str]:
     """Snap-to-canonical lookup for known case parties.
 
     Returns a dict mapping `normalize_entity_name(variant, PERSON|ORG)` to the

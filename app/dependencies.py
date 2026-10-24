@@ -13,7 +13,7 @@ def get_db_session() -> Session:
     return SessionLocal()
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db() -> Generator[Session]:
     db = get_db_session()
     try:
         yield db

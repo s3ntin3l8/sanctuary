@@ -285,7 +285,7 @@ def _decode_text(part) -> str:
     charset = part.get_content_charset() or "utf-8"
     try:
         return payload.decode(charset)
-    except (LookupError, UnicodeDecodeError):
+    except LookupError, UnicodeDecodeError:
         try:
             return payload.decode("utf-8")
         except UnicodeDecodeError:
@@ -417,7 +417,7 @@ def _scan_forward_date(text: str) -> tuple[datetime, int] | None:
                 int(second or 0),
                 tzinfo=_zone_offset(zone) if zone else ZoneInfo(TIMEZONE),
             )
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             continue
         return local.astimezone(UTC), match.end()
     return None
@@ -656,7 +656,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                     child = email.message_from_bytes(data, policy=default)
                     nested_part = record(part, path, data, "nested_source")
                     read_source(child, f"{path}.m0", source_id, depth + 1, data)
-                except (ValueError, binascii.Error):
+                except ValueError, binascii.Error:
                     if nested_part is None:
                         nested_part = record(part, path, part_raw, "failed")
                     nested_part.update(

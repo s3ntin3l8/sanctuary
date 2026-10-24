@@ -44,7 +44,7 @@ class OriginatorType(enum.StrEnum):
     UNKNOWN = "unknown"  # Neutral — for unclassified docs
 
 
-def parse_originator_type(value: str | None) -> "OriginatorType | None":
+def parse_originator_type(value: str | None) -> OriginatorType | None:
     """Parse a raw string into an OriginatorType, returning None on invalid input."""
     if not value:
         return None
@@ -55,7 +55,7 @@ def parse_originator_type(value: str | None) -> "OriginatorType | None":
         return None
 
 
-def parse_case_type(value: str | None) -> "CaseType | None":
+def parse_case_type(value: str | None) -> CaseType | None:
     """Parse a raw string into a CaseType, returning None on invalid input."""
     if not value:
         return None

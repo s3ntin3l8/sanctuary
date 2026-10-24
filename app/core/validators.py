@@ -78,7 +78,7 @@ def validate_positive_float(value: float | str | None) -> float | None:
         val = float(value)
         if val >= 0:
             return val
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         pass
     return None
 

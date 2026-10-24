@@ -281,44 +281,44 @@ class Document(Base):
         JSON, nullable=True
     )  # list of {text, rationale, span}
 
-    children: Mapped[list["Document"]] = relationship(
+    children: Mapped[list[Document]] = relationship(
         "Document", back_populates="parent", cascade="all, delete-orphan"
     )
-    parent: Mapped["Document | None"] = relationship(
+    parent: Mapped[Document | None] = relationship(
         "Document", back_populates="children", remote_side=[id]
     )
-    sub_group: Mapped["BatchSubGroup | None"] = relationship(
+    sub_group: Mapped[BatchSubGroup | None] = relationship(
         "BatchSubGroup", back_populates="documents"
     )
-    ingest_batch: Mapped["IngestBatch | None"] = relationship(
+    ingest_batch: Mapped[IngestBatch | None] = relationship(
         "IngestBatch", back_populates="documents"
     )
-    proceeding: Mapped["Proceeding | None"] = relationship(
+    proceeding: Mapped[Proceeding | None] = relationship(
         "Proceeding", back_populates="documents"
     )
-    pins: Mapped[list["DocumentPin"]] = relationship(
+    pins: Mapped[list[DocumentPin]] = relationship(
         "DocumentPin", back_populates="document", cascade="all, delete-orphan"
     )
-    chunks: Mapped[list["DocumentChunk"]] = relationship(
+    chunks: Mapped[list[DocumentChunk]] = relationship(
         "DocumentChunk", back_populates="document", cascade="all, delete-orphan"
     )
-    reactions: Mapped[list["UserReaction"]] = relationship(
+    reactions: Mapped[list[UserReaction]] = relationship(
         "UserReaction", back_populates="document", cascade="all, delete-orphan"
     )
-    claim_evidence: Mapped[list["ClaimEvidence"]] = relationship(
+    claim_evidence: Mapped[list[ClaimEvidence]] = relationship(
         "ClaimEvidence", back_populates="document", cascade="all, delete-orphan"
     )
-    stage_rows: Mapped[list["DocumentPipelineStage"]] = relationship(
+    stage_rows: Mapped[list[DocumentPipelineStage]] = relationship(
         "DocumentPipelineStage",
         back_populates="document",
         cascade="all, delete-orphan",
     )
-    cost_signals: Mapped[list["CostSignal"]] = relationship(
+    cost_signals: Mapped[list[CostSignal]] = relationship(
         "CostSignal",
         back_populates="source_document",
         cascade="all, delete-orphan",
     )
-    legal_costs: Mapped[list["LegalCost"]] = relationship(
+    legal_costs: Mapped[list[LegalCost]] = relationship(
         "LegalCost",
         back_populates="source_document",
         foreign_keys="[LegalCost.source_document_id]",
@@ -368,7 +368,7 @@ class DocumentPipelineStage(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
 
-    document: Mapped["Document"] = relationship("Document", back_populates="stage_rows")
+    document: Mapped[Document] = relationship("Document", back_populates="stage_rows")
 
     __table_args__ = (
         Index("ix_dps_status", "status"),
@@ -636,7 +636,7 @@ class Case(Base):
         Integer, default=0, nullable=False
     )  # running total in cents
 
-    proceedings: Mapped[list["Proceeding"]] = relationship(
+    proceedings: Mapped[list[Proceeding]] = relationship(
         "Proceeding", back_populates="case", cascade="all, delete-orphan"
     )
 
@@ -682,11 +682,11 @@ class Proceeding(Base):
     # confirmation in /triage/confirm. Mirrors Case.is_draft.
     is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    case: Mapped["Case"] = relationship("Case", back_populates="proceedings")
-    documents: Mapped[list["Document"]] = relationship(
+    case: Mapped[Case] = relationship("Case", back_populates="proceedings")
+    documents: Mapped[list[Document]] = relationship(
         "Document", back_populates="proceeding"
     )
-    cost_signals: Mapped[list["CostSignal"]] = relationship(
+    cost_signals: Mapped[list[CostSignal]] = relationship(
         "CostSignal", back_populates="proceeding", cascade="all, delete-orphan"
     )
 
@@ -786,12 +786,12 @@ class IngestBatch(Base):
         Boolean, default=False, nullable=False, server_default=_sa_text("false")
     )
 
-    case: Mapped["Case | None"] = relationship("Case")
-    proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")
-    documents: Mapped[list["Document"]] = relationship(
+    case: Mapped[Case | None] = relationship("Case")
+    proceeding: Mapped[Proceeding | None] = relationship("Proceeding")
+    documents: Mapped[list[Document]] = relationship(
         "Document", back_populates="ingest_batch"
     )
-    sub_groups: Mapped[list["BatchSubGroup"]] = relationship(
+    sub_groups: Mapped[list[BatchSubGroup]] = relationship(
         "BatchSubGroup",
         back_populates="batch",
         order_by="BatchSubGroup.sort_order",
@@ -845,10 +845,10 @@ class BatchSubGroup(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    batch: Mapped["IngestBatch"] = relationship(
+    batch: Mapped[IngestBatch] = relationship(
         "IngestBatch", back_populates="sub_groups"
     )
-    documents: Mapped[list["Document"]] = relationship(
+    documents: Mapped[list[Document]] = relationship(
         "Document", back_populates="sub_group"
     )
 
@@ -897,10 +897,10 @@ class DocumentRelationship(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    from_document: Mapped["Document"] = relationship(
+    from_document: Mapped[Document] = relationship(
         "Document", foreign_keys=[from_document_id]
     )
-    to_document: Mapped["Document"] = relationship(
+    to_document: Mapped[Document] = relationship(
         "Document", foreign_keys=[to_document_id]
     )
 
@@ -1007,9 +1007,9 @@ class ActionItem(Base):
     # enrich after the rescheduling notice.
     superseded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    case: Mapped["Case"] = relationship("Case")
-    proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")
-    source_document: Mapped["Document | None"] = relationship("Document")
+    case: Mapped[Case] = relationship("Case")
+    proceeding: Mapped[Proceeding | None] = relationship("Proceeding")
+    source_document: Mapped[Document | None] = relationship("Document")
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -1071,7 +1071,7 @@ class Claim(Base):
     # row itself; see app/services/claim_embedding.py.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 
-    evidence: Mapped[list["ClaimEvidence"]] = relationship(
+    evidence: Mapped[list[ClaimEvidence]] = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
     )
 
@@ -1112,8 +1112,8 @@ class ClaimEvidence(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    claim: Mapped["Claim"] = relationship("Claim", back_populates="evidence")
-    document: Mapped["Document"] = relationship(
+    claim: Mapped[Claim] = relationship("Claim", back_populates="evidence")
+    document: Mapped[Document] = relationship(
         "Document", back_populates="claim_evidence"
     )
 
@@ -1163,8 +1163,8 @@ class ClaimMergeProposal(Base):
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    new_claim: Mapped["Claim"] = relationship("Claim", foreign_keys=[new_claim_id])
-    existing_claim: Mapped["Claim"] = relationship(
+    new_claim: Mapped[Claim] = relationship("Claim", foreign_keys=[new_claim_id])
+    existing_claim: Mapped[Claim] = relationship(
         "Claim", foreign_keys=[existing_claim_id]
     )
 
@@ -1226,10 +1226,8 @@ class ClaimEvidenceProposal(Base):
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    target_claim: Mapped["Claim"] = relationship(
-        "Claim", foreign_keys=[target_claim_id]
-    )
-    source_document: Mapped["Document"] = relationship(
+    target_claim: Mapped[Claim] = relationship("Claim", foreign_keys=[target_claim_id])
+    source_document: Mapped[Document] = relationship(
         "Document", foreign_keys=[source_document_id]
     )
 
@@ -1260,7 +1258,7 @@ class UserReaction(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    document: Mapped["Document"] = relationship("Document", back_populates="reactions")
+    document: Mapped[Document] = relationship("Document", back_populates="reactions")
 
 
 class DocumentPin(Base):
@@ -1290,7 +1288,7 @@ class DocumentPin(Base):
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
-    document: Mapped["Document"] = relationship("Document", back_populates="pins")
+    document: Mapped[Document] = relationship("Document", back_populates="pins")
 
 
 class DocumentChunk(Base):
@@ -1316,7 +1314,7 @@ class DocumentChunk(Base):
     )
     embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 
-    document: Mapped["Document"] = relationship("Document", back_populates="chunks")
+    document: Mapped[Document] = relationship("Document", back_populates="chunks")
 
 
 class User(Base):
@@ -1580,12 +1578,12 @@ class ApiToken(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    user: Mapped["User"] = relationship("User")
-    cases: Mapped[list["ApiTokenCase"]] = relationship(
+    user: Mapped[User] = relationship("User")
+    cases: Mapped[list[ApiTokenCase]] = relationship(
         "ApiTokenCase", cascade="all, delete-orphan", passive_deletes=True
     )
-    oauth_client: Mapped["OAuthClient | None"] = relationship("OAuthClient")
-    grant: Mapped["OAuthGrant | None"] = relationship(
+    oauth_client: Mapped[OAuthClient | None] = relationship("OAuthClient")
+    grant: Mapped[OAuthGrant | None] = relationship(
         "OAuthGrant", uselist=False, cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -1803,12 +1801,12 @@ class LegalCost(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    case: Mapped["Case"] = relationship("Case")
-    proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")
-    source_document: Mapped["Document | None"] = relationship(
+    case: Mapped[Case] = relationship("Case")
+    proceeding: Mapped[Proceeding | None] = relationship("Proceeding")
+    source_document: Mapped[Document | None] = relationship(
         "Document", back_populates="legal_costs", foreign_keys=[source_document_id]
     )
-    offsets_cost: Mapped["LegalCost | None"] = relationship(
+    offsets_cost: Mapped[LegalCost | None] = relationship(
         "LegalCost",
         primaryjoin="LegalCost.offsets_cost_id == LegalCost.id",
         foreign_keys="[LegalCost.offsets_cost_id]",
@@ -1876,11 +1874,11 @@ class CostSignal(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    case: Mapped["Case"] = relationship("Case")
-    proceeding: Mapped["Proceeding | None"] = relationship(
+    case: Mapped[Case] = relationship("Case")
+    proceeding: Mapped[Proceeding | None] = relationship(
         "Proceeding", back_populates="cost_signals"
     )
-    source_document: Mapped["Document"] = relationship(
+    source_document: Mapped[Document] = relationship(
         "Document", back_populates="cost_signals"
     )
 
@@ -1908,7 +1906,7 @@ class Conversation(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    messages: Mapped[list["ConversationMessage"]] = relationship(
+    messages: Mapped[list[ConversationMessage]] = relationship(
         "ConversationMessage",
         back_populates="conversation",
         cascade="all, delete-orphan",
@@ -1941,7 +1939,7 @@ class ConversationMessage(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    conversation: Mapped["Conversation"] = relationship(
+    conversation: Mapped[Conversation] = relationship(
         "Conversation", back_populates="messages"
     )
 
@@ -1987,8 +1985,8 @@ class Entity(Base):
         DateTime, default=_utcnow, nullable=False
     )
 
-    case: Mapped["Case"] = relationship("Case")
-    source_document: Mapped["Document | None"] = relationship("Document")
+    case: Mapped[Case] = relationship("Case")
+    source_document: Mapped[Document | None] = relationship("Document")
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):

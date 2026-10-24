@@ -184,7 +184,7 @@ def ocr_slot(
     *,
     timeout: float = _DEFAULT_ACQUIRE_TIMEOUT,
     label: str | None = None,
-) -> Generator[str | None, None, None]:
+) -> Generator[str | None]:
     """Acquire one of the global OCR-model concurrency slots for the block.
 
     Args:

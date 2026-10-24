@@ -138,7 +138,7 @@ def create_from_payload(
                 if supersedes_str
                 else None
             )
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             supersedes_date = None
         if supersedes_date:
             # Tombstone any item at the superseded date: mark DISMISSED +

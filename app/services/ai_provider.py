@@ -83,7 +83,7 @@ def anthropic_headers(api_key: str | None) -> dict[str, str]:
     return headers
 
 
-def models_request(ptype: "ProviderType", base_url: str, api_key: str | None):
+def models_request(ptype: ProviderType, base_url: str, api_key: str | None):
     """`(url, headers)` of the model-list call for a provider type."""
     if ptype == ProviderType.OLLAMA:
         return f"{base_url}/api/tags", {}
@@ -93,7 +93,7 @@ def models_request(ptype: "ProviderType", base_url: str, api_key: str | None):
     return f"{base_url}/v1/models", openai_compat_headers(api_key)
 
 
-def models_in(ptype: "ProviderType", data: dict) -> list[str]:
+def models_in(ptype: ProviderType, data: dict) -> list[str]:
     """Model ids out of a model-list response body."""
     if ptype == ProviderType.OLLAMA:
         return [m["name"] for m in data.get("models", [])]

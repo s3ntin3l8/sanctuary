@@ -153,7 +153,7 @@ def _reindex_job(db: Session) -> ReindexJob | None:
     if job["status"] != "running" and job.get("ended_at"):
         try:
             ended = datetime.fromisoformat(job["ended_at"])
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         if ended.tzinfo is None:  # a legacy/hand-written value: read it as UTC
             ended = ended.replace(tzinfo=UTC)

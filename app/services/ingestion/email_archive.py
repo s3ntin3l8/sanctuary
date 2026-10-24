@@ -69,13 +69,13 @@ def archive_members(
                 continue
             try:
                 content = archive.read(info)
-            except (RuntimeError, NotImplementedError):
+            except RuntimeError, NotImplementedError:
                 member.update(
                     outcome="unsupported",
                     reason="Password-protected or unsupported archive member",
                 )
                 continue
-            except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, OSError):
+            except zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, OSError:
                 member.update(outcome="failed", reason="Unreadable archive member")
                 continue
             member["data"] = content

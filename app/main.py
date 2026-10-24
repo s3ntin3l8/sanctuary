@@ -100,7 +100,7 @@ class SuccessfulAccessFilter(logging.Filter):
             if status is not None and 200 <= int(status) < 400:  # type: ignore[call-overload]
                 record.levelno = logging.DEBUG
                 record.levelname = "DEBUG"
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
         return True
 
