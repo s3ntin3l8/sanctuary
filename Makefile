@@ -16,7 +16,7 @@ BEAT := $(CELERY) beat --loglevel=INFO
 
 NPM_FE := npm --prefix frontend
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed demo migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -171,6 +171,9 @@ seed: db-up ## Reset database (drop+recreate schema) and seed with advanced tria
 	$(ALEMBIC) downgrade base
 	$(ALEMBIC) upgrade head
 	$(PYTHON) scripts/seed_dummy_data.py
+
+demo: _check-venv-python ## Throwaway isolated demo with seeded data (scratch tree/DB/HOME, allowlisted env, loopback :3985); Ctrl-C deletes it. KEEP=1 keeps the scratch dir
+	$(PYTHON) -m scripts.demo.instance $(if $(KEEP),--keep)
 
 migrate: db-up ## Run database migrations
 	$(ALEMBIC) upgrade head

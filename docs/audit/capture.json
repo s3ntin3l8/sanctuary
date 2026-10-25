@@ -1,0 +1,39 @@
+{
+  "baseUrl": "http://127.0.0.1:3985",
+  "start": "make demo",
+  "readyOutput": "DEMO_READY",
+  "startTimeoutSec": 300,
+  "nodeDir": "frontend",
+  "routes": [
+    "/",
+    "/cases",
+    "/cases/ADV-024-A",
+    "/cases/ADV-031-B",
+    "/cases/ADV-100-X",
+    "/triage",
+    "/costs",
+    "/contacts?name=gegenseite@kanzlei-opposition.de",
+    "/search?q=Unterhalt",
+    "/document/30",
+    "/document/36",
+    "/document/47",
+    "/settings/account",
+    "/settings/agent-access",
+    "/settings/appearance",
+    "/settings/ai",
+    "/settings/ai/logs",
+    "/settings/identity",
+    "/settings/gmail",
+    "/settings/gmail/import",
+    "/settings/data",
+    "/settings/export",
+    "/settings/about",
+    "/admin/users",
+    "/admin/agent-access",
+    "/nope"
+  ],
+  "viewports": {
+    "phone": { "width": 390, "height": 844 },
+    "tablet": { "width": 820, "height": 1180 }
+  }
+}
