@@ -18,9 +18,9 @@ from app.schemas.settings import (
 from app.services import audit_service, timezone_service
 from app.services.user_settings_service import (
     _user_settings,
-    get_theme,
     set_dashboard_cards,
     set_theme,
+    theme_of,
 )
 
 router = APIRouter(prefix="/settings/appearance", tags=["settings"])
@@ -32,7 +32,7 @@ def _view(db: Session, user: User) -> AppearanceView:
     zone = timezone_service.get_user_tz().key
     choices = timezone_service.get_timezone_choices()
     return AppearanceView(
-        theme=get_theme(db, user.id),
+        theme=theme_of(row.settings_json if row else None),
         dashboard_cards=DashboardCards(**(mine.get("dashboard_cards") or {})),
         timezone=zone,
         # The effective zone may come from TIMEZONE or any IANA name an admin saved;

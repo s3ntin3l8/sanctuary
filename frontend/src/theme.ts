@@ -29,8 +29,8 @@ export function currentTheme(): Theme {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
 }
 
-function apply() {
-  document.documentElement.dataset.theme = resolve(getThemePref())
+function apply(pref: ThemePref = getThemePref()) {
+  document.documentElement.dataset.theme = resolve(pref)
   listeners.forEach((notify) => notify())
 }
 
@@ -47,9 +47,13 @@ function watchSystem() {
 
 /** Apply and remember a choice on this device. The server copy is written by `useThemeControl`. */
 export function setThemePref(pref: ThemePref) {
-  if (pref === 'system') localStorage.removeItem(KEY)
-  else localStorage.setItem(KEY, pref)
-  apply()
+  try {
+    if (pref === 'system') localStorage.removeItem(KEY)
+    else localStorage.setItem(KEY, pref)
+  } catch {
+    // Storage blocked or full: the theme still applies for this page view.
+  }
+  apply(pref)
 }
 
 function subscribe(notify: () => void) {

@@ -290,8 +290,11 @@ export function useSaveTheme() {
   const queryClient = useQueryClient()
   return useMutation<S['AppearanceView'], ApiError, S['ThemeUpdate']>({
     mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/appearance/theme', { body })),
-    onSuccess: (view) => {
+    onSuccess: async (view) => {
       queryClient.setQueryData(['settings', 'appearance'], view)
+      // A /shell fetch already in flight would land after this and bring back the old
+      // theme (which the shell then writes to localStorage); drop it.
+      await queryClient.cancelQueries({ queryKey: ['shell'] })
       queryClient.setQueryData<S['ShellView']>(['shell'], (shell) =>
         shell ? { ...shell, theme: view.theme } : shell,
       )

@@ -60,6 +60,14 @@ test('an explicit choice ignores the OS; system forgets it again', () => {
   expect(screen.getByText('system/light')).toBeVisible()
 })
 
+test('a blocked localStorage still applies the choice', () => {
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError')
+  })
+  act(() => setThemePref('light'))
+  expect(currentTheme()).toBe('light')
+})
+
 test('Settings → Appearance offers System, Dark and Light and saves the pick', async () => {
   const fetch = stubApi({
     'GET /api/v1/shell': { body: shellView },
