@@ -1,6 +1,7 @@
 """Comprehensive triage seed — one of every triage state, bundle shape, and edge case.
 
-Run:  make seed-adv
+Run:  make seed   (resets the dev database first)
+      make demo   (throwaway database + instance; see scripts/demo/instance.py)
 
 Bundles seeded (all scoped to ADV-024-A / ADV-031-B / ADV-100-X)
 ─────────────────────────────────────────────────────────────────
@@ -31,13 +32,19 @@ from app.models.database import (
     CaseStatus,
     Claim,
     ClaimEvidence,
+    Conversation,
+    ConversationMessage,
     Document,
+    DocumentPin,
     DocumentRelationship,
     DocumentRole,
     DocumentType,
+    Entity,
+    HomeBriefing,
     IngestBatch,
     IngestBatchSourceType,
     IngestBatchStatus,
+    LegalCost,
     OriginatorType,
     Proceeding,
     SignificanceTier,
@@ -49,7 +56,11 @@ from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
+    CostCategory,
+    CostStatus,
+    EntityType,
     Jurisdiction,
+    PipelineState,
     ProceedingCourtLevel,
     ProceedingStatus,
     RelationshipConfidence,
@@ -109,6 +120,24 @@ db.query(DocumentRelationship).filter(
 db.query(UserReaction).filter(UserReaction.document_id.in_(_seed_doc_ids)).delete(
     synchronize_session=False
 )
+db.query(DocumentPin).filter(DocumentPin.document_id.in_(_seed_doc_ids)).delete(
+    synchronize_session=False
+)
+db.query(LegalCost).filter(LegalCost.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
+db.query(Entity).filter(Entity.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
+_seed_conv_ids = db.query(Conversation.id).filter(
+    Conversation.scope_type == "case", Conversation.scope_id.in_(SEED_CASE_IDS)
+)
+db.query(ConversationMessage).filter(
+    ConversationMessage.conversation_id.in_(_seed_conv_ids)
+).delete(synchronize_session=False)
+db.query(Conversation).filter(
+    Conversation.scope_type == "case", Conversation.scope_id.in_(SEED_CASE_IDS)
+).delete(synchronize_session=False)
 db.query(ActionItem).filter(ActionItem.case_id.in_(SEED_CASE_IDS)).delete(
     synchronize_session=False
 )
@@ -1118,6 +1147,13 @@ def _p8_doc(**kwargs):
             defaults.get("originator_type", OriginatorType.UNKNOWN),
             defaults.get("sender"),
         )
+        # The key passages appear verbatim in the text, so the document view has
+        # something to highlight and pin.
+        passages = [
+            p["text"] for p in defaults.get("key_passages") or [] if p.get("text")
+        ]
+        if passages:
+            defaults["content"] += "\n\n" + "\n\n".join(passages) + "\n"
     doc = Document(**defaults)
     db.add(doc)
     db.flush()
@@ -2116,6 +2152,13 @@ def _p8_olg(**kwargs):
             defaults.get("originator_type", OriginatorType.UNKNOWN),
             defaults.get("sender"),
         )
+        # The key passages appear verbatim in the text, so the document view has
+        # something to highlight and pin.
+        passages = [
+            p["text"] for p in defaults.get("key_passages") or [] if p.get("text")
+        ]
+        if passages:
+            defaults["content"] += "\n\n" + "\n\n".join(passages) + "\n"
     doc = Document(**defaults)
     db.add(doc)
     db.flush()
@@ -2429,6 +2472,21 @@ db.commit()
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+_asserts_rows: dict[tuple[int, int], ClaimEvidence] = {}
+
+
+def _add_claim_evidence(rows):
+    """A claim links to a document once (uq_claim_evidence_claim_document): a row
+    for the asserting document refines its ASSERTS row instead of adding a second."""
+    for row in rows:
+        asserts = _asserts_rows.get((row.claim_id, row.document_id))
+        if asserts is None:
+            db.add(row)
+        else:
+            asserts.excerpt = row.excerpt
+            asserts.confidence = row.confidence
+
+
 def _seed_claim(asserting_doc, claim_text, claim_type, status, first_made, updated):
     claim = Claim(
         claim_text=claim_text,
@@ -2439,14 +2497,14 @@ def _seed_claim(asserting_doc, claim_text, claim_type, status, first_made, updat
     )
     db.add(claim)
     db.flush()
-    db.add(
-        ClaimEvidence(
-            claim_id=claim.id,
-            document_id=asserting_doc.id,
-            role=ClaimEvidenceRole.ASSERTS,
-            ingest_date=first_made,
-        )
+    asserts = ClaimEvidence(
+        claim_id=claim.id,
+        document_id=asserting_doc.id,
+        role=ClaimEvidenceRole.ASSERTS,
+        ingest_date=first_made,
     )
+    db.add(asserts)
+    _asserts_rows[(claim.id, asserting_doc.id)] = asserts
     return claim
 
 
@@ -2532,7 +2590,7 @@ cl10 = _seed_claim(
 )
 db.flush()
 
-db.add_all(
+_add_claim_evidence(
     [
         # cl1: Beklagter's Leistungsunfähigkeit — CONTESTED
         ClaimEvidence(
@@ -2964,6 +3022,426 @@ case_a.parties = [
     },
 ]
 case_a.total_cost_exposure = 2850000  # cents — 28.500 €
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ADV-031-B and ADV-100-X — smaller cases, so their dashboards are not empty.
+# ═══════════════════════════════════════════════════════════════════════════
+proc_c = Proceeding(
+    case_id="ADV-100-X",
+    court_name="Landgericht Frankfurt am Main",
+    court_level=ProceedingCourtLevel.LG,
+    subject_matter="Art. 82 DSGVO — Schadensersatz",
+    az_court="2-03 O 215/26",
+    status=ProceedingStatus.ACTIVE,
+    started_at=datetime(2026, 3, 2),
+)
+db.add(proc_c)
+db.flush()
+
+
+def _small_doc(
+    case_id, proc, title, doc_type, originator, sender, day, tier, summary, passage
+):
+    return _p8_doc(
+        case_id=case_id,
+        proceeding_id=proc.id,
+        title=title,
+        document_type=doc_type,
+        originator_type=originator,
+        attributed_originator=None,
+        sender=sender,
+        received_date=day,
+        ingest_date=day,
+        significance_tier=tier,
+        ai_summary=[{"kind": kind, "text": text} for kind, text in summary],
+        key_passages=[{"text": passage, "kind": "holding", "page": 1}],
+    )
+
+
+_b_klage = _small_doc(
+    "ADV-031-B", proc_b, "Klageschrift", DocumentType.MOTION, OriginatorType.OWN,
+    "kanzlei@sanctuary-counsel.de", datetime(2026, 7, 14), SignificanceTier.CRITICAL,
+    [
+        ("legal", "Schadensersatzklage nach § 823 BGB wegen fehlerhafter Bauleistung."),
+        ("finance", "Streitwert: 60.000 €; Gerichtskostenvorschuss eingezahlt."),
+    ],
+    "Die Beklagte hat die Abdichtung mangelhaft ausgeführt; der Schaden beträgt 58.400 €.",
+)  # fmt: skip
+_b_erwiderung = _small_doc(
+    "ADV-031-B", proc_b, "Klageerwiderung", DocumentType.STATEMENT, OriginatorType.OPPOSING,
+    "gegenseite@kanzlei-opposition.de", datetime(2026, 8, 20), SignificanceTier.SIGNIFICANT,
+    [
+        ("legal", "Die Beklagte bestreitet den Mangel und beruft sich auf Verjährung."),
+        ("action", "Replik auf die Verjährungseinrede binnen vier Wochen."),
+    ],
+    "Etwaige Ansprüche sind nach § 634a BGB verjährt.",
+)  # fmt: skip
+_b_beweis = _small_doc(
+    "ADV-031-B", proc_b, "Beweisbeschluss", DocumentType.RULING, OriginatorType.COURT,
+    "geschaeftsstelle@lg-berlin.de", datetime(2026, 9, 18), SignificanceTier.CRITICAL,
+    [
+        ("legal", "Das Gericht ordnet ein Sachverständigengutachten zur Abdichtung an."),
+        ("finance", "Auslagenvorschuss von 2.500 € für den Sachverständigen."),
+    ],
+    "Es wird Beweis erhoben durch Einholung eines Sachverständigengutachtens.",
+)  # fmt: skip
+_b_replik = _small_doc(
+    "ADV-031-B", proc_b, "Replik", DocumentType.STATEMENT, OriginatorType.OWN,
+    "kanzlei@sanctuary-counsel.de", datetime(2026, 10, 2), SignificanceTier.SIGNIFICANT,
+    [("legal", "Verjährung ist nicht eingetreten; Hemmung durch Verhandlungen (§ 203 BGB).")],
+    "Die Verjährung war durch die laufenden Nachbesserungsverhandlungen gehemmt.",
+)  # fmt: skip
+db.add_all(
+    [
+        DocumentRelationship(
+            from_document_id=_b_erwiderung.id,
+            to_document_id=_b_klage.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=_b_replik.id,
+            to_document_id=_b_erwiderung.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+    ]
+)
+_b_cl1 = _seed_claim(
+    _b_klage,
+    "Die Abdichtung des Kellers wurde mangelhaft ausgeführt.",
+    ClaimType.FACTUAL,
+    ClaimStatus.CONTESTED,
+    datetime(2026, 7, 14),
+    datetime(2026, 9, 18),
+)
+_b_cl2 = _seed_claim(
+    _b_erwiderung,
+    "Die Gewährleistungsansprüche sind verjährt.",
+    ClaimType.LEGAL,
+    ClaimStatus.CONTESTED,
+    datetime(2026, 8, 20),
+    datetime(2026, 10, 2),
+)
+db.flush()
+_add_claim_evidence(
+    [
+        ClaimEvidence(
+            claim_id=_b_cl1.id,
+            document_id=_b_beweis.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Beweiserhebung durch Sachverständigengutachten angeordnet.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=_b_cl2.id,
+            document_id=_b_replik.id,
+            role=ClaimEvidenceRole.REFUTES,
+            excerpt="Die Verjährung war durch die laufenden Nachbesserungsverhandlungen gehemmt.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+    ]
+)
+db.add_all(
+    [
+        ActionItem(
+            case_id="ADV-031-B",
+            proceeding_id=proc_b.id,
+            source_document_id=_b_beweis.id,
+            title="Auslagenvorschuss Sachverständiger (2.500 €)",
+            description="Einzahlung an die Gerichtskasse; Frist laut Beweisbeschluss.",
+            due_date=datetime(2026, 11, 6),
+            action_type=ActionItemType.DEADLINE,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-031-B",
+            proceeding_id=proc_b.id,
+            source_document_id=_b_beweis.id,
+            title="Termin zur mündlichen Verhandlung LG Berlin",
+            description="Saal 3.101, 10:00 Uhr.",
+            due_date=datetime(2026, 12, 4),
+            action_type=ActionItemType.COURT_DATE,
+            status=ActionItemStatus.OPEN,
+        ),
+    ]
+)
+
+_c_klage = _small_doc(
+    "ADV-100-X", proc_c, "Klageschrift", DocumentType.MOTION, OriginatorType.OWN,
+    "kanzlei@sanctuary-counsel.de", datetime(2026, 3, 2), SignificanceTier.CRITICAL,
+    [
+        ("legal", "Schadensersatzklage nach Art. 82 DSGVO wegen eines Datenlecks."),
+        ("finance", "Streitwert: 15.000 €."),
+    ],
+    "Durch das Datenleck wurden Kontaktdaten der Klägerin unbefugt offengelegt.",
+)  # fmt: skip
+_c_antwort = _small_doc(
+    "ADV-100-X", proc_c, "Klageerwiderung", DocumentType.STATEMENT, OriginatorType.OPPOSING,
+    "gegenseite@kanzlei-opposition.de", datetime(2026, 4, 20), SignificanceTier.SIGNIFICANT,
+    [("legal", "Die Beklagte bestreitet einen immateriellen Schaden.")],
+    "Ein ersatzfähiger immaterieller Schaden ist nicht dargelegt.",
+)  # fmt: skip
+db.add(
+    DocumentRelationship(
+        from_document_id=_c_antwort.id,
+        to_document_id=_c_klage.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.USER_CONFIRMED,
+    )
+)
+_seed_claim(
+    _c_klage,
+    "Der Klägerin ist durch das Datenleck ein immaterieller Schaden entstanden.",
+    ClaimType.LEGAL,
+    ClaimStatus.CONTESTED,
+    datetime(2026, 3, 2),
+    datetime(2026, 4, 20),
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Costs, contacts, briefing, chat and pins — the pages beyond triage/graph.
+# Fictional people and addresses (example.com); dates relative to now.
+# ═══════════════════════════════════════════════════════════════════════════
+_today = now.replace(tzinfo=None)
+
+# Everything seeded so far is the admin's own. owner_id governs visibility: the
+# triage feed lists only the caller's batches and documents, so ownerless rows
+# would leave Triage empty.
+_seed_batch_ids = db.query(IngestBatch.id).filter(
+    IngestBatch.owner_id.is_(None),
+    (IngestBatch.case_id.in_(SEED_CASE_IDS)) | IngestBatch.subject.like("[SEED]%"),
+)
+db.query(Document).filter(
+    Document.owner_id.is_(None),
+    (Document.case_id.in_(SEED_CASE_IDS))
+    | (Document.ingest_batch_id.in_(_seed_batch_ids)),
+).update({"owner_id": _admin.id}, synchronize_session=False)
+db.query(IngestBatch).filter(IngestBatch.id.in_(_seed_batch_ids)).update(
+    {"owner_id": _admin.id}, synchronize_session=False
+)
+db.query(Case).filter(Case.id.in_(SEED_CASE_IDS[1:]), Case.owner_id.is_(None)).update(
+    {"owner_id": _admin.id}, synchronize_session=False
+)
+# Documents default to pipeline_state=PENDING, which the triage feed reads as
+# "processing" for every bundle. The pipeline already ran for the seeded data
+# (no stage rows exist, so nothing is re-dispatched); the FRESH bundle keeps a
+# failed and a partial document so those chips are visible too.
+db.query(Document).filter(
+    Document.owner_id == _admin.id, Document.case_id.in_(SEED_CASE_IDS)
+).update({"pipeline_state": PipelineState.COMPLETED}, synchronize_session=False)
+_fresh_docs = (
+    db.query(Document)
+    .join(IngestBatch, IngestBatch.id == Document.ingest_batch_id)
+    .filter(IngestBatch.subject.like("[SEED] LG Berlin — Klageschrift%"))
+    .order_by(Document.id)
+    .all()
+)
+for _d, _state in zip(
+    _fresh_docs, [PipelineState.FAILED, PipelineState.PARTIAL], strict=False
+):
+    _d.pipeline_state = _state
+# The Phase 8 case documents (no batch) are filed and reviewed. Without
+# confirmed_at the triage feed lists each of them as a loose bundle.
+db.query(Document).filter(
+    Document.case_id.in_(SEED_CASE_IDS[1:]),
+    Document.ingest_batch_id.is_(None),
+    Document.needs_review.is_(False),
+    Document.confirmed_at.is_(None),
+).update(
+    {"confirmed_at": _today, "ai_summary_approved_at": _today},
+    synchronize_session=False,
+)
+db.commit()
+
+
+def _cost(case_id, proc, category, status, title, net, *, vat=0.19, **kw):
+    """Gross is derived from net + VAT (0.19 lawyer/expert, 0.0 court fees)."""
+    gross = round(net * (1 + vat), 2)
+    paid = {CostStatus.BEZAHLT: gross, CostStatus.ERSTATTET: gross}.get(status, 0.0)
+    db.add(
+        LegalCost(
+            case_id=case_id,
+            proceeding_id=proc.id,
+            category=category,
+            status=status,
+            title=title,
+            amount_net=net,
+            vat_rate=vat,
+            amount_gross=gross,
+            amount_paid=kw.pop("amount_paid", paid),
+            amount_reimbursed=kw.pop(
+                "amount_reimbursed", gross if status == CostStatus.ERSTATTET else 0.0
+            ),
+            **kw,
+        )
+    )
+
+
+_cost(
+    "ADV-024-A", proc_a, CostCategory.GERICHTSKOSTEN, CostStatus.BEZAHLT,
+    "Gerichtskostenvorschuss AG (KV 1110 GKG)", 438.0, vat=0.0,
+    streitwert=24000.0, issued_at=_today - timedelta(days=170),
+    paid_at=_today - timedelta(days=160), is_reimbursable=True,
+)  # fmt: skip
+# Overdue: due date passed, not settled.
+_cost(
+    "ADV-024-A", proc_a, CostCategory.ANWALTSKOSTEN, CostStatus.TEILWEISE,
+    "Verfahrensgebühr, Nr. 3100 VV RVG", 1020.5, rvg_position="3100",
+    gebuehren_faktor=1.3, streitwert=24000.0, amount_paid=600.0,
+    issued_at=_today - timedelta(days=120), due_at=_today - timedelta(days=12),
+)  # fmt: skip
+# Due soon.
+_cost(
+    "ADV-024-A", proc_a, CostCategory.ANWALTSKOSTEN, CostStatus.OFFEN,
+    "Terminsgebühr, Nr. 3104 VV RVG", 942.0, rvg_position="3104",
+    gebuehren_faktor=1.2, streitwert=24000.0,
+    issued_at=_today - timedelta(days=3), due_at=_today + timedelta(days=6),
+)  # fmt: skip
+_cost(
+    "ADV-024-A", proc_a, CostCategory.AUSLAGEN, CostStatus.OFFEN,
+    "Post- und Telekommunikationspauschale, Nr. 7002 VV RVG", 20.0,
+    rvg_position="7002", issued_at=_today - timedelta(days=3),
+    due_at=_today + timedelta(days=20),
+)  # fmt: skip
+_cost(
+    "ADV-024-A", proc_a, CostCategory.SACHVERSTAENDIGER, CostStatus.TEILWEISE,
+    "Sachverständigenvergütung Dr. Bauer (JVEG)", 3243.7,
+    amount_paid=2520.0, source_document_id=p8_sv_kostenrechnung.id,
+    issued_at=_today - timedelta(days=60), due_at=_today + timedelta(days=30),
+    notes="Resthonorar 1.340 € offen (Frist siehe Fristenliste).",
+)  # fmt: skip
+_cost(
+    "ADV-024-A", proc_a, CostCategory.ANWALTSKOSTEN_GEGNER, CostStatus.STRITTIG,
+    "Kostenerstattung gegnerische Anwaltskosten (§ 91 ZPO)", 1020.5,
+    is_reimbursable=False, issued_at=_today - timedelta(days=45),
+    notes="Gegenseite macht Erstattung geltend; Quote streitig.",
+)  # fmt: skip
+_cost(
+    "ADV-024-A", proc_a2, CostCategory.VORSCHUSS, CostStatus.BEZAHLT,
+    "Gerichtskostenvorschuss OLG (KV 1220 GKG)", 876.0, vat=0.0,
+    streitwert=24000.0, issued_at=_today - timedelta(days=100),
+    paid_at=_today - timedelta(days=95), is_reimbursable=True,
+)  # fmt: skip
+_cost(
+    "ADV-024-A", proc_a2, CostCategory.ANWALTSKOSTEN, CostStatus.OFFEN,
+    "Verfahrensgebühr 2. Instanz, Nr. 3200 VV RVG", 1255.0, rvg_position="3200",
+    gebuehren_faktor=1.6, streitwert=24000.0,
+    issued_at=_today - timedelta(days=30), due_at=_today + timedelta(days=14),
+)  # fmt: skip
+_cost(
+    "ADV-031-B", proc_b, CostCategory.GERICHTSKOSTEN, CostStatus.ERSTATTET,
+    "Gerichtskostenvorschuss LG (KV 1210 GKG)", 1248.0, vat=0.0,
+    streitwert=60000.0, issued_at=_today - timedelta(days=85),
+    paid_at=_today - timedelta(days=80),
+)  # fmt: skip
+_cost(
+    "ADV-031-B", proc_b, CostCategory.ANWALTSKOSTEN, CostStatus.BEZAHLT,
+    "Verfahrensgebühr, Nr. 3100 VV RVG", 2145.5, rvg_position="3100",
+    gebuehren_faktor=1.3, streitwert=60000.0,
+    issued_at=_today - timedelta(days=80), paid_at=_today - timedelta(days=70),
+)  # fmt: skip
+db.commit()
+
+# Contacts: the actors behind the seeded senders (the contact page joins them by
+# address or name). Fictional people; example.com addresses.
+for _case_id, _type, _name, _email in [
+    ("ADV-024-A", EntityType.LAW_FIRM, "Kanzlei Lindner & Partner", "kanzlei@sanctuary-counsel.de"),
+    ("ADV-024-A", EntityType.LAW_FIRM, "Kanzlei Voss Rechtsanwälte", "gegenseite@kanzlei-opposition.de"),
+    ("ADV-024-A", EntityType.COURT, "Amtsgericht Hamburg", "poststelle@ag-hamburg.example.com"),
+    ("ADV-024-A", EntityType.COURT, "Oberlandesgericht Hamburg", "poststelle@olg-hamburg.example.com"),
+    ("ADV-024-A", EntityType.ORGANIZATION, "Jugendamt Hamburg", "jugendamt@hamburg.example.com"),
+    ("ADV-024-A", EntityType.PERSON, "Dr. Katrin Bauer", "k.bauer@gutachten.example.com"),
+    ("ADV-024-A", EntityType.PERSON, "Anna Vane", None),
+    ("ADV-024-A", EntityType.PERSON, "Markus Vane", None),
+    ("ADV-031-B", EntityType.COURT, "Landgericht Berlin", "poststelle@lg-berlin.example.com"),
+]:  # fmt: skip
+    db.add(Entity(case_id=_case_id, type=_type, name=_name, email=_email))
+db.commit()
+
+# Today's briefing, on the workspace calendar (not UTC): a missing or `processing`
+# row would dispatch a generation task at the unreachable demo AI endpoint.
+from app.services.intelligence.home_briefing_generator import today_for_user
+
+db.query(HomeBriefing).filter(HomeBriefing.user_id == _admin.id).delete(
+    synchronize_session=False
+)
+db.add(
+    HomeBriefing(
+        user_id=_admin.id,
+        day=today_for_user(),
+        status="ready",
+        summary=(
+            "ADV-024-A bleibt der Schwerpunkt: Die Beschwerde beim OLG Hamburg läuft, "
+            "die Gegenseite bestreitet die Leistungsfähigkeit weiterhin. Zwei Fristen "
+            "und ein Sachverständigen-Resthonorar von 1.340 € stehen an."
+        ),
+        priorities=[
+            "ADV-024-A: Stellungnahme zum Verfahrensbeistand-Bericht vorbereiten",
+            "ADV-024-A: SV-Resthonorar (1.340 €) überweisen",
+            "Triage: 10 Bundles warten auf Prüfung",
+        ],
+        model_label="demo",
+        external=False,
+        generated_at=_today,
+    )
+)
+db.commit()
+
+# One case chat with cited answers ([DOC:<id>] is the citation marker the chat
+# service renders as a source chip).
+_conv = Conversation(
+    scope_type="case",
+    scope_id="ADV-024-A",
+    title="Leistungsfähigkeit des Beklagten",
+    user_id=_admin.id,
+)
+db.add(_conv)
+db.flush()
+db.add_all(
+    [
+        ConversationMessage(
+            conversation_id=_conv.id,
+            role="user",
+            content="Was spricht gegen die behauptete Leistungsunfähigkeit des Beklagten?",
+        ),
+        ConversationMessage(
+            conversation_id=_conv.id,
+            role="assistant",
+            content=(
+                "Die Kontoauszüge zeigen regelmäßige Gehaltseingänge von 3.800–3.900 € "
+                f"[DOC:{p8_kontoauszuege.id}]. Das Sachverständigengutachten geht von einem "
+                f"bereinigten Nettoeinkommen von durchschnittlich 3.120 € aus [DOC:{p8_sv_gutachten.id}]. "
+                "Dagegen stützt sich der Beklagte auf die Gehaltsabrechnung mit Kurzarbeitergeld "
+                f"ab August 2025 [DOC:{p8_gehaltsabrechnung.id}]."
+            ),
+            context_document_ids=[
+                p8_kontoauszuege.id,
+                p8_sv_gutachten.id,
+                p8_gehaltsabrechnung.id,
+            ],
+        ),
+    ]
+)
+db.commit()
+
+# Margin pins on the first key passage of a few lead documents.
+from app.services import pin_service
+from app.services.case_dashboard_service import key_passages_for_template
+
+for _doc, _note in [
+    (p8_klage, "Anspruchsgrundlage prüfen: § 1601 BGB, Zeitraum Jan–Okt 2025."),
+    (p8_klageerwiderung, "Bestreiten pauschal — mit Kontoauszügen widerlegbar."),
+    (p8_sv_gutachten, "Kernzahl: 3.120 € bereinigtes Netto."),
+    (p8_vb_bericht, "Kindeswille: für die OLG-Begründung zitieren."),
+]:
+    _passages = key_passages_for_template(_doc.key_passages or [])
+    if _passages:
+        pin_service.create_pin(db, _admin.id, _doc, _passages[0]["id"], _note)
 db.commit()
 
 

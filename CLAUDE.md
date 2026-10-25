@@ -101,11 +101,15 @@ make run        # App + the three Celery workers (ingest, ai, maintenance) + bea
 make watch-frontend  # Terminal 2: rebuild the SPA on change (frontend/dist, served by the app)
 make frontend-test   # SPA typecheck + lint + vitest
 make api-types  # Regenerate the SPA's API types after changing app/api/v1
-make seed       # Seed Data
+make seed       # Seed Data (resets the dev database first)
+make demo       # Throwaway isolated instance + seeded data on 127.0.0.1:3985, for UI audit captures
 make test       # Run Tests
 make lint       # Pre-commit hooks
 make migrate    # Run migrations
 ```
+
+**Demo instance (`make demo`, `scripts/demo/`).** An isolated, seeded Sanctuary for UI audit captures (`docs/audit/`). It runs a *scratch copy* of the code (so `PROJECT_ROOT`, `.env`, `data/` and the log folder resolve into a temp dir, never the live ones: `./data` is bind-mounted into the running compose stack), against its own pgvector container on `127.0.0.1:3986`, with an allowlisted child environment (`scripts/demo/env.py` refuses anything that points at the dev DB/Redis/Ollama/Gmail, a non-loopback bind or the ports 5432/6379/8000). `DEMO_READY url=…` is printed only after migrate + seed + first answer; SIGINT/SIGTERM tears everything down. Never import `app.*` from `scripts/demo/` (it creates `data/` and an engine at import). Do not use `make seed` for a demo: it downgrades whatever `DATABASE_URL` resolves to.
+
 `make run` starts everything needed for the AI pipeline in one process group — no separate worker terminal needed (default `CELERY_TASK_ALWAYS_EAGER=false`). To run the web server and workers as separate processes instead (e.g. to restart one without the other), use `make server` + `make worker` in two terminals. `make worker-ingest` / `make worker-ai` / `make worker-maintenance` start a single queue standalone. The `maintenance` queue (recovery sweep, thread scan, log pruning) has its own worker so the sweep never waits behind LLM- or OCR-gated work.
 
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
