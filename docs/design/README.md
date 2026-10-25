@@ -5,5 +5,6 @@
 file in a browser to see it (it loads React and fonts from public CDNs, so it
 needs network access — the real app ships everything self-hosted).
 
-Design tokens live in `frontend/src/styles/index.css`; screens are ported view by
-view under `frontend/src/features/`.
+Design tokens live in `frontend/src/styles/index.css`, which is authoritative: the
+prototype's palette is a snapshot and has drifted (the AA contrast audit changed several
+tokens). Screens are ported view by view under `frontend/src/features/`.

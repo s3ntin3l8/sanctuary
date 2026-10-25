@@ -134,4 +134,22 @@ for (const [name, theme] of Object.entries(themes)) {
     )
     expect(report(rows)).toEqual([])
   })
+
+  // AA pushed `muted2` up to ~4.7:1; without a gap above it the two steps read as one.
+  test(`${name}: muted stays a visible step above muted2`, () => {
+    // Per surface, so both tokens are always compared on the same background.
+    const steps = SURFACES.map(
+      (bg) =>
+        [
+          bg,
+          contrast(get(theme, 'muted'), get(theme, bg)) /
+            contrast(get(theme, 'muted2'), get(theme, bg)),
+        ] as const,
+    )
+    const collapsed = steps
+      .filter(([, step]) => step < 1.3)
+      .map(([bg, step]) => `${bg}: ${step.toFixed(2)}`)
+    // A failure here usually means a palette edit pulled --muted2 up (or --muted down) toward the other.
+    expect(collapsed, '--muted must stay >= 1.3x the contrast of --muted2').toEqual([])
+  })
 }

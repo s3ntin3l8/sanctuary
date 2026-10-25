@@ -42,7 +42,7 @@ Checked and left alone. A fix here would be a regression.
 | # | Sev | Finding | Evidence | Where | What changed |
 |---|---|---|---|---|---|
 | 1 | P1 | Light theme: `--warning` (3.6–4.0:1) and `--success` (3.1–3.4:1) fail AA as text on every surface; used for 10px badges, due-date headings, "no case assigned" | axe `color-contrast`: 58 pages, 83 nodes; token calculation | `styles/index.css` | Light `--warning` `#a1791a`→`#7a5800`, `--success` `#3f9b6e`→`#216640` (≥4.6:1 on every surface and on the tinted fills). axe: 0 nodes |
-| 2 | P1 | `--muted2` fails AA in both themes (3.0–3.5 dark, 2.8–3.1 light); used for placeholders, "No open action", timestamps | Token calculation (25 uses) | `styles/index.css` | Dark `#5f6d86`→`#7d8ca6`, light `#8a9599`→`#626d70` (4.5–4.8:1) |
+| 2 | P1 | `--muted2` fails AA in both themes (3.0–3.5 dark, 2.8–3.1 light); used for placeholders, "No open action", timestamps | Token calculation (25 uses) | `styles/index.css` | Dark `#5f6d86`→`#7d8ca6`, light `#8a9599`→`#626d70` (4.5–4.8:1). Light `--muted` `#566164`→`#4e595c` so the step above it survives (#461) |
 | 3 | P1 | Danger button: white text on `#f87171` in dark is 2.77:1; "Create & assign" is white on the teal accent (1.4:1 in dark) | axe; token calculation | `ui/Button.tsx`, `features/triage/CasePicker.tsx` | New `--on-danger`; both buttons use the theme's on-colour (`text-on-danger`, `text-on-accent`) |
 | 4 | P1 | Rail count badge: `#3b2a00` on the warning fill is 3.47:1 at 9px; and would worsen with a darker light warning | axe: 48 nodes | `shell/RailButton.tsx` | New `--on-warning` token (dark text on the dark theme's amber, white on the light theme's brown) |
 | 5 | P1 | Link in running text distinguished by colour only (2.03:1 against the surrounding text) | axe `link-in-text-block` | `features/admin/AdminAgentAccessPage.tsx` | The link is underlined |
@@ -61,6 +61,7 @@ Checked and left alone. A fix here would be a regression.
 ## Guardrails
 
 - **Token contrast test** (`frontend/src/styles/contrast.test.ts`, runs in `make frontend-test`): every text token must reach 4.5:1 on all six surfaces, and `on-accent`/`on-danger`/`on-warning` on their fills, in both themes. It also checks status colours on their own alpha tints (`bg-warning/10` and similar) and the highlight text tokens. Checked that it fails on the old `--warning` value.
+- The same test requires `--muted` to stay at least 1.3× above `--muted2` in contrast, in both themes, so the tertiary text step cannot collapse again.
 - **axe in the capture config** (`"axe": true` in `docs/audit/capture.json`): a re-audit reports the same rules; the before/after of this audit is `color-contrast` 83 → 0 nodes, `link-in-text-block` 4 → 0.
 - Not yet automated, tracked in [#459](https://github.com/s3ntin3l8/sanctuary/issues/459): an axe smoke test in CI over rendered pages, and an axe pass for the auth screens.
 
@@ -91,6 +92,5 @@ The first command writes 112 screenshots and `axe.json` into `docs/audit/assets/
 | Phone: case page header and graph | P2 | [#455](https://github.com/s3ntin3l8/sanctuary/issues/455) |
 | Phone: settings nav, admin form, data tiles | P2 | [#456](https://github.com/s3ntin3l8/sanctuary/issues/456) |
 | Phone: Home KPI grid and "Needs you" rows | P3 | [#457](https://github.com/s3ntin3l8/sanctuary/issues/457) |
-| Light `--muted2` is now close to `--muted`: decide the tertiary text step | P3 | [#461](https://github.com/s3ntin3l8/sanctuary/issues/461) |
 | `prefers-reduced-motion` | P3 | [#458](https://github.com/s3ntin3l8/sanctuary/issues/458) |
 | axe smoke test in CI; axe for the auth pass | P3 | [#459](https://github.com/s3ntin3l8/sanctuary/issues/459) |
