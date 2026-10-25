@@ -33,8 +33,11 @@ evidence is local. Structure, naming and rules: the `audit` skill
 - **Capture limits:**
   - `/document/<id>` uses numeric ids (30 Klage, 36 Klageerwiderung, 47 Einkommensgutachten).
     They are stable only because the demo database is fresh every run; reseed order matters.
+  - Auth pass: `/login` and `/signup` need the login screen on. Run a second pass with
+    `node <path to ai-agent-skills>/plugins/audit/skills/audit/scripts/capture.mjs <slug> --config docs/audit/capture.auth.json`
+    (it starts `DEMO_AUTH=1 make demo`; same `assets/<slug>/` folder, different file names).
   - Not captured: the slice views (`/ingest/slice/:batchId`, `/document/:docId/slice`; the
-    seed has no files on disk, [#445](https://github.com/s3ntin3l8/sanctuary/issues/445)), `/login` and `/signup` (auth is off, [#446](https://github.com/s3ntin3l8/sanctuary/issues/446)), `/oauth/authorize`,
+    seed has no files on disk, [#445](https://github.com/s3ntin3l8/sanctuary/issues/445)), `/oauth/authorize`,
     and anything that needs clicking through (dialogs, modals).
 
 ## Index

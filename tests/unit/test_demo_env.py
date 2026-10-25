@@ -35,6 +35,7 @@ def _clean_env(demo_dir: Path, **overrides: str) -> dict[str, str]:
         **demo_env(demo_dir, parent={"PATH": "/usr/bin"}),
         "HOST": "127.0.0.1",
         "PORT": "3985",
+        "AUTH_ENABLED": "false",
         "DATABASE_URL": DEMO_URL,
         "SESSION_SECRET": "generated",  # pragma: allowlist secret
         "SECRETS_ENCRYPTION_KEY": "generated",  # pragma: allowlist secret
@@ -100,6 +101,7 @@ def test_an_unset_database_url_is_refused(demo_dir: Path) -> None:
         {"AI_BASE_URL": "http://127.0.0.1:11434"},
         {"AI_BASE_URL": "https://api.example.com"},
         {"HOST": "0.0.0.0"},
+        {"AUTH_ENABLED": "true"},
         {"PORT": "8000"},
         {"PORT": "5432"},
         {"HOME": "/home/me"},
@@ -134,6 +136,37 @@ def test_assert_demo_env_refuses_a_cwd_with_a_dotenv(
     env = _clean_env(demo_dir)
     assert any(
         ".env" in p for p in demo_env_problems(env, demo_dir, cwd=cwd, db_port=DB_PORT)
+    )
+
+
+def test_the_auth_pass_needs_auth_on_and_the_plain_pass_needs_it_off(
+    demo_dir: Path,
+) -> None:
+    plain = _clean_env(demo_dir)
+    login = _clean_env(demo_dir, AUTH_ENABLED="true", AUTH_SIGNUP_ENABLED="true")
+    assert demo_env_problems(login, demo_dir, db_port=DB_PORT, auth=True) == []
+    assert any(
+        "AUTH_ENABLED" in p for p in demo_env_problems(login, demo_dir, db_port=DB_PORT)
+    )
+    assert any(
+        "AUTH_ENABLED" in p
+        for p in demo_env_problems(plain, demo_dir, db_port=DB_PORT, auth=True)
+    )
+    with pytest.raises(RuntimeError, match="refused"):
+        assert_demo_env(login, demo_dir, db_port=DB_PORT)
+
+
+def test_the_auth_pass_still_refuses_a_caller_credential(demo_dir: Path) -> None:
+    credential = {"BOOTSTRAP_ADMIN_PASSWORD": "real"}  # pragma: allowlist secret
+    env = _clean_env(demo_dir, AUTH_ENABLED="true", **credential)
+    assert demo_env_problems(env, demo_dir, db_port=DB_PORT, auth=True)
+
+
+def test_signup_is_refused_outside_the_auth_pass(demo_dir: Path) -> None:
+    env = _clean_env(demo_dir, AUTH_SIGNUP_ENABLED="true")
+    assert any(
+        "AUTH_SIGNUP_ENABLED" in p
+        for p in demo_env_problems(env, demo_dir, db_port=DB_PORT)
     )
 
 
