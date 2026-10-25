@@ -80,3 +80,22 @@ def test_wait_for_http_accepts_a_client_error_but_not_a_server_error() -> None:
             instance._wait_for_http(url, timeout=1)
     finally:
         server.shutdown()
+
+
+def test_env_flag_accepts_known_spellings_and_rejects_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for value, expected in [
+        ("1", True),
+        ("TRUE", True),
+        ("yes", True),
+        ("", False),
+        ("0", False),
+    ]:
+        monkeypatch.setenv("DEMO_FLAG", value)
+        assert instance._env_flag("DEMO_FLAG") is expected
+    monkeypatch.delenv("DEMO_FLAG")
+    assert instance._env_flag("DEMO_FLAG") is False
+    monkeypatch.setenv("DEMO_FLAG", "on")
+    with pytest.raises(SystemExit):
+        instance._env_flag("DEMO_FLAG")
