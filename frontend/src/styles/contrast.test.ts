@@ -7,12 +7,42 @@ import { expect, test } from 'vitest'
 // edit that breaks a theme fails here instead of in an audit.
 const css = readFileSync(resolve(process.cwd(), 'src/styles/index.css'), 'utf8')
 
-function tokens(selector: string): Map<string, string> {
+type Rgba = [number, number, number, number]
+type Theme = Map<string, Rgba>
+
+// `#rrggbb` and `rgb(r g b / a)` are the two forms the token blocks use.
+function parseColor(value: string): Rgba | null {
+  const hex = /^#([0-9a-f]{6})$/i.exec(value)
+  if (hex?.[1]) {
+    const n = parseInt(hex[1], 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1]
+  }
+  const fn = /^rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*(?:\/\s*([\d.]+))?\s*\)$/.exec(value)
+  if (fn) return [Number(fn[1]), Number(fn[2]), Number(fn[3]), Number(fn[4] ?? 1)]
+  return null
+}
+
+function tokens(selector: string): Theme {
   const start = css.indexOf(selector)
   const body = css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
-  return new Map(
-    [...body.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1] ?? '', m[2] ?? '']),
-  )
+  const entries: [string, Rgba][] = []
+  for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) {
+    const color = parseColor((m[2] ?? '').trim())
+    if (color) entries.push([m[1] ?? '', color])
+  }
+  return new Map(entries)
+}
+
+function get(theme: Theme, name: string): Rgba {
+  const color = theme.get(name)
+  if (!color) throw new Error(`token --${name} not found`)
+  return color
+}
+
+/** `top` laid over the opaque `under`: what a `bg-warning/10` fill actually looks like. */
+function over(top: Rgba, under: Rgba, alpha = top[3]): Rgba {
+  const mix = (i: 0 | 1 | 2) => top[i] * alpha + under[i] * (1 - alpha)
+  return [mix(0), mix(1), mix(2), 1]
 }
 
 const themes = {
@@ -20,21 +50,16 @@ const themes = {
   light: tokens("[data-theme='light']"),
 }
 
-function luminance(hex: string) {
-  const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255
+function luminance([r, g, b]: Rgba) {
+  const [lr = 0, lg = 0, lb = 0] = [r, g, b].map((v) => {
+    const c = v / 255
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   })
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb
 }
 
-function ratio(theme: Map<string, string>, fg: string, bg: string) {
-  const [a, b] = [fg, bg].map((name) => {
-    const hex = theme.get(name)
-    if (!hex) throw new Error(`token --${name} not found`)
-    return luminance(hex)
-  })
-  const [hi = 0, lo = 0] = [a ?? 0, b ?? 0].sort((x, y) => y - x)
+function contrast(fg: Rgba, bg: Rgba) {
+  const [hi = 0, lo = 0] = [luminance(fg), luminance(bg)].sort((x, y) => y - x)
   return (hi + 0.05) / (lo + 0.05)
 }
 
@@ -58,20 +83,55 @@ const ON_FILL = [
   ['on-warning', 'warning'],
 ] as const
 
+const STATUS = ['accent', 'danger', 'warning', 'success', 'info']
+// The opacities the app puts a status colour at behind its own text (`bg-warning/10`, ...).
+const TINTS = [0.05, 0.08, 0.1, 0.12]
+
 for (const [name, theme] of Object.entries(themes)) {
+  const report = (rows: (readonly [string, string, number])[]) =>
+    rows.filter(([, , r]) => r < 4.5).map(([f, b, r]) => `${f} on ${b}: ${r.toFixed(2)}`)
+
   test(`${name}: text tokens meet 4.5:1 on every surface`, () => {
-    const failures = TEXT.flatMap((fg) =>
-      SURFACES.map((bg) => [fg, bg, ratio(theme, fg, bg)] as const)
-        .filter(([, , r]) => r < 4.5)
-        .map(([f, b, r]) => `${f} on ${b}: ${r.toFixed(2)}`),
+    const rows = TEXT.flatMap((fg) =>
+      SURFACES.map((bg) => [fg, bg, contrast(get(theme, fg), get(theme, bg))] as const),
     )
-    expect(failures).toEqual([])
+    expect(report(rows)).toEqual([])
   })
 
   test(`${name}: text on solid fills meets 4.5:1`, () => {
-    const failures = ON_FILL.map(([fg, bg]) => [fg, bg, ratio(theme, fg, bg)] as const)
-      .filter(([, , r]) => r < 4.5)
-      .map(([f, b, r]) => `${f} on ${b}: ${r.toFixed(2)}`)
-    expect(failures).toEqual([])
+    const rows = ON_FILL.map(
+      ([fg, bg]) => [fg, bg, contrast(get(theme, fg), get(theme, bg))] as const,
+    )
+    expect(report(rows)).toEqual([])
+  })
+
+  test(`${name}: a status colour on its own tint meets 4.5:1`, () => {
+    const rows = STATUS.flatMap((fg) =>
+      TINTS.flatMap((alpha) =>
+        SURFACES.map(
+          (surface) =>
+            [
+              fg,
+              `${fg}/${alpha * 100} over ${surface}`,
+              contrast(get(theme, fg), over(get(theme, fg), get(theme, surface), alpha)),
+            ] as const,
+        ),
+      ),
+    )
+    expect(report(rows)).toEqual([])
+  })
+
+  test(`${name}: highlight text meets 4.5:1 on its highlight`, () => {
+    const rows = (['mark', 'claim'] as const).flatMap((kind) =>
+      SURFACES.map(
+        (surface) =>
+          [
+            `${kind}-fg`,
+            `${kind}-bg over ${surface}`,
+            contrast(get(theme, `${kind}-fg`), over(get(theme, `${kind}-bg`), get(theme, surface))),
+          ] as const,
+      ),
+    )
+    expect(report(rows)).toEqual([])
   })
 }

@@ -46,7 +46,7 @@ Checked and left alone. A fix here would be a regression.
 | 3 | P1 | Danger button: white text on `#f87171` in dark is 2.77:1; "Create & assign" is white on the teal accent (1.4:1 in dark) | axe; token calculation | `ui/Button.tsx`, `features/triage/CasePicker.tsx` | New `--on-danger`; both buttons use the theme's on-colour (`text-on-danger`, `text-on-accent`) |
 | 4 | P1 | Rail count badge: `#3b2a00` on the warning fill is 3.47:1 at 9px; and would worsen with a darker light warning | axe: 48 nodes | `shell/RailButton.tsx` | New `--on-warning` token (dark text on the dark theme's amber, white on the light theme's brown) |
 | 5 | P1 | Link in running text distinguished by colour only (2.03:1 against the surrounding text) | axe `link-in-text-block` | `features/admin/AdminAgentAccessPage.tsx` | The link is underlined |
-| 6 | P2 | Ligature icons shrink to a speck in tight flex rows on phone: the Appearance nav item has no icon, KPI tile icons on Home render as stray dots, the Identity icon is tiny | Phone screenshots `settings-*`, `home` | `.icon` utility in `styles/index.css` | `flex-shrink: 0` on `.icon`; verified in a phone capture |
+| 6 | P2 | Ligature icons shrink to a speck in tight flex rows on phone: the Appearance nav item is rendered without a visible icon (its glyph is collapsed to zero width), KPI tile icons on Home render as stray dots, the Identity icon is tiny | Phone screenshots `settings-*`, `home` | `.icon` utility in `styles/index.css` | `flex-shrink: 0` on `.icon`; verified in a phone capture |
 | 7 | P2 | Rail badge counts are not in the accessible names | axe `label-content-name-mismatch`: 112 pages | `shell/RailButton.tsx` | Deferred: [#451](https://github.com/s3ntin3l8/sanctuary/issues/451) |
 | 8 | P2 | Triage rows and graph relay nodes nest focusable controls in `role=button` | axe `nested-interactive`: 48 nodes | `features/triage/BundleTree.tsx`, `GraphTab.tsx` | Deferred: [#452](https://github.com/s3ntin3l8/sanctuary/issues/452) |
 | 9 | P2 | Second `<main>` on case pages and the 404 page; `/search` has no h1 | axe landmark rules: 16 pages; `page-has-heading-one` | `CasePage.tsx`, `NotFoundPage.tsx`, `SearchPage.tsx` | Deferred: [#453](https://github.com/s3ntin3l8/sanctuary/issues/453) |
@@ -60,7 +60,7 @@ Checked and left alone. A fix here would be a regression.
 
 ## Guardrails
 
-- **Token contrast test** (`frontend/src/styles/contrast.test.ts`, runs in `make frontend-test`): every text token must reach 4.5:1 on all six surfaces, and `on-accent`/`on-danger`/`on-warning` on their fills, in both themes. Checked that it fails on the old `--warning` value.
+- **Token contrast test** (`frontend/src/styles/contrast.test.ts`, runs in `make frontend-test`): every text token must reach 4.5:1 on all six surfaces, and `on-accent`/`on-danger`/`on-warning` on their fills, in both themes. It also checks status colours on their own alpha tints (`bg-warning/10` and similar) and the highlight text tokens. Checked that it fails on the old `--warning` value.
 - **axe in the capture config** (`"axe": true` in `docs/audit/capture.json`): a re-audit reports the same rules; the before/after of this audit is `color-contrast` 83 → 0 nodes, `link-in-text-block` 4 → 0.
 - Not yet automated, tracked in [#459](https://github.com/s3ntin3l8/sanctuary/issues/459): an axe smoke test in CI over rendered pages, and an axe pass for the auth screens.
 
@@ -91,5 +91,6 @@ The first command writes 112 screenshots and `axe.json` into `docs/audit/assets/
 | Phone: case page header and graph | P2 | [#455](https://github.com/s3ntin3l8/sanctuary/issues/455) |
 | Phone: settings nav, admin form, data tiles | P2 | [#456](https://github.com/s3ntin3l8/sanctuary/issues/456) |
 | Phone: Home KPI grid and "Needs you" rows | P3 | [#457](https://github.com/s3ntin3l8/sanctuary/issues/457) |
+| Light `--muted2` is now close to `--muted`: decide the tertiary text step | P3 | [#461](https://github.com/s3ntin3l8/sanctuary/issues/461) |
 | `prefers-reduced-motion` | P3 | [#458](https://github.com/s3ntin3l8/sanctuary/issues/458) |
 | axe smoke test in CI; axe for the auth pass | P3 | [#459](https://github.com/s3ntin3l8/sanctuary/issues/459) |
