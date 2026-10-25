@@ -134,4 +134,11 @@ for (const [name, theme] of Object.entries(themes)) {
     )
     expect(report(rows)).toEqual([])
   })
+
+  // AA pushed `muted2` up to ~4.7:1; without a gap above it the two steps read as one.
+  test(`${name}: muted stays a visible step above muted2`, () => {
+    const worst = (fg: string) =>
+      Math.min(...SURFACES.map((bg) => contrast(get(theme, fg), get(theme, bg))))
+    expect(worst('muted') / worst('muted2')).toBeGreaterThanOrEqual(1.3)
+  })
 }
