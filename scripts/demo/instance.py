@@ -310,7 +310,7 @@ def main() -> None:
     parser.add_argument(
         "--auth",
         action="store_true",
-        default=os.environ.get("DEMO_AUTH") == "1",
+        default=os.environ.get("DEMO_AUTH", "").lower() in ("1", "true", "yes"),
         help="login screen on (also DEMO_AUTH=1), to capture /login and /signup",
     )
     args = parser.parse_args()

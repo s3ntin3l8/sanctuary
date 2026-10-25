@@ -35,7 +35,9 @@ evidence is local. Structure, naming and rules: the `audit` skill
     They are stable only because the demo database is fresh every run; reseed order matters.
   - Auth pass: `/login` and `/signup` need the login screen on. Run a second pass with
     `node <path to ai-agent-skills>/plugins/audit/skills/audit/scripts/capture.mjs <slug> --config docs/audit/capture.auth.json`
-    (it starts `DEMO_AUTH=1 make demo`; same `assets/<slug>/` folder, different file names).
+    (it starts `DEMO_AUTH=1 make demo`; same `assets/<slug>/` folder, different file names). These are the
+    seeded screens (the seed always creates `admin@localhost`, so the app is not in first-run state):
+    the first-run create-admin pair is not covered.
   - Not captured: the slice views (`/ingest/slice/:batchId`, `/document/:docId/slice`; the
     seed has no files on disk, [#445](https://github.com/s3ntin3l8/sanctuary/issues/445)), `/oauth/authorize`,
     and anything that needs clicking through (dialogs, modals).

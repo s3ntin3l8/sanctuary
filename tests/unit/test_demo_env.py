@@ -159,7 +159,8 @@ def test_the_auth_pass_needs_auth_on_and_the_plain_pass_needs_it_off(
 def test_the_auth_pass_still_refuses_a_caller_credential(demo_dir: Path) -> None:
     credential = {"BOOTSTRAP_ADMIN_PASSWORD": "real"}  # pragma: allowlist secret
     env = _clean_env(demo_dir, AUTH_ENABLED="true", **credential)
-    assert demo_env_problems(env, demo_dir, db_port=DB_PORT, auth=True)
+    problems = demo_env_problems(env, demo_dir, db_port=DB_PORT, auth=True)
+    assert any("BOOTSTRAP_ADMIN_PASSWORD" in p for p in problems)
 
 
 def test_signup_is_refused_outside_the_auth_pass(demo_dir: Path) -> None:
