@@ -3204,6 +3204,153 @@ db.commit()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Slice views — a scanned packet awaiting cuts (/ingest/slice/:batchId) and a PDF
+# attachment already filed as one document (/document/:docId/slice). Both views
+# read meta.slicing from the database and page images from DATA_DIR, so the seed
+# writes small real PDFs (pdfium renders them) and their thumbnails.
+# ═══════════════════════════════════════════════════════════════════════════
+import hashlib
+from uuid import uuid4
+
+import pypdfium2 as pdfium
+
+from app.config import DATA_DIR
+from app.core.paths import to_storage_path
+
+
+def _write_pdf(path, pages):
+    """A minimal PDF, one Helvetica text block per page (no PDF library needed)."""
+
+    def esc(line):
+        return line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    # Latin-1 covers the umlauts; anything else is not in the seed texts.
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b""]
+    kids = []
+    for i, lines in enumerate(pages):
+        page_no, content_no = 4 + 2 * i, 5 + 2 * i
+        kids.append(f"{page_no} 0 R")
+        text = (
+            "BT /F1 13 Tf 72 760 Td 18 TL "
+            + " T* ".join(f"({esc(line)}) Tj" for line in lines)
+            + " ET"
+        )
+        body = text.encode("latin-1")
+        objs.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_no} 0 R >>".encode()
+        )
+        objs.append(b"<< /Length %d >>\nstream\n" % len(body) + body + b"\nendstream")
+    objs[1] = (
+        f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>".encode()
+    )
+    objs.insert(2, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for n, obj in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += f"{n} 0 obj\n".encode() + obj + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(out))
+
+
+def _slicing_blob(pdf_path, thumbs_dir, pages, cuts):
+    """meta.slicing as the slicer leaves it when ready: per-page text and
+    thumbnails (120 DPI, long edge 400) plus the proposed cuts."""
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+    pdf = pdfium.PdfDocument(str(pdf_path))
+    entries = []
+    for i, lines in enumerate(pages):
+        image = pdf[i].render(scale=120 / 72).to_pil()
+        image.thumbnail((400, 400))
+        thumb = thumbs_dir / f"page_{i + 1}.png"
+        image.save(thumb)
+        entries.append(
+            {
+                "text_head": " ".join(lines)[:400],
+                "text_tail": " ".join(lines)[-400:],
+                "blank": False,
+                "court_letterhead": lines[0].startswith("Amtsgericht"),
+                "relay_cue": None,
+                "salutation": None,
+                "thumbnail_path": str(thumb.resolve()),
+            }
+        )
+    return {
+        "status": "ready",
+        "page_count": len(pages),
+        "pages": entries,
+        "proposed_cuts": cuts,
+    }
+
+
+_PACKET_PAGES = [
+    ["Kanzlei Voss Rechtsanwälte", "Hamburg, 12.10.2026", "", "An das Amtsgericht Hamburg", "Az. 003 F 426/25", "", "Ergänzender Schriftsatz zur Leistungsfähigkeit"],
+    ["Seite 2", "", "Die Beklagte legt ergänzend die Gehaltsabrechnungen", "für Januar bis Oktober 2025 vor.", "", "Mit freundlichen Grüßen", "Dr. Voss"],
+    ["Amtsgericht Hamburg", "Familiengericht", "Az. 003 F 426/25", "", "Verfügung vom 14.10.2026", "", "Der Schriftsatz wird zur Kenntnisnahme übersandt."],
+    ["Anlage K 7", "", "Gehaltsabrechnung Oktober 2025", "Nettolohn: 2.640,00 EUR"],
+]  # fmt: skip
+_PACKET_CUTS = [
+    {"page": 3, "confidence": "high", "kind": "letter", "notes": "Neuer Briefkopf: Amtsgericht Hamburg."},
+    {"page": 4, "confidence": "medium", "kind": "attachment", "notes": "Beginnt mit „Anlage K 7“."},
+]  # fmt: skip
+
+# 1. An uploaded scan: a batch awaiting its cuts (no documents exist yet).
+_scan_dir = DATA_DIR / "scans" / "processing" / uuid4().hex
+_scan_pdf = _scan_dir / "original.pdf"
+_write_pdf(_scan_pdf, _PACKET_PAGES)
+db.add(
+    IngestBatch(
+        source_type=IngestBatchSourceType.SCAN,
+        subject="[SEED] Eingang Scan — Sammelpost (4 Seiten, zu zerlegen)",
+        status=IngestBatchStatus.AWAITING_SLICING,
+        owner_id=_admin.id,
+        raw_source_path=to_storage_path(_scan_pdf),
+        source_hash=hashlib.sha256(_scan_pdf.read_bytes()).hexdigest(),
+        received_at=now - timedelta(hours=3),
+        meta={
+            "slicing": _slicing_blob(
+                _scan_pdf, _scan_dir / "thumbs", _PACKET_PAGES, _PACKET_CUTS
+            )
+        },
+    )
+)
+
+# 2. A PDF that arrived as one attachment and is filed as one document.
+_konvolut_pdf = DATA_DIR / "ADV-024-A" / "seed-anlagenkonvolut" / "anlagenkonvolut.pdf"
+_write_pdf(_konvolut_pdf, _PACKET_PAGES)
+p8_konvolut = _p8_doc(
+    title="Anlagenkonvolut Beklagte (4 Seiten)",
+    document_type=DocumentType.ANNEX,
+    originator_type=OriginatorType.OPPOSING,
+    attributed_originator=None,
+    sender="gegenseite@kanzlei-opposition.de",
+    received_date=datetime(2026, 10, 14),
+    ingest_date=datetime(2026, 10, 14),
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    ai_summary=[
+        {"kind": "legal", "text": "Konvolut aus Schriftsatz, Verfügung und Anlage K 7."}
+    ],
+    file_path=to_storage_path(_konvolut_pdf),
+    original_filename="anlagenkonvolut.pdf",
+    page_count=len(_PACKET_PAGES),
+    meta={
+        "slicing": _slicing_blob(
+            _konvolut_pdf,
+            _konvolut_pdf.parent / "anlagenkonvolut_thumbs",
+            _PACKET_PAGES,
+            _PACKET_CUTS,
+        )
+    },
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Costs, contacts, briefing, chat and pins — the pages beyond triage/graph.
 # Fictional people and addresses (example.com); dates relative to now.
 # ═══════════════════════════════════════════════════════════════════════════

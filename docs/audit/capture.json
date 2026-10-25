@@ -17,6 +17,8 @@
     "/document/30",
     "/document/36",
     "/document/47",
+    "/document/68/slice",
+    "/ingest/slice/11",
     "/settings/account",
     "/settings/agent-access",
     "/settings/appearance",
@@ -33,7 +35,13 @@
     "/nope"
   ],
   "viewports": {
-    "phone": { "width": 390, "height": 844 },
-    "tablet": { "width": 820, "height": 1180 }
+    "phone": {
+      "width": 390,
+      "height": 844
+    },
+    "tablet": {
+      "width": 820,
+      "height": 1180
+    }
   }
 }
