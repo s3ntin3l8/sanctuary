@@ -280,6 +280,15 @@ def test_appearance_save_theme(db_session):
     )
 
 
+def test_appearance_theme_defaults_to_system_and_reaches_the_shell(db_session):
+    assert client.get("/api/v1/settings/appearance").json()["theme"] == "system"
+    assert client.get("/api/v1/shell").json()["theme"] == "system"
+    for choice in ("light", "dark", "system"):
+        saved = client.put("/api/v1/settings/appearance/theme", json={"theme": choice})
+        assert saved.json()["theme"] == choice
+        assert client.get("/api/v1/shell").json()["theme"] == choice
+
+
 def test_appearance_save_dashboard_cards(db_session):
     response = client.put(
         "/api/v1/settings/appearance/dashboard-cards",

@@ -3543,7 +3543,7 @@ export interface components {
              * Theme
              * @enum {string}
              */
-            theme: "dark" | "light";
+            theme: "system" | "dark" | "light";
             /** Timezone */
             timezone: string;
             /** Timezone Choices */
@@ -6354,6 +6354,11 @@ export interface components {
          * @description Everything the persistent app shell (rail, profile menu) renders.
          */
         ShellView: {
+            /**
+             * Theme
+             * @enum {string}
+             */
+            theme: "system" | "dark" | "light";
             /** Timezone */
             timezone: string;
             /** Triage Count */
@@ -6559,7 +6564,7 @@ export interface components {
              * Theme
              * @enum {string}
              */
-            theme: "dark" | "light";
+            theme: "system" | "dark" | "light";
         };
         /** TimelineEventView */
         TimelineEventView: {

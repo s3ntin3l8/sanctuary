@@ -5,7 +5,7 @@ import { useShell, useWorkerQueue } from '../api/shell'
 import { setDisplayTimeZone, useDisplayTimeZone } from '../time'
 import { Button } from '../ui/Button'
 import { useToast } from '../ui/toast'
-import { currentTheme, toggleTheme } from '../theme'
+import { setThemePref, useThemeControl } from '../theme'
 import { CommandPalette } from './CommandPalette'
 import { NotificationsPanel } from './NotificationsPanel'
 import { ProcessingQueue } from './ProcessingQueue'
@@ -24,8 +24,14 @@ export function Shell() {
     if (zone) setDisplayTimeZone(zone)
   }, [zone])
   const appliedZone = useDisplayTimeZone()
+  // The saved choice follows the user to this browser; a change made here is written
+  // to the shell cache too, so this only runs when the server's copy really moved.
+  const savedTheme = shell?.theme
+  useEffect(() => {
+    if (savedTheme) setThemePref(savedTheme)
+  }, [savedTheme])
   const [palette, setPalette] = useState(false)
-  const [theme, setThemeState] = useState(currentTheme)
+  const { theme, toggle: toggleTheme } = useThemeControl()
   const toast = useToast()
   const run = useWorkerQueue().data?.gmail_import
   // Started-at of the run last seen live, so its end is announced exactly once —
@@ -55,7 +61,7 @@ export function Shell() {
         setPalette((v) => !v)
       } else if (meta && event.key.toLowerCase() === 'd') {
         event.preventDefault()
-        setThemeState(toggleTheme())
+        toggleTheme()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -65,7 +71,7 @@ export function Shell() {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('open-command-palette', openPalette)
     }
-  }, [palette])
+  }, [palette, toggleTheme])
 
   return (
     <div className="flex h-dvh overflow-hidden">
@@ -92,7 +98,7 @@ export function Shell() {
         <RailButton
           icon={theme === 'dark' ? 'light_mode' : 'dark_mode'}
           label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          onClick={() => setThemeState(toggleTheme())}
+          onClick={() => toggleTheme()}
         />
         <RailButton icon="search" label="Search (⌘K)" onClick={() => setPalette(true)} />
         <NotificationsPanel />

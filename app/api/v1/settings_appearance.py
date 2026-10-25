@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -22,6 +20,7 @@ from app.services.user_settings_service import (
     _user_settings,
     set_dashboard_cards,
     set_theme,
+    theme_of,
 )
 
 router = APIRouter(prefix="/settings/appearance", tags=["settings"])
@@ -30,13 +29,10 @@ router = APIRouter(prefix="/settings/appearance", tags=["settings"])
 def _view(db: Session, user: User) -> AppearanceView:
     row = _user_settings(db, user.id)
     mine = (row.settings_json or {}) if row else {}
-    theme: Literal["dark", "light"] = (
-        "light" if mine.get("theme") == "light" else "dark"
-    )
     zone = timezone_service.get_user_tz().key
     choices = timezone_service.get_timezone_choices()
     return AppearanceView(
-        theme=theme,
+        theme=theme_of(row.settings_json if row else None),
         dashboard_cards=DashboardCards(**(mine.get("dashboard_cards") or {})),
         timezone=zone,
         # The effective zone may come from TIMEZONE or any IANA name an admin saved;

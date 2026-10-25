@@ -30,6 +30,10 @@ evidence is local. Structure, naming and rules: the `audit` skill
   `make demo KEEP=1` keeps the scratch directory. The guard is `scripts/demo/env.py`.
   Ports are overridable with `DEMO_PORT` / `DEMO_DB_PORT` (keep `baseUrl` in step).
 
+- **Themes:** both are captured (`colorSchemes`: file names end in `.dark` / `.light`). The
+  app's theme is System by default (Settings → Appearance), so the emulated OS setting picks it;
+  a saved Dark/Light choice would win, and the demo browser has none.
+
 - **Capture limits:**
   - `/document/<id>` uses numeric ids (30 Klage, 36 Klageerwiderung, 47 Einkommensgutachten, 68 Anlagenkonvolut for
     `/document/68/slice`) and `/ingest/slice/11` the scan batch awaiting cuts (both PDFs are written by

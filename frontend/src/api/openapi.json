@@ -975,6 +975,7 @@
           },
           "theme": {
             "enum": [
+              "system",
               "dark",
               "light"
             ],
@@ -10121,6 +10122,15 @@
       "ShellView": {
         "description": "Everything the persistent app shell (rail, profile menu) renders.",
         "properties": {
+          "theme": {
+            "enum": [
+              "system",
+              "dark",
+              "light"
+            ],
+            "title": "Theme",
+            "type": "string"
+          },
           "timezone": {
             "title": "Timezone",
             "type": "string"
@@ -10136,7 +10146,8 @@
         "required": [
           "user",
           "triage_count",
-          "timezone"
+          "timezone",
+          "theme"
         ],
         "title": "ShellView",
         "type": "object"
@@ -10790,6 +10801,7 @@
         "properties": {
           "theme": {
             "enum": [
+              "system",
               "dark",
               "light"
             ],
