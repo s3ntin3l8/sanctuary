@@ -35,13 +35,7 @@
     "/nope"
   ],
   "viewports": {
-    "phone": {
-      "width": 390,
-      "height": 844
-    },
-    "tablet": {
-      "width": 820,
-      "height": 1180
-    }
+    "phone": { "width": 390, "height": 844 },
+    "tablet": { "width": 820, "height": 1180 }
   }
 }

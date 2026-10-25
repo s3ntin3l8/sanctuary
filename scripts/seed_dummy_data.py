@@ -3210,7 +3210,6 @@ db.commit()
 # writes small real PDFs (pdfium renders them) and their thumbnails.
 # ═══════════════════════════════════════════════════════════════════════════
 import hashlib
-from uuid import uuid4
 
 import pypdfium2 as pdfium
 
@@ -3225,6 +3224,8 @@ def _write_pdf(path, pages):
         return line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
     # Latin-1 covers the umlauts; anything else is not in the seed texts.
+    # Object numbers are load-bearing: 1 catalog, 2 pages (filled in below),
+    # 3 font (inserted below), then page i = 4 + 2i and its content = 5 + 2i.
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b""]
     kids = []
     for i, lines in enumerate(pages):
@@ -3295,12 +3296,15 @@ _PACKET_PAGES = [
     ["Anlage K 7", "", "Gehaltsabrechnung Oktober 2025", "Nettolohn: 2.640,00 EUR"],
 ]  # fmt: skip
 _PACKET_CUTS = [
+    {"page": 2, "confidence": "low", "kind": "letter", "notes": "Fortsetzung oder neuer Schriftsatz?"},
     {"page": 3, "confidence": "high", "kind": "letter", "notes": "Neuer Briefkopf: Amtsgericht Hamburg."},
     {"page": 4, "confidence": "medium", "kind": "attachment", "notes": "Beginnt mit „Anlage K 7“."},
 ]  # fmt: skip
 
 # 1. An uploaded scan: a batch awaiting its cuts (no documents exist yet).
-_scan_dir = DATA_DIR / "scans" / "processing" / uuid4().hex
+# Not scans/processing/: that is a staging dir the scan sweeper empties after ten
+# minutes, which would orphan the batch's files on a long-lived dev stack.
+_scan_dir = DATA_DIR / "scans" / "seed" / "packet"
 _scan_pdf = _scan_dir / "original.pdf"
 _write_pdf(_scan_pdf, _PACKET_PAGES)
 db.add(
