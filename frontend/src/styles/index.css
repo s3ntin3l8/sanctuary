@@ -2,7 +2,7 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Design tokens from the Sanctuary prototype (docs/design). Dark is the default. */
+/* Design tokens from the Sanctuary prototype (docs/design). The theme is System by default (src/theme.ts); both sets are AA-checked by contrast.test.ts. */
 :root,
 [data-theme='dark'] {
   --bg: #0b1326;
@@ -18,13 +18,15 @@
   --ink: #eef2ff;
   --ink2: #c3cee6;
   --muted: #95a3bd;
-  --muted2: #5f6d86;
+  --muted2: #7d8ca6;
   --tealink: #a9f4e8;
   --accent: #57f1db;
   --on-accent: #003731;
   --logo: #171f33;
   --danger: #f87171;
+  --on-danger: #450a0a;
   --warning: #fbbf24;
+  --on-warning: #3b2a00;
   --success: #34d399;
   --info: #38bdf8;
   --mark-bg: rgb(2 132 199 / 0.2);
@@ -50,14 +52,16 @@
   --ink: #1a2426;
   --ink2: #2a3437;
   --muted: #566164;
-  --muted2: #8a9599;
+  --muted2: #626d70;
   --tealink: #45636b;
   --accent: #45636b;
   --on-accent: #ecfaff;
   --logo: #e8eff1;
   --danger: #b91c1c;
-  --warning: #a1791a;
-  --success: #3f9b6e;
+  --on-danger: #ffffff;
+  --warning: #7a5800;
+  --on-warning: #ffffff;
+  --success: #216640;
   --info: #0369a1;
   --mark-bg: #e0f2fe;
   --mark-fg: #075985;
@@ -88,7 +92,9 @@
   --color-on-accent: var(--on-accent);
   --color-logo: var(--logo);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
   --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
   --color-success: var(--success);
   --color-info: var(--info);
 
@@ -131,6 +137,7 @@
   font-style: normal;
   line-height: 1;
   display: inline-flex;
+  flex-shrink: 0; /* a ligature icon squeezed to 0 width is just its clipped name */
   align-items: center;
   justify-content: center;
   width: 1em;

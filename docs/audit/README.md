@@ -51,3 +51,4 @@ evidence is local. Structure, naming and rules: the `audit` skill
 
 | Audit | Scope | Outcome |
 | ----- | ----- | ------- |
+| [2026-10-frontend-ui-ux](2026-10-frontend-ui-ux.md) | frontend | 5 P1 contrast fixes + icon fix; 9 issues deferred (#451–#459) |

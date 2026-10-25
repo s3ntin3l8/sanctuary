@@ -8,7 +8,7 @@ const base =
 const variants = {
   primary: 'border border-transparent bg-accent text-on-accent hover:opacity-90',
   secondary: 'border border-line bg-panel2 text-ink hover:border-accent',
-  danger: 'border border-transparent bg-danger text-white hover:opacity-90',
+  danger: 'border border-transparent bg-danger text-on-danger hover:opacity-90',
   'danger-outline': 'border border-danger/40 bg-panel2 text-danger hover:border-danger',
 }
 

@@ -4,6 +4,7 @@
   "readyOutput": "DEMO_READY",
   "startTimeoutSec": 300,
   "nodeDir": "frontend",
+  "axe": true,
   "colorSchemes": ["dark", "light"],
   "routes": [
     "/",

@@ -63,7 +63,7 @@ export function RailButton({ icon, label, to, legacy, active, onClick, badge }: 
 
 export function CountBadge({ count, tone }: { count: number; tone: 'danger' | 'warning' }) {
   if (count <= 0) return null
-  const colors = tone === 'danger' ? 'bg-[#ffb4ab] text-[#690005]' : 'bg-warning text-[#3b2a00]'
+  const colors = tone === 'danger' ? 'bg-[#ffb4ab] text-[#690005]' : 'bg-warning text-on-warning'
   return (
     <span
       className={`absolute -top-0.5 -right-0.5 min-w-4 rounded-full px-1 text-center font-mono text-[9px] font-bold leading-4 ${colors}`}
