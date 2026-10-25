@@ -1480,7 +1480,7 @@ class UserSettings(Base):
     settings_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         default=lambda: {
-            "theme": "dark",
+            "theme": "system",
             "dashboard_cards": {
                 "action_items": True,
                 "costs": True,

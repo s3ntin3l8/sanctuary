@@ -5,7 +5,7 @@ import { useSearch } from '../api/shell'
 import { Button } from '../ui/Button'
 import { useOverlay } from '../ui/useOverlay'
 import { leaveTo } from '../navigation'
-import { toggleTheme } from '../theme'
+import { useThemeControl } from '../theme'
 import { Icon } from '../ui/Icon'
 
 type Item = { key: string; icon: string; title: string; sub?: string; run: () => void }
@@ -29,6 +29,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
   const list = useRef<HTMLDivElement>(null)
   useOverlay(true, panel, onClose)
   const results = useSearch(debounced)
+  const { toggle: toggleTheme } = useThemeControl()
   const term = query.trim()
   const waiting = term !== debounced
 
@@ -119,7 +120,16 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
         })),
       },
     ].filter((g) => g.items.length > 0)
-  }, [term, waiting, results.data, results.isPlaceholderData, results.error, go, onClose])
+  }, [
+    term,
+    waiting,
+    results.data,
+    results.isPlaceholderData,
+    results.error,
+    go,
+    onClose,
+    toggleTheme,
+  ])
 
   const flat = groups.flatMap((g) => g.items)
   const activeIndex = Math.max(0, Math.min(cursor, flat.length - 1))

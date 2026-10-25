@@ -1,17 +1,18 @@
 import { useShell } from '../../api/shell'
-import {
-  useAppearance,
-  useSaveDashboardCards,
-  useSaveTheme,
-  useSaveTimezone,
-} from '../../api/settings'
-import { setTheme } from '../../theme'
+import { useAppearance, useSaveDashboardCards, useSaveTimezone } from '../../api/settings'
+import { useThemeControl } from '../../theme'
 import { Button } from '../../ui/Button'
 import { Field } from '../../ui/Field'
 import { Icon } from '../../ui/Icon'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
+
+const THEMES = [
+  ['system', 'System', 'contrast'],
+  ['dark', 'Dark', 'dark_mode'],
+  ['light', 'Light', 'light_mode'],
+] as const
 
 const CARDS = [
   ['action_items', 'Action items & deadlines'],
@@ -23,7 +24,7 @@ export function AppearancePage() {
   const viewQuery = useAppearance()
   const view = viewQuery.data
   const isAdmin = useShell().data?.user.role === 'admin'
-  const saveTheme = useSaveTheme()
+  const { pref, theme, choose } = useThemeControl()
   const saveCards = useSaveDashboardCards()
   const saveTz = useSaveTimezone()
   const toast = useToast()
@@ -33,21 +34,20 @@ export function AppearancePage() {
     <>
       <SettingsCard title="Theme">
         <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((t) => (
+          {THEMES.map(([t, label, icon]) => (
             <Button
               key={t}
-              variant={view.theme === t ? 'primary' : 'secondary'}
-              aria-pressed={view.theme === t}
-              onClick={() => {
-                setTheme(t)
-                saveTheme.mutate({ theme: t }, { onError: (err) => toast(err.message, 'error') })
-              }}
+              variant={pref === t ? 'primary' : 'secondary'}
+              aria-pressed={pref === t}
+              onClick={() => choose(t)}
             >
-              <Icon name={t === 'dark' ? 'dark_mode' : 'light_mode'} size={16} />{' '}
-              {t[0]?.toUpperCase() + t.slice(1)}
+              <Icon name={icon} size={16} /> {label}
             </Button>
           ))}
         </div>
+        {pref === 'system' && (
+          <p className="text-[12px] text-muted">Following your system: currently {theme}.</p>
+        )}
       </SettingsCard>
       <SettingsCard title="Dashboard panels" description="Panels shown on the case dashboard.">
         {CARDS.map(([key, label]) => (

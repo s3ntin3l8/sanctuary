@@ -299,14 +299,14 @@ class DashboardCards(BaseModel):
 
 
 class AppearanceView(BaseModel):
-    theme: Literal["dark", "light"]
+    theme: Literal["system", "dark", "light"]
     dashboard_cards: DashboardCards
     timezone: str
     timezone_choices: list[str]
 
 
 class ThemeUpdate(BaseModel):
-    theme: Literal["dark", "light"]
+    theme: Literal["system", "dark", "light"]
 
 
 class TimezoneUpdate(BaseModel):

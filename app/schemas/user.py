@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from app.models.enums import UserRole
@@ -20,3 +22,4 @@ class ShellView(BaseModel):
     user: CurrentUser
     triage_count: int
     timezone: str
+    theme: Literal["system", "dark", "light"]

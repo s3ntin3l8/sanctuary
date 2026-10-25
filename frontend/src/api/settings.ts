@@ -285,10 +285,19 @@ export const useAppearance = () =>
   useSettingsQuery<S['AppearanceView']>('appearance', () =>
     unwrap(api.GET('/api/v1/settings/appearance')),
   )
-export const useSaveTheme = () =>
-  useReplace<S['AppearanceView'], S['ThemeUpdate']>('appearance', (body) =>
-    unwrap(api.PUT('/api/v1/settings/appearance/theme', { body })),
-  )
+/** The shell carries the theme too (it applies it on load), so keep its copy in step. */
+export function useSaveTheme() {
+  const queryClient = useQueryClient()
+  return useMutation<S['AppearanceView'], ApiError, S['ThemeUpdate']>({
+    mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/appearance/theme', { body })),
+    onSuccess: (view) => {
+      queryClient.setQueryData(['settings', 'appearance'], view)
+      queryClient.setQueryData<S['ShellView']>(['shell'], (shell) =>
+        shell ? { ...shell, theme: view.theme } : shell,
+      )
+    },
+  })
+}
 export const useSaveDashboardCards = () =>
   useReplace<S['AppearanceView'], S['DashboardCards']>('appearance', (body) =>
     unwrap(api.PUT('/api/v1/settings/appearance/dashboard-cards', { body })),

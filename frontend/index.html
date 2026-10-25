@@ -6,10 +6,15 @@
     <title>The Sanctuary</title>
     <link rel="icon" href="/favicon.ico" />
     <script>
-      // Apply the saved theme before first paint. Same storage key as the
-      // not-yet-migrated pages, so both halves of the app agree.
+      // Apply the theme before first paint: the saved choice, else the OS
+      // setting (see src/theme.ts, which owns the same key and rule).
+      var saved = localStorage.getItem('site-theme')
       document.documentElement.dataset.theme =
-        localStorage.getItem('site-theme') === 'light' ? 'light' : 'dark'
+        saved === 'light' || saved === 'dark'
+          ? saved
+          : window.matchMedia('(prefers-color-scheme: light)').matches
+            ? 'light'
+            : 'dark'
     </script>
   </head>
   <body>

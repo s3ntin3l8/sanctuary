@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import Literal
 
 from sqlalchemy.exc import OperationalError
 
@@ -42,6 +43,15 @@ def _get_or_create_user(db, user_id: int) -> UserSettings:
 
 def _user_settings(db, user_id: int) -> UserSettings | None:
     return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+
+
+def get_theme(db, user_id: int) -> Literal["system", "dark", "light"]:
+    """The user's theme choice: ``dark``, ``light`` or ``system`` (follow the OS)."""
+    row = _user_settings(db, user_id)
+    saved = ((row.settings_json or {}) if row else {}).get("theme")
+    if saved == "dark" or saved == "light":
+        return saved
+    return "system"
 
 
 def get_last_viewed(case_id: str, db, user_id: int | None) -> datetime | None:
