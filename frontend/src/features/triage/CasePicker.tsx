@@ -70,7 +70,7 @@ export function CasePicker({
           </button>
           <button
             type="submit"
-            className="ml-auto rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-white"
+            className="ml-auto rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-on-accent"
           >
             Create & assign
           </button>

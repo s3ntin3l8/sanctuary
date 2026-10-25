@@ -63,7 +63,7 @@ export function AdminAgentAccessPage() {
       >
         <p className="mb-3 text-[12px] text-muted">
           Create your own token under{' '}
-          <Link to="/settings/agent-access" className="text-tealink hover:underline">
+          <Link to="/settings/agent-access" className="text-tealink underline">
             Settings → Agent access
           </Link>
           .
