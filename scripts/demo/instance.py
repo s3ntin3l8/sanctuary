@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import uuid
 from dataclasses import dataclass, field
@@ -68,6 +69,10 @@ def _wait_for_http(url: str, timeout: float = 90.0) -> None:
             with urllib.request.urlopen(url, timeout=2) as res:  # noqa: S310 - loopback URL we built
                 if res.status < 500:
                     return
+        except urllib.error.HTTPError as e:  # urlopen raises for every 4xx/5xx
+            if e.code < 500:
+                return
+            last = e
         except OSError as e:  # URLError, ConnectionError and slow-accept TimeoutError
             last = e
         time.sleep(0.5)

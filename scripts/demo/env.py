@@ -47,6 +47,9 @@ PATH_KEY = re.compile(r"(_DIR|_PATH|_HOME|_DIST)$")
 # Path-ish keys that legitimately point outside the scratch dir: the built SPA
 # (read-only) and the Playwright browser cache.
 PATH_ALLOW = frozenset({"FRONTEND_DIST", "PLAYWRIGHT_BROWSERS_PATH"})
+# Where Python looks for `app`: the seed runs as a script, so PYTHONPATH alone
+# decides whether it imports the scratch copy or the live repo (and its .env).
+PYTHON_PATH_KEYS = ("PYTHONPATH", "PYTHONHOME")
 MUST_BE_INSIDE = ("HOME", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
 # Integrations the demo leaves unconfigured.
 FORBIDDEN_PREFIXES = ("POSTGRES_", "GMAIL_", "OIDC_", "BOOTSTRAP_ADMIN_", "MCP_")
@@ -127,6 +130,13 @@ def demo_env_problems(
             and not _inside(demo_dir, value)
         ):
             problems.append(f"{key}={value} is outside the demo dir")
+    for key in PYTHON_PATH_KEYS:
+        if key in env and not all(
+            _inside(demo_dir, part) for part in env[key].split(os.pathsep)
+        ):
+            problems.append(f"{key}={env[key]} must point inside the demo dir")
+    if "PYTHONPATH" not in env:
+        problems.append("PYTHONPATH must put the scratch tree on sys.path")
     for key in MUST_BE_INSIDE:
         if key not in env or not _inside(demo_dir, env[key]):
             problems.append(f"{key} must be set inside the demo dir")
@@ -175,9 +185,13 @@ def assert_ports_free(
             )
         for host in hosts:
             family = socket.AF_INET6 if ":" in host else socket.AF_INET
-            with socket.socket(family, socket.SOCK_STREAM) as s:
-                s.settimeout(0.5)
-                if s.connect_ex((host, int(port))) == 0:
+            try:
+                sock = socket.socket(family, socket.SOCK_STREAM)
+            except OSError:  # no IPv6 on this host: nothing can listen there
+                continue
+            with sock:
+                sock.settimeout(0.5)
+                if sock.connect_ex((host, int(port))) == 0:
                     raise RuntimeError(
                         f"port {port} is already in use on {host}; refusing to start the demo"
                     )

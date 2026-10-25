@@ -3219,8 +3219,7 @@ _seed_batch_ids = db.query(IngestBatch.id).filter(
 db.query(Document).filter(
     Document.owner_id.is_(None),
     (Document.case_id.in_(SEED_CASE_IDS))
-    | (Document.ingest_batch_id.in_(_seed_batch_ids))
-    | (Document.ingest_batch_id.is_(None)),
+    | (Document.ingest_batch_id.in_(_seed_batch_ids)),
 ).update({"owner_id": _admin.id}, synchronize_session=False)
 db.query(IngestBatch).filter(IngestBatch.id.in_(_seed_batch_ids)).update(
     {"owner_id": _admin.id}, synchronize_session=False

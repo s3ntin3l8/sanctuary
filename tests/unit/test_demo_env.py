@@ -41,6 +41,7 @@ def _clean_env(demo_dir: Path, **overrides: str) -> dict[str, str]:
         "REDIS_URL": UNREACHABLE_REDIS,
         "RATE_LIMIT_STORAGE_URI": "memory://",
         "AI_BASE_URL": UNREACHABLE_AI,
+        "PYTHONPATH": str(demo_dir / "tree"),
         "FRONTEND_DIST": "/repo/frontend/dist",
         **overrides,
     }
@@ -109,6 +110,8 @@ def test_an_unset_database_url_is_refused(demo_dir: Path) -> None:
         {"OIDC_ISSUER": "https://idp.example.com"},
         {"BOOTSTRAP_ADMIN_PASSWORD": "real"},  # pragma: allowlist secret
         {"SOMETHING_DIR": "/home/me/data"},
+        {"PYTHONPATH": "/home/me/sanctuary"},
+        {"PYTHONHOME": "/usr"},
     ],
 )
 def test_assert_demo_env_refuses_a_poisoned_env(
@@ -132,6 +135,30 @@ def test_assert_demo_env_refuses_a_cwd_with_a_dotenv(
     assert any(
         ".env" in p for p in demo_env_problems(env, demo_dir, cwd=cwd, db_port=DB_PORT)
     )
+
+
+def test_a_missing_pythonpath_is_refused(demo_dir: Path) -> None:
+    env = _clean_env(demo_dir)
+    del env["PYTHONPATH"]
+    assert any(
+        "PYTHONPATH" in p for p in demo_env_problems(env, demo_dir, db_port=DB_PORT)
+    )
+
+
+def test_assert_ports_free_skips_a_host_without_ipv6(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real = socket.socket
+
+    def no_v6(
+        family: int = socket.AF_INET, *args: object, **kwargs: object
+    ) -> socket.socket:
+        if family == socket.AF_INET6:
+            raise OSError("address family not supported")
+        return real(family, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(socket, "socket", no_v6)
+    assert_ports_free([39999])
 
 
 def test_assert_ports_free_rejects_a_listening_port() -> None:
