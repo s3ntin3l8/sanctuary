@@ -115,9 +115,20 @@ def demo_env_problems(
     cwd: Path | None = None,
     *,
     db_port: int | None = None,
+    auth: bool = False,
 ) -> list[str]:
-    """Everything that would let the demo reach outside `demo_dir`."""
+    """Everything that would let the demo reach outside `demo_dir`.
+
+    `auth` is the DEMO_AUTH=1 pass (login screen on, for /login and /signup): the
+    seed's own admin signs in, so no credential ever comes from the caller.
+    """
     problems: list[str] = []
+    if env.get("AUTH_ENABLED") != ("true" if auth else "false"):
+        problems.append(
+            f"AUTH_ENABLED must be {'true' if auth else 'false'} in this demo"
+        )
+    if "AUTH_SIGNUP_ENABLED" in env and not auth:
+        problems.append("AUTH_SIGNUP_ENABLED is only for the DEMO_AUTH=1 pass")
     for key, value in env.items():
         if key.startswith(FORBIDDEN_PREFIXES):
             problems.append(f"{key} must not be set in the demo")
@@ -168,8 +179,9 @@ def assert_demo_env(
     cwd: Path | None = None,
     *,
     db_port: int | None = None,
+    auth: bool = False,
 ) -> None:
-    problems = demo_env_problems(env, demo_dir, cwd, db_port=db_port)
+    problems = demo_env_problems(env, demo_dir, cwd, db_port=db_port, auth=auth)
     if problems:
         raise RuntimeError("demo environment refused:\n  - " + "\n  - ".join(problems))
 

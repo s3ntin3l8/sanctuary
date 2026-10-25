@@ -2,6 +2,7 @@
 
     make demo          # serve it until Ctrl-C / SIGTERM, then delete everything
     make demo KEEP=1   # keep the scratch directory on exit
+    DEMO_AUTH=1 make demo   # login screen on, for /login and /signup
 
 Everything lives in one mkdtemp directory: a copy of the code (so `app/config.py`
 resolves PROJECT_ROOT, `.env`, `data/` and the log folder inside it), HOME and
@@ -220,7 +221,7 @@ def _copy_tree(tree: Path) -> None:
             shutil.copy2(src, tree / entry)
 
 
-def start_demo(*, keep: bool = False) -> Demo:
+def start_demo(*, keep: bool = False, auth: bool = False) -> Demo:
     assert_ports_free([DEMO_PORT, DEMO_DB_PORT])
     if DEMO_PORT == DEMO_DB_PORT:
         raise RuntimeError("DEMO_PORT and DEMO_DB_PORT must differ")
@@ -246,7 +247,9 @@ def start_demo(*, keep: bool = False) -> Demo:
                     f"@127.0.0.1:{DEMO_DB_PORT}/{DEMO_DB_NAME}"
                 ),
                 "CELERY_TASK_ALWAYS_EAGER": "true",
-                "AUTH_ENABLED": "false",
+                "AUTH_ENABLED": "true" if auth else "false",
+                # The login screen needs somewhere to go: /signup renders when open.
+                **({"AUTH_SIGNUP_ENABLED": "true"} if auth else {}),
                 "SESSION_SECRET": secrets.token_urlsafe(32),
                 "SECRETS_ENCRYPTION_KEY": Fernet.generate_key().decode(),
                 "REDIS_URL": UNREACHABLE_REDIS,
@@ -257,7 +260,7 @@ def start_demo(*, keep: bool = False) -> Demo:
                 "FRONTEND_DIST": str(ROOT / "frontend" / "dist"),
             },
         )
-        assert_demo_env(env, demo_dir, cwd=tree, db_port=DEMO_DB_PORT)
+        assert_demo_env(env, demo_dir, cwd=tree, db_port=DEMO_DB_PORT, auth=auth)
         print(f"[demo] scratch dir {demo_dir}", flush=True)
 
         _start_database(demo, db_password)
@@ -304,6 +307,12 @@ def main() -> None:
     parser.add_argument(
         "--keep", action="store_true", help="keep the scratch dir on exit"
     )
+    parser.add_argument(
+        "--auth",
+        action="store_true",
+        default=os.environ.get("DEMO_AUTH", "").lower() in ("1", "true", "yes"),
+        help="login screen on (also DEMO_AUTH=1), to capture /login and /signup",
+    )
     args = parser.parse_args()
     # Before anything is started: the capture script stops us with SIGTERM, and
     # Python's default would die without running the teardown.
@@ -312,10 +321,16 @@ def main() -> None:
 
     demo: Demo | None = None
     try:
-        demo = start_demo(keep=args.keep)
+        demo = start_demo(keep=args.keep, auth=args.auth)
         print(f"DEMO_READY url={demo.url}", flush=True)
         print(
-            "[demo] Loopback only, no login. Ctrl-C stops it and deletes all demo data.",
+            "[demo] Loopback only, "
+            + (
+                "login on (admin@localhost / the seed's dev password)."
+                if args.auth
+                else "no login."
+            )
+            + " Ctrl-C stops it and deletes all demo data.",
             flush=True,
         )
         assert demo.server is not None
