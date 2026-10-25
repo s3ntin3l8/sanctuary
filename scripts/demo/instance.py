@@ -302,6 +302,19 @@ def _raise_terminated(signum: int, frame: FrameType | None) -> None:
     raise _Terminated(signal.Signals(signum).name)
 
 
+def _env_flag(name: str) -> bool:
+    """A boolean environment switch; an unrecognised value is an error, not 'off'
+    (a silent plain pass would capture the wrong screens)."""
+    value = os.environ.get(name, "").strip().lower()
+    if value in ("", "0", "false", "no"):
+        return False
+    if value in ("1", "true", "yes"):
+        return True
+    raise SystemExit(
+        f"{name}={value!r} is not one of 1/true/yes (on) or 0/false/no (off)"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -310,8 +323,8 @@ def main() -> None:
     parser.add_argument(
         "--auth",
         action="store_true",
-        default=os.environ.get("DEMO_AUTH", "").lower() in ("1", "true", "yes"),
-        help="login screen on (also DEMO_AUTH=1), to capture /login and /signup",
+        default=_env_flag("DEMO_AUTH"),
+        help="login screen on (also DEMO_AUTH=1|true|yes), to capture /login and /signup",
     )
     args = parser.parse_args()
     # Before anything is started: the capture script stops us with SIGTERM, and
