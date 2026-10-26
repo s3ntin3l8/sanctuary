@@ -11,6 +11,8 @@ on:
       - "app/schemas/**"
       - "scripts/demo/**"
       - "scripts/seed_dummy_data.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
       - "visual/**"
       - ".github/visual-setup.sh"
       - ".github/workflows/visual.yml"

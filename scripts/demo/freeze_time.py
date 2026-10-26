@@ -27,13 +27,18 @@ import time_machine
 
 
 def parse_demo_now(value: str) -> datetime:
-    """`DEMO_NOW` as an aware datetime; a value without an offset is UTC."""
+    """`DEMO_NOW` as an aware datetime; a value without an offset is UTC. A bare date is refused: it
+    would read as 00:00 UTC, a day off whatever `clock` the scenes pair it with."""
     try:
         parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
     except ValueError:
         raise SystemExit(
             f"DEMO_NOW={value!r} is not an ISO 8601 date-time (e.g. 2026-10-01T09:00:00Z)"
         ) from None
+    if ":" not in value:
+        raise SystemExit(
+            f"DEMO_NOW={value!r} has no time of day (e.g. 2026-10-01T09:00:00Z)"
+        )
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 

@@ -14,14 +14,6 @@
     "frontend/node_modules"
   ],
   "clock": "2026-10-01T09:00:00Z",
-  "viewports": {
-    "phone": {
-      "width": 390,
-      "height": 844,
-      "scale": 2,
-      "mobile": true
-    }
-  },
   "scenes": [
     {
       "name": "home",

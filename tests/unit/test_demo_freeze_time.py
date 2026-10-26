@@ -24,6 +24,11 @@ def test_demo_now_without_an_offset_is_utc() -> None:
     )
 
 
+def test_a_bare_date_is_refused() -> None:
+    with pytest.raises(SystemExit, match="no time of day"):
+        parse_demo_now("2026-10-01")
+
+
 def test_an_unparsable_demo_now_stops_the_launcher() -> None:
     with pytest.raises(SystemExit, match="not an ISO 8601"):
         parse_demo_now("yesterday")
