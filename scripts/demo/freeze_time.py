@@ -19,6 +19,7 @@ Never import `app.*` from here (scripts/demo must not create `data/` or an engin
 from __future__ import annotations
 
 import os
+import re
 import runpy
 import sys
 from datetime import UTC, datetime
@@ -35,7 +36,8 @@ def parse_demo_now(value: str) -> datetime:
         raise SystemExit(
             f"DEMO_NOW={value!r} is not an ISO 8601 date-time (e.g. 2026-10-01T09:00:00Z)"
         ) from None
-    if ":" not in value:
+    # A time of day follows a `T` (or a space) separator; ISO basic format (20261001T090000) has no colon.
+    if not re.search(r"[T ]", value.strip(), re.IGNORECASE):
         raise SystemExit(
             f"DEMO_NOW={value!r} has no time of day (e.g. 2026-10-01T09:00:00Z)"
         )

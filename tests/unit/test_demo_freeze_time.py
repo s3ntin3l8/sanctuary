@@ -25,8 +25,13 @@ def test_demo_now_without_an_offset_is_utc() -> None:
 
 
 def test_a_bare_date_is_refused() -> None:
-    with pytest.raises(SystemExit, match="no time of day"):
-        parse_demo_now("2026-10-01")
+    for bare in ("2026-10-01", "20261001"):
+        with pytest.raises(SystemExit, match="no time of day"):
+            parse_demo_now(bare)
+
+
+def test_iso_basic_format_with_a_time_is_accepted() -> None:
+    assert parse_demo_now("20261001T090000").isoformat() == "2026-10-01T09:00:00+00:00"
 
 
 def test_an_unparsable_demo_now_stops_the_launcher() -> None:
