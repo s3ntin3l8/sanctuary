@@ -47,6 +47,103 @@ test('lists bundles with their state and filters by status chip', async () => {
   expect(screen.getByText(/1 scan awaiting slicing/)).toBeVisible()
 })
 
+test('the case cell shows the case title under the ID', async () => {
+  stub()
+  renderAt('/triage', <TriagePage />)
+  expect(await screen.findByText('Klageerwiderung')).toBeVisible()
+  expect(screen.getAllByText('Weber ./. Weber').length).toBeGreaterThan(0)
+})
+
+test('a confirmed bundle shows its case title', async () => {
+  stub({
+    'GET /api/v1/triage': {
+      body: {
+        ...triageView,
+        bundles: [
+          {
+            ...triageView.bundles[0],
+            suggestion: null,
+            confirmed_case_id: 'ADV-024-A',
+            confirmed_case_title: 'Weber ./. Weber',
+          },
+        ],
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  expect(await screen.findByText('ADV-024-A')).toBeVisible()
+  expect(screen.getByText('Weber ./. Weber')).toBeVisible()
+})
+
+test('a case filter lists the title, shows a chip and lives in the URL', async () => {
+  const fetch = stub()
+  renderAt(
+    '/triage',
+    <>
+      <TriagePage />
+      <Search />
+    </>,
+  )
+  const user = userEvent.setup()
+  await screen.findByText('Klageerwiderung')
+  await user.click(screen.getByRole('button', { name: 'Filter Case / status' }))
+  const panel = await screen.findByRole('dialog', { name: 'Case / status filter' })
+  expect(within(panel).getByText('Weber ./. Weber')).toBeVisible()
+  await user.click(within(panel).getByRole('checkbox'))
+  expect(screen.getByTestId('search')).toHaveTextContent('?case=ADV-024-A')
+  const chips = screen.getByRole('group', { name: 'Active filters' })
+  await waitFor(() => {
+    const urls = fetch.mock.calls.map(([x]) => x.url)
+    expect(urls.some((u) => u.includes('case_id=ADV-024-A'))).toBe(true)
+  })
+  await user.click(within(chips).getByRole('button', { name: 'Remove filter ADV-024-A' }))
+  expect(screen.getByTestId('search')).toHaveTextContent(/^$/)
+  expect(screen.queryByRole('group', { name: 'Active filters' })).not.toBeInTheDocument()
+})
+
+test('filters are restored from the URL and Clear filters resets them', async () => {
+  stub()
+  renderAt(
+    '/triage?case=ADV-024-A&pipeline=failed&sort=docs&dir=asc&bundle=batch-42',
+    <>
+      <TriagePage />
+      <Search />
+    </>,
+  )
+  const user = userEvent.setup()
+  const chips = await screen.findByRole('group', { name: 'Active filters' })
+  expect(within(chips).getByText('ADV-024-A')).toBeVisible()
+  expect(await within(chips).findByText('Failed')).toBeVisible()
+  await user.click(within(chips).getByRole('button', { name: 'Clear filters' }))
+  // sort and the open bundle are not filters
+  const search = screen.getByTestId('search')
+  expect(search).toHaveTextContent('bundle=batch-42')
+  expect(search).toHaveTextContent('sort=docs')
+  expect(search).not.toHaveTextContent('case=')
+  expect(search).not.toHaveTextContent('pipeline=')
+})
+
+test('a long filter list gets a search box', async () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({
+    value: `C-${i}`,
+    label: `C-${i}`,
+    detail: i === 7 ? 'Findme' : null,
+  }))
+  stub({
+    'GET /api/v1/triage': {
+      body: { ...triageView, filter_options: { ...triageView.filter_options, cases: many } },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await screen.findByText('Klageerwiderung')
+  await user.click(screen.getByRole('button', { name: 'Filter Case / status' }))
+  const panel = await screen.findByRole('dialog', { name: 'Case / status filter' })
+  await user.type(within(panel).getByRole('searchbox', { name: 'Search Case / status' }), 'findme')
+  expect(within(panel).getAllByRole('checkbox')).toHaveLength(1)
+  expect(within(panel).getByText('C-7')).toBeVisible()
+})
+
 test('an enclosure shows the exhibit label its sender gave it', async () => {
   stub()
   renderAt('/triage?bundle=batch-42', <TriagePage />)

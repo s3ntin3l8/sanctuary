@@ -114,6 +114,58 @@ def test_feed_lists_bundles_with_stats_and_pickers(db_session, sample_case):
     assert body["filter_options"]["pipeline"]
 
 
+def test_case_filter_options_carry_titles_and_a_no_case_option(db_session, sample_case):
+    admin = _admin(db_session)
+    routed, _ = _batch(db_session, admin.id, subject="Routed", case_id=sample_case.id)
+    loose, _ = _batch(db_session, admin.id, subject="Loose")
+
+    body = client.get("/api/v1/triage").json()
+    by_key = {b["key"]: b for b in body["bundles"]}
+    assert by_key[f"batch-{routed.id}"]["confirmed_case_title"] == sample_case.title
+    assert by_key[f"batch-{loose.id}"]["confirmed_case_title"] is None
+    cases = body["filter_options"]["cases"]
+    assert cases[0] == {"value": "none", "label": "No case", "detail": None}
+    assert {
+        "value": sample_case.id,
+        "label": sample_case.id,
+        "detail": sample_case.title,
+    } in cases
+
+    only_loose = client.get("/api/v1/triage", params={"case_id": "none"}).json()
+    assert [b["key"] for b in only_loose["bundles"]] == [f"batch-{loose.id}"]
+    only_routed = client.get(
+        "/api/v1/triage", params={"case_id": sample_case.id}
+    ).json()
+    assert [b["key"] for b in only_routed["bundles"]] == [f"batch-{routed.id}"]
+
+
+def test_proceeding_filter_options_lead_with_the_aktenzeichen(db_session, sample_case):
+    admin = _admin(db_session)
+    proceeding = Proceeding(
+        case_id=sample_case.id,
+        court_name="Amtsgericht Ingolstadt",
+        az_court="3 F 1221/26",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+    )
+    db_session.add(proceeding)
+    db_session.flush()
+    batch, _ = _batch(db_session, admin.id, case_id=sample_case.id)
+    batch.proceeding_id = proceeding.id
+    _batch(db_session, admin.id, subject="Unfiled")
+    db_session.commit()
+
+    options = client.get("/api/v1/triage").json()["filter_options"]["proceedings"]
+    assert options == [
+        {"value": "unassigned", "label": "Unassigned", "detail": None},
+        {
+            "value": str(proceeding.id),
+            "label": "3 F 1221/26",
+            "detail": "Amtsgericht Ingolstadt",
+        },
+    ]
+
+
 def test_bundle_title_is_the_subject_for_mail_and_the_lead_for_scans(db_session):
     admin = _admin(db_session)
     _batch(db_session, admin.id, subject="Mail subject", docs=1)

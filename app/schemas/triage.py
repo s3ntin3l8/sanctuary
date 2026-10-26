@@ -94,6 +94,7 @@ class TriageBundle(BaseModel):
     pipeline_filter: PipelineFilter
     pipeline: BundlePipeline
     confirmed_case_id: str | None
+    confirmed_case_title: str | None
     suggestion: TriageCaseSuggestion | None
     proceeding: TriageProceeding | None
     doc_count: int
@@ -125,6 +126,8 @@ class TriageStats(BaseModel):
 class PickerOption(BaseModel):
     value: str
     label: str
+    # Secondary line under the label: the case title, or the court of an Aktenzeichen.
+    detail: str | None = None
 
 
 class PickerCase(BaseModel):

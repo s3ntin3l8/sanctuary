@@ -228,6 +228,7 @@ export const triageBundle: Schemas['TriageBundle'] = {
   pipeline_filter: 'ready',
   pipeline: { total: 3, counts: { completed: 3 }, active_label: null, failed_error: null },
   confirmed_case_id: null,
+  confirmed_case_title: null,
   suggestion: { case_id: 'ADV-024-A', title: 'Weber ./. Weber', is_draft: true, exists: true },
   proceeding: {
     id: 5,
@@ -351,7 +352,7 @@ export const triageView: Schemas['TriageView'] = {
     first_draft_doc_id: 2211,
   },
   filter_options: {
-    cases: [{ value: 'ADV-024-A', label: 'ADV-024-A' }],
+    cases: [{ value: 'ADV-024-A', label: 'ADV-024-A', detail: 'Weber ./. Weber' }],
     proceedings: [],
     pipeline: [{ value: 'failed', label: 'Failed' }],
   },

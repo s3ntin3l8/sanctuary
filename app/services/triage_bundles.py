@@ -76,6 +76,7 @@ class BundleView:
     source_review_reasons: list[str] = field(default_factory=list)
     email_source_count: int = 0
     confirmed_case_id: str | None = None
+    confirmed_case_title: str | None = None
     suggested_case_id: str | None = None
     suggested_case_title: str | None = None
     suggested_case_is_draft: bool = False
@@ -410,10 +411,13 @@ def get_triage_bundles(
         )
 
     if case_ids:
+        no_case = "none" in case_ids
         ordered = [
             b
             for b in ordered
-            if b.confirmed_case_id in case_ids or b.suggested_case_id in case_ids
+            if b.confirmed_case_id in case_ids
+            or b.suggested_case_id in case_ids
+            or (no_case and _bundle_case_id(b) is None)
         ]
     if proceeding_ids:
         unassigned = "unassigned" in proceeding_ids
@@ -433,43 +437,68 @@ def get_triage_bundles(
     return visible
 
 
+def _bundle_case_id(b: BundleView) -> str | None:
+    """The case a bundle is filed or suggested under; None while it still needs routing."""
+    cid = b.confirmed_case_id or b.suggested_case_id
+    return cid if cid and cid != "_TRIAGE" else None
+
+
 def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
     """Return filter option lists derived from the live triage queue.
 
     Returns a dict with keys:
-      case_options:       list of (case_id, label) sorted by case_id
-      proceeding_options: list of (proceeding.id, label) sorted by label
+      case_options:       list of (case_id, label, detail) sorted by case_id; ``detail`` is
+                          the case title. A leading ("none", "No case", None) is present when
+                          a bundle still has no case
+      proceeding_options: list of (proceeding.id, label, detail) sorted by label; the label
+                          is the Aktenzeichen (court name when it has none), ``detail`` the
+                          court name
       pipeline_options:   list of (value, display_label) for pipeline states
                           present in the queue, in canonical display order
     Only options that have at least one matching bundle are included.
     """
     bundles = _build_bundles(db, include_sub_groups=False, owner_id=owner_id)
 
-    case_ids: dict[str, str] = {}
-    proceeding_opts: dict[str, str] = {}
+    case_ids: set[str] = set()
+    has_unrouted = False
+    proceeding_opts: dict[str, tuple[str, str | None]] = {}
     pipeline_labels_present: set[str] = set()
 
     for b in bundles.values():
-        cid = b.confirmed_case_id or b.suggested_case_id
-        if cid and cid != "_TRIAGE":
-            case_ids[cid] = cid
+        cid = _bundle_case_id(b)
+        if cid:
+            case_ids.add(cid)
+        else:
+            has_unrouted = True
 
         if b.proceeding:
             proc = b.proceeding
-            label = (
-                f"{proc.court_name} · {proc.az_court}"
+            proceeding_opts[str(proc.id)] = (
+                (proc.az_court, proc.court_name)
                 if proc.az_court
-                else proc.court_name
+                else (proc.court_name, None)
             )
-            proceeding_opts[str(proc.id)] = label
         else:
-            proceeding_opts["unassigned"] = "Unassigned"
+            proceeding_opts["unassigned"] = ("Unassigned", None)
 
         pipeline_labels_present.add(_bundle_pipeline_label(b))
 
-    case_options = sorted(case_ids.items(), key=lambda x: x[0])
+    titles: dict[str, str] = {}
+    if case_ids:
+        titles = {
+            cid: title
+            for cid, title in db.query(Case.id, Case.title)
+            .filter(Case.id.in_(case_ids))
+            .all()
+            if title and title.strip() != cid
+        }
+    case_options: list[tuple[str, str, str | None]] = [
+        (cid, cid, titles.get(cid)) for cid in sorted(case_ids)
+    ]
+    if has_unrouted:
+        case_options.insert(0, ("none", "No case", None))
     proceeding_options = sorted(
-        proceeding_opts.items(),
+        ((pid, label, detail) for pid, (label, detail) in proceeding_opts.items()),
         key=lambda x: "" if x[0] == "unassigned" else x[1],
     )
     canonical_pipeline = [
@@ -590,6 +619,12 @@ def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
         # confirmed_case_id is set but is_draft=True — it hasn't been ratified.
         # Re-cast it as suggested so the footer shows "Confirm case <ID>" and
         # the modal opens pre-filled rather than as a blank create-new form.
+        if bundle.confirmed_case_id:
+            _confirmed = cases_by_id.get(bundle.confirmed_case_id)
+            if _confirmed and not _confirmed.is_draft:
+                bundle.confirmed_case_title = _sanitize_case_title(
+                    _confirmed.title, bundle.confirmed_case_id, bundle.subject
+                )
         if bundle.confirmed_case_id and not bundle.suggested_case_id:
             _case = cases_by_id.get(bundle.confirmed_case_id)
             if _case and _case.is_draft:
