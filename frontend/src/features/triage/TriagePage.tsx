@@ -8,7 +8,8 @@ import type { Schemas } from '../../api/client'
 import {
   type TriageBundle,
   type TriageFilters,
-  defaultFilters,
+  filtersFromParams,
+  paramsWithFilters,
   useBatchRemove,
   useBundleAction,
   useDocumentAction,
@@ -49,11 +50,25 @@ const STATUS_LABEL: Record<Status, string> = {
   stuck: 'Stuck',
   processing: 'Processing',
 }
-const GRID = 'grid grid-cols-[24px_128px_198px_1fr_148px_150px_96px] items-center gap-3'
+// A filter list longer than this gets a search box.
+const SEARCH_FROM = 8
+const GRID = 'grid grid-cols-[24px_128px_198px_1fr_184px_170px_96px] items-center gap-3'
 
 export function TriagePage() {
   const [params, setParams] = useSearchParams()
-  const [filters, setFilters] = useState<TriageFilters>(defaultFilters)
+  const filters = useMemo(() => filtersFromParams(params), [params])
+  // Edit a copy of the query string: filters, the open bundle and sort ride along.
+  const editParams = (change: (next: URLSearchParams) => void) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        change(next)
+        return next
+      },
+      { replace: true },
+    )
+  const updateFilters = (change: (f: TriageFilters) => TriageFilters) =>
+    setParams((p) => paramsWithFilters(p, change(filtersFromParams(p))), { replace: true })
   const [status, setStatus] = useState<Status>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // In the URL so coming back from the HUD reopens the same bundle.
@@ -163,14 +178,33 @@ export function TriagePage() {
   const allSelected = selectable.length > 0 && selectable.every((b) => selected.has(b.key))
 
   function toggleSort(sort: TriageFilters['sort']) {
-    setFilters((f) => ({ ...f, sort, dir: f.sort === sort && f.dir === 'desc' ? 'asc' : 'desc' }))
+    updateFilters((f) => ({
+      ...f,
+      sort,
+      dir: f.sort === sort && f.dir === 'desc' ? 'asc' : 'desc',
+    }))
   }
   function toggleFilter(key: 'case_id' | 'proceeding_id' | 'pipeline_filter', value: string) {
-    setFilters((f) => ({
+    updateFilters((f) => ({
       ...f,
       [key]: f[key].includes(value) ? f[key].filter((v) => v !== value) : [...f[key], value],
     }))
   }
+
+  const filterOptions = query.data?.filter_options
+  const activeFilters = (
+    [
+      ['case_id', filterOptions?.cases],
+      ['proceeding_id', filterOptions?.proceedings],
+      ['pipeline_filter', filterOptions?.pipeline],
+    ] as const
+  ).flatMap(([key, options]) =>
+    filters[key].map((value) => ({
+      key,
+      value,
+      label: options?.find((o) => o.value === value)?.label ?? value,
+    })),
+  )
 
   const stats = query.data?.stats
   const gmailRun = useGmailRunBanner()
@@ -199,7 +233,7 @@ export function TriagePage() {
               </Badge>
             )}
           </Link>
-          <Button onClick={() => setParams({ upload: '1' })}>
+          <Button onClick={() => editParams((next) => next.set('upload', '1'))}>
             <Icon name="upload_file" size={16} /> Ingest
           </Button>
         </div>
@@ -222,6 +256,42 @@ export function TriagePage() {
           </Chip>
         ))}
       </div>
+
+      {activeFilters.length > 0 && (
+        <div
+          role="group"
+          aria-label="Active filters"
+          className="mx-6 mb-2 flex flex-wrap items-center gap-1.5 text-[11px]"
+        >
+          <span className="text-muted">Filtered by</span>
+          {activeFilters.map((f) => (
+            <button
+              key={`${f.key}:${f.value}`}
+              type="button"
+              aria-label={`Remove filter ${f.label}`}
+              onClick={() => toggleFilter(f.key, f.value)}
+              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/12 px-2.5 py-0.5 font-mono text-[11px] text-ink hover:bg-accent/20"
+            >
+              {f.label}
+              <Icon name="close" size={12} className="text-muted" />
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              updateFilters((f) => ({
+                ...f,
+                case_id: [],
+                proceeding_id: [],
+                pipeline_filter: [],
+              }))
+            }
+            className="ml-1 text-muted hover:underline"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
 
       {picked.length > 0 && (
         <div className="mx-6 mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 px-3 py-2 text-[12px]">
@@ -293,7 +363,7 @@ export function TriagePage() {
               />
               <FilterHeader
                 label="Docs"
-                options={query.data?.filter_options.pipeline ?? []}
+                options={filterOptions?.pipeline ?? []}
                 selected={filters.pipeline_filter}
                 onToggle={(v) => toggleFilter('pipeline_filter', v)}
                 sortActive={filters.sort === 'docs'}
@@ -302,7 +372,8 @@ export function TriagePage() {
               <span>Preview</span>
               <FilterHeader
                 label="Case / status"
-                options={query.data?.filter_options.cases ?? []}
+                options={filterOptions?.cases ?? []}
+                optionMono
                 selected={filters.case_id}
                 onToggle={(v) => toggleFilter('case_id', v)}
                 sortActive={filters.sort === 'status'}
@@ -310,7 +381,9 @@ export function TriagePage() {
               />
               <FilterHeader
                 label="Proceeding"
-                options={query.data?.filter_options.proceedings ?? []}
+                options={filterOptions?.proceedings ?? []}
+                optionMono
+                align="right"
                 selected={filters.proceeding_id}
                 onToggle={(v) => toggleFilter('proceeding_id', v)}
               />
@@ -483,7 +556,16 @@ export function TriagePage() {
         label="Retry"
         pending={batchRetry.isPending}
       />
-      <IngestModal open={uploadOpen} caseId={uploadCase} onClose={() => setParams({})} />
+      <IngestModal
+        open={uploadOpen}
+        caseId={uploadCase}
+        onClose={() =>
+          editParams((next) => {
+            next.delete('upload')
+            next.delete('case_id')
+          })
+        }
+      />
     </div>
   )
 }
@@ -521,6 +603,8 @@ function FilterHeader({
   onToggle,
   sortActive,
   onSort,
+  optionMono = false,
+  align = 'left',
 }: {
   label: string
   options: Schemas['PickerOption'][]
@@ -528,8 +612,17 @@ function FilterHeader({
   onToggle: (v: string) => void
   sortActive?: boolean
   onSort?: () => void
+  // Case IDs and Aktenzeichen read in the mono face, like everywhere else in the table.
+  optionMono?: boolean
+  // The last column's panel opens toward the table, not off the viewport edge.
+  align?: 'left' | 'right'
 }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const needle = search.trim().toLowerCase()
+  const shown = needle
+    ? options.filter((o) => `${o.label} ${o.detail ?? ''}`.toLowerCase().includes(needle))
+    : options
   const trigger = useRef<HTMLButtonElement>(null)
   return (
     <span className="relative flex items-center gap-1">
@@ -556,26 +649,48 @@ function FilterHeader({
       </button>
       <Menu
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false)
+          setSearch('')
+        }}
         anchorRef={trigger}
-        align="left"
+        align={align}
         role="dialog"
         label={`${label} filter`}
-        className="w-56 p-1.5 text-[11px] normal-case"
+        className="max-h-80 w-72 overflow-y-auto p-1.5 text-[11px] normal-case"
       >
-        {options.length === 0 && <p className="px-2 py-1 text-muted">No options</p>}
-        {options.map((o) => (
+        {options.length > SEARCH_FROM && (
+          <input
+            type="search"
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label={`Search ${label}`}
+            placeholder="Search…"
+            className="mb-1 w-full rounded-md border border-line bg-panel2 px-2 py-1 font-normal tracking-normal"
+          />
+        )}
+        {shown.length === 0 && (
+          <p className="px-2 py-1 text-muted">{options.length === 0 ? 'No options' : 'No match'}</p>
+        )}
+        {shown.map((o) => (
           <label
             key={o.value}
+            title={o.detail ? `${o.label} · ${o.detail}` : o.label}
             className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/5"
           >
             <input
               type="checkbox"
               checked={selected.includes(o.value)}
               onChange={() => onToggle(o.value)}
-              className="h-3.5 w-3.5 accent-accent"
+              className="h-3.5 w-3.5 shrink-0 accent-accent"
             />
-            <span className="truncate font-normal tracking-normal">{o.label}</span>
+            <span className="min-w-0 font-normal tracking-normal">
+              <span className={`block truncate ${optionMono ? 'font-mono' : ''}`}>{o.label}</span>
+              {o.detail && (
+                <span className="block truncate text-[10px] text-muted">{o.detail}</span>
+              )}
+            </span>
           </label>
         ))}
       </Menu>
@@ -588,6 +703,14 @@ const STATUS_STRIPE: Record<TriageBundle['status'], string> = {
   processing: 'border-l-warning',
   needs_classification: 'border-l-info',
   needs_review: 'border-l-accent',
+}
+
+function CaseTitle({ title }: { title: string }) {
+  return (
+    <span className="block truncate text-[10.5px] text-muted" title={title}>
+      {title}
+    </span>
+  )
 }
 
 function SlicingRow({ item: s }: { item: Schemas['SlicingQueueItem'] }) {
@@ -703,6 +826,7 @@ function BundleRow({
   const confidence = b.sub_groups[0]?.case_confidence ?? null
   const confirmable = b.doc_count > 0 && !processing && b.status !== 'stuck'
   const openParts = bundleOpenParts(b)
+  const caseTitle = b.confirmed_case_title ?? b.suggestion?.title ?? null
 
   return (
     <li className={`border-l-2 ${STATUS_STRIPE[b.status]}`} data-bundle-key={b.key}>
@@ -783,7 +907,12 @@ function BundleRow({
         </span>
         <span className="min-w-0">
           {b.confirmed_case_id ? (
-            <span className="font-mono text-[11px] text-tealink">{b.confirmed_case_id}</span>
+            <>
+              <span className="block font-mono text-[11px] text-tealink">
+                {b.confirmed_case_id}
+              </span>
+              {caseTitle && <CaseTitle title={caseTitle} />}
+            </>
           ) : b.suggestion ? (
             <>
               {(confidence || b.suggestion.is_draft) && (
@@ -803,6 +932,7 @@ function BundleRow({
               <span className="block font-mono text-[11px] text-tealink">
                 {b.suggestion.case_id}
               </span>
+              {caseTitle && <CaseTitle title={caseTitle} />}
             </>
           ) : (
             <span className="text-muted">no suggestion — route</span>

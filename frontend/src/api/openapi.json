@@ -8534,6 +8534,17 @@
       },
       "PickerOption": {
         "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
           "label": {
             "title": "Label",
             "type": "string"
@@ -11165,6 +11176,17 @@
             ],
             "title": "Confirmed Case Id"
           },
+          "confirmed_case_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed Case Title"
+          },
           "doc_count": {
             "title": "Doc Count",
             "type": "integer"
@@ -11350,6 +11372,7 @@
           "pipeline_filter",
           "pipeline",
           "confirmed_case_id",
+          "confirmed_case_title",
           "suggestion",
           "proceeding",
           "doc_count",

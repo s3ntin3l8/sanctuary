@@ -111,7 +111,95 @@ def test_feed_lists_bundles_with_stats_and_pickers(db_session, sample_case):
     assert body["stats"]["needs_classification"] == 1
     assert [c["id"] for c in body["cases"]] == [sample_case.id]
     assert body["proceedings"][0]["label"].startswith("AG Hamburg")
-    assert body["filter_options"]["pipeline"]
+    # every state is listed, so a chip for one that just left the queue keeps its label
+    assert [o["value"] for o in body["filter_options"]["pipeline"]] == [
+        "ready",
+        "review_metadata",
+        "processing",
+        "failed",
+    ]
+
+
+def test_case_filter_options_carry_titles_and_a_no_case_option(db_session, sample_case):
+    admin = _admin(db_session)
+    routed, _ = _batch(db_session, admin.id, subject="Routed", case_id=sample_case.id)
+    loose, _ = _batch(db_session, admin.id, subject="Loose")
+
+    body = client.get("/api/v1/triage").json()
+    by_key = {b["key"]: b for b in body["bundles"]}
+    assert by_key[f"batch-{routed.id}"]["confirmed_case_title"] == sample_case.title
+    assert by_key[f"batch-{loose.id}"]["confirmed_case_title"] is None
+    cases = body["filter_options"]["cases"]
+    assert cases[0] == {"value": "none", "label": "No case", "detail": None}
+    assert {
+        "value": sample_case.id,
+        "label": sample_case.id,
+        "detail": sample_case.title,
+    } in cases
+
+    only_loose = client.get("/api/v1/triage", params={"case_id": "none"}).json()
+    assert [b["key"] for b in only_loose["bundles"]] == [f"batch-{loose.id}"]
+    only_routed = client.get(
+        "/api/v1/triage", params={"case_id": sample_case.id}
+    ).json()
+    assert [b["key"] for b in only_routed["bundles"]] == [f"batch-{routed.id}"]
+
+
+def test_proceeding_filter_options_lead_with_the_aktenzeichen(db_session, sample_case):
+    admin = _admin(db_session)
+    proceeding = Proceeding(
+        case_id=sample_case.id,
+        court_name="Amtsgericht Ingolstadt",
+        az_court="3 F 1221/26",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+    )
+    db_session.add(proceeding)
+    db_session.flush()
+    batch, _ = _batch(db_session, admin.id, case_id=sample_case.id)
+    batch.proceeding_id = proceeding.id
+    _batch(db_session, admin.id, subject="Unfiled")
+    db_session.commit()
+
+    options = client.get("/api/v1/triage").json()["filter_options"]["proceedings"]
+    assert options == [
+        {"value": "unassigned", "label": "Unassigned", "detail": None},
+        {
+            "value": str(proceeding.id),
+            "label": "3 F 1221/26",
+            "detail": "Amtsgericht Ingolstadt",
+        },
+    ]
+
+
+def test_a_malformed_proceeding_filter_matches_nothing(db_session):
+    _batch(db_session, _admin(db_session).id)
+
+    for value in ("abc", "9" * 5000):
+        r = client.get("/api/v1/triage", params={"proceeding_id": value})
+        assert r.status_code == 200
+        assert r.json()["bundles"] == []
+
+
+def test_case_option_title_is_re_derived_when_the_stored_one_echoes_the_id(
+    db_session, sample_case
+):
+    sample_case.title = sample_case.id
+    batch, _ = _batch(
+        db_session,
+        _admin(db_session).id,
+        subject=f"{sample_case.id} Mahnbescheid Müller",
+        case_id=sample_case.id,
+    )
+    db_session.commit()
+
+    body = client.get("/api/v1/triage").json()
+    (option,) = [
+        o for o in body["filter_options"]["cases"] if o["value"] == sample_case.id
+    ]
+    (bundle,) = body["bundles"]
+    assert option["detail"] == bundle["confirmed_case_title"]
+    assert option["detail"] != sample_case.id
 
 
 def test_bundle_title_is_the_subject_for_mail_and_the_lead_for_scans(db_session):

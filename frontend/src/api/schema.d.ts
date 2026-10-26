@@ -5866,6 +5866,8 @@ export interface components {
         };
         /** PickerOption */
         PickerOption: {
+            /** Detail */
+            detail?: string | null;
             /** Label */
             label: string;
             /** Value */
@@ -6677,6 +6679,8 @@ export interface components {
             batch_id: number | null;
             /** Confirmed Case Id */
             confirmed_case_id: string | null;
+            /** Confirmed Case Title */
+            confirmed_case_title: string | null;
             /** Doc Count */
             doc_count: number;
             /** Documents */

@@ -197,6 +197,7 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
             failed_error=_failed_error(bundle),
         ),
         confirmed_case_id=bundle.confirmed_case_id,
+        confirmed_case_title=bundle.confirmed_case_title,
         suggestion=TriageCaseSuggestion(
             case_id=bundle.suggested_case_id,
             title=bundle.suggested_case_title,
@@ -349,11 +350,12 @@ def triage(
         stats=_stats(db, user, bundles),
         filter_options={
             "cases": [
-                PickerOption(value=v, label=text) for v, text in options["case_options"]
+                PickerOption(value=v, label=text, detail=detail)
+                for v, text, detail in options["case_options"]
             ],
             "proceedings": [
-                PickerOption(value=v, label=text)
-                for v, text in options["proceeding_options"]
+                PickerOption(value=v, label=text, detail=detail)
+                for v, text, detail in options["proceeding_options"]
             ],
             "pipeline": [
                 PickerOption(value=v, label=text)

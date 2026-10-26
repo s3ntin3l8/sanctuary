@@ -21,6 +21,46 @@ export const defaultFilters: TriageFilters = {
   pipeline_filter: [],
 }
 
+// The filters live in the page URL (`?case=…&proceeding=…&pipeline=…&sort=…&dir=…`) so a reload
+// or a round-trip through the document HUD keeps them. `case_id` is taken by the upload prefill.
+const FILTER_PARAMS = {
+  case_id: 'case',
+  proceeding_id: 'proceeding',
+  pipeline_filter: 'pipeline',
+} as const
+const SORTS: TriageFilters['sort'][] = ['received', 'docs', 'status']
+
+export function filtersFromParams(params: URLSearchParams): TriageFilters {
+  const sort = params.get('sort')
+  return {
+    sort: SORTS.find((s) => s === sort) ?? defaultFilters.sort,
+    dir: params.get('dir') === 'asc' ? 'asc' : 'desc',
+    case_id: filterValues(params, FILTER_PARAMS.case_id),
+    proceeding_id: filterValues(params, FILTER_PARAMS.proceeding_id),
+    pipeline_filter: filterValues(params, FILTER_PARAMS.pipeline_filter),
+  }
+}
+
+// A hand-edited URL can hold empty or repeated values; neither is a filter.
+function filterValues(params: URLSearchParams, name: string): string[] {
+  return [...new Set(params.getAll(name).filter(Boolean))]
+}
+
+/** Write `filters` into a copy of `params`, leaving every other param (bundle, doc, upload) alone. */
+export function paramsWithFilters(
+  params: URLSearchParams,
+  filters: TriageFilters,
+): URLSearchParams {
+  const next = new URLSearchParams(params)
+  for (const name of ['sort', 'dir', ...Object.values(FILTER_PARAMS)]) next.delete(name)
+  if (filters.sort !== defaultFilters.sort) next.set('sort', filters.sort)
+  if (filters.dir !== defaultFilters.dir) next.set('dir', filters.dir)
+  for (const key of Object.keys(FILTER_PARAMS) as (keyof typeof FILTER_PARAMS)[]) {
+    for (const v of filters[key]) next.append(FILTER_PARAMS[key], v)
+  }
+  return next
+}
+
 const KEY = ['triage'] as const
 
 /**
