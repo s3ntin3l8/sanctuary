@@ -69,15 +69,14 @@ Checked and left alone. A fix here would be a regression.
 
 ## Evidence
 
-Regenerate (from the repo root; the capture tool is `ai-agent-skills` at `8a2b73c`):
+Regenerate (from the repo root; needs Docker):
 
 ```bash
-npm --prefix frontend ci && npx --prefix frontend playwright install chromium   # once
-node <ai-agent-skills>/plugins/audit/skills/audit/scripts/capture.mjs 2026-10-frontend-ui-ux
-node <ai-agent-skills>/plugins/audit/skills/audit/scripts/capture.mjs 2026-10-frontend-ui-ux --config docs/audit/capture.auth.json
+make screenshots-audit AUDIT=2026-10-frontend-ui-ux
+make screenshots-audit-auth AUDIT=2026-10-frontend-ui-ux
 ```
 
-The first command writes 112 screenshots and `axe.json` into `docs/audit/assets/2026-10-frontend-ui-ux/` (gitignored; `axe.json` is rewritten by every pass that has `axe: true`, so move it aside to keep one). Overflow was measured by loading each route at 390px in the demo and comparing `documentElement.scrollWidth` with the viewport and listing controls whose right edge is past it together with the overflow of their ancestors.
+This audit was captured with the `audit` skill's own script (`ai-agent-skills` at `8a2b73c`, phone and tablet only, 112 screenshots and `axe.json`). That script and `docs/audit/capture*.json` are replaced by [visual-kit](https://github.com/s3ntin3l8/visual-kit) (pinned in `visual/Dockerfile`), which renders the same routes and also desktop, with `metrics.json` (axe, console errors, overflow, unnamed controls) per shot. The captures themselves are local and gitignored. Overflow was measured by loading each route at 390px in the demo and comparing `documentElement.scrollWidth` with the viewport and listing controls whose right edge is past it together with the overflow of their ancestors.
 
 ---
 

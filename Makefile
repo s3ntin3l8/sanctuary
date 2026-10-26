@@ -16,7 +16,7 @@ BEAT := $(CELERY) beat --loglevel=INFO
 
 NPM_FE := npm --prefix frontend
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed demo migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed demo screenshots screenshots-landing screenshots-audit screenshots-audit-auth visual-check migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -174,6 +174,33 @@ seed: db-up ## Reset database (drop+recreate schema) and seed with advanced tria
 
 demo: _check-venv-python ## Throwaway isolated demo with seeded data (scratch tree/DB/HOME, allowlisted env, loopback :3985); Ctrl-C deletes it. KEEP=1 keeps the scratch dir
 	$(PYTHON) -m scripts.demo.instance $(if $(KEEP),--keep)
+
+# Visual pipeline (s3ntin3l8/visual-kit): README and landing screenshots, audit evidence, and the
+# per-change visual check, all rendered in one pinned image against `make demo`. The image is pinned in
+# visual/Dockerfile (Dependabot bumps it); visual/.kit/run.sh is extracted from it. Spec: visual-kit's CONTRACT.md.
+VISUAL_IMAGE := visual-kit-local/sanctuary
+VISUAL_RUN := VISUAL_KIT_IMAGE=$(VISUAL_IMAGE) visual/.kit/run.sh
+
+visual/.kit/run.sh: visual/Dockerfile
+	docker build -q -t $(VISUAL_IMAGE) - < visual/Dockerfile
+	mkdir -p visual/.kit && docker run --rm $(VISUAL_IMAGE) host-files | tar -x -C visual/.kit
+
+screenshots: visual/.kit/run.sh ## README screenshots into docs/screenshots (committed). FORCE=1 replaces a folder visual-kit did not write
+	$(VISUAL_RUN) readme $(if $(FORCE),--force)
+
+screenshots-landing: visual/.kit/run.sh ## Landing-page stills and loops into OUT (default ./landing-shots) for personal-landing
+	$(VISUAL_RUN) landing --out "$(or $(OUT),landing-shots)" $(if $(FORCE),--force)
+
+screenshots-audit: visual/.kit/run.sh ## Audit evidence for AUDIT=YYYY-MM-<scope>-<topic> into docs/audit/assets/ (local only)
+	@test -n "$(AUDIT)" || { echo "AUDIT=YYYY-MM-<scope>-<topic> is required"; exit 1; }
+	$(VISUAL_RUN) audit --slug "$(AUDIT)" $(if $(FORCE),--force)
+
+screenshots-audit-auth: visual/.kit/run.sh ## Audit evidence for /login and /signup (the demo with the login screen on) into docs/audit/assets/<AUDIT>-auth/
+	@test -n "$(AUDIT)" || { echo "AUDIT=YYYY-MM-<scope>-<topic> is required"; exit 1; }
+	VISUAL_CONFIG=visual/scenes.auth.json $(VISUAL_RUN) audit --slug "$(AUDIT)-auth" $(if $(FORCE),--force)
+
+visual-check: visual/.kit/run.sh ## Before/after of the touched routes (ROUTES=/triage,/cases) against BASE (default origin/main) -> visual/.out/check/report/
+	$(VISUAL_RUN) check $(if $(ROUTES),--routes "$(ROUTES)") $(if $(BASE),--base "$(BASE)") $(if $(FORCE),--force)
 
 migrate: db-up ## Run database migrations
 	$(ALEMBIC) upgrade head

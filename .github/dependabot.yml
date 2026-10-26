@@ -81,3 +81,9 @@ updates:
       docker-images:
         patterns:
           - "*"
+
+  # The visual-kit image the screenshots and visual checks render in (visual/Dockerfile).
+  - package-ecosystem: "docker"
+    directory: "/visual"
+    schedule:
+      interval: "weekly"

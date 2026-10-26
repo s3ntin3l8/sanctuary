@@ -97,3 +97,9 @@ docs/superpowers/
 # and are not worth permanent history weight. The report is the durable artifact; it never
 # links into this folder.
 docs/audit/assets/
+
+# visual-kit: the launcher extracted from the pinned image, check output, and staging leftovers of a killed run
+visual/.kit/
+visual/.out/
+*.staging
+landing-shots/

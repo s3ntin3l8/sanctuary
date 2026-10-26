@@ -1,0 +1,327 @@
+{
+  "$schema": "https://raw.githubusercontent.com/s3ntin3l8/visual-kit/main/schema/scenes.schema.json",
+  "demo": {
+    "start": "make demo",
+    "url": "http://127.0.0.1:3985",
+    "readyOutput": "DEMO_READY",
+    "startTimeoutSec": 300,
+    "env": {
+      "DEMO_NOW": "2026-10-01T09:00:00Z"
+    }
+  },
+  "baseDeps": [
+    ".venv",
+    "frontend/node_modules"
+  ],
+  "clock": "2026-10-01T09:00:00Z",
+  "viewports": {
+    "phone": {
+      "width": 390,
+      "height": 844,
+      "scale": 2,
+      "mobile": true
+    }
+  },
+  "scenes": [
+    {
+      "name": "home",
+      "path": "/",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "cases",
+      "path": "/cases",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "case-review",
+      "path": "/cases/ADV-024-A?view=review",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "case-graph",
+      "path": "/cases/ADV-024-A?view=graph",
+      "tags": [
+        "check",
+        "audit",
+        "presentation"
+      ]
+    },
+    {
+      "name": "case-truth",
+      "path": "/cases/ADV-024-A?view=truth",
+      "tags": [
+        "check",
+        "audit",
+        "presentation"
+      ]
+    },
+    {
+      "name": "case-calendar",
+      "path": "/cases/ADV-024-A?view=timeline",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "case-costs",
+      "path": "/cases/ADV-024-A?view=fin",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "triage",
+      "path": "/triage",
+      "tags": [
+        "check",
+        "audit",
+        "presentation"
+      ]
+    },
+    {
+      "name": "triage-filter",
+      "path": "/triage",
+      "tags": [
+        "check",
+        "audit",
+        "presentation"
+      ],
+      "steps": [
+        {
+          "click": "[aria-label='Filter Proceeding']"
+        }
+      ],
+      "settle": "[role=dialog][aria-label='Proceeding filter']",
+      "target": "[role=dialog][aria-label='Proceeding filter']",
+      "padding": 48,
+      "viewports": [
+        "desktop"
+      ]
+    },
+    {
+      "name": "costs",
+      "path": "/costs",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "document",
+      "path": "/document/30",
+      "tags": [
+        "check",
+        "audit",
+        "presentation"
+      ]
+    },
+    {
+      "name": "search",
+      "path": "/search?q=Unterhalt",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-account",
+      "path": "/settings/account",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
+      "name": "case-vane",
+      "path": "/cases/ADV-031-B",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "case-draft",
+      "path": "/cases/ADV-100-X",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "contact",
+      "path": "/contacts?name=gegenseite@kanzlei-opposition.de",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "document-reply",
+      "path": "/document/36",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "document-exhibit",
+      "path": "/document/47",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "document-slice",
+      "path": "/document/68/slice",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "ingest-slice",
+      "path": "/ingest/slice/11",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-agent-access",
+      "path": "/settings/agent-access",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-appearance",
+      "path": "/settings/appearance",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-ai",
+      "path": "/settings/ai",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-ai-logs",
+      "path": "/settings/ai/logs",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-identity",
+      "path": "/settings/identity",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-gmail",
+      "path": "/settings/gmail",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-gmail-import",
+      "path": "/settings/gmail/import",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-data",
+      "path": "/settings/data",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-export",
+      "path": "/settings/export",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "settings-about",
+      "path": "/settings/about",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "admin-users",
+      "path": "/admin/users",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "admin-agent-access",
+      "path": "/admin/agent-access",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "not-found",
+      "path": "/nope",
+      "tags": [
+        "audit"
+      ]
+    },
+    {
+      "name": "case-views",
+      "path": "/cases/ADV-024-A?view=graph",
+      "tags": [
+        "presentation"
+      ],
+      "loop": {
+        "tailSec": 1.5
+      },
+      "steps": [
+        {
+          "wait": 1200
+        },
+        {
+          "click": "nav[aria-label='Case views'] >> text=Truth map"
+        },
+        {
+          "wait": 1600
+        },
+        {
+          "click": "nav[aria-label='Case views'] >> text=Calendar"
+        },
+        {
+          "wait": 1600
+        },
+        {
+          "click": "nav[aria-label='Case views'] >> text=Costs"
+        },
+        {
+          "wait": 1600
+        },
+        {
+          "click": "nav[aria-label='Case views'] >> text=Graph"
+        },
+        {
+          "wait": 1200
+        }
+      ],
+      "viewports": []
+    }
+  ]
+}

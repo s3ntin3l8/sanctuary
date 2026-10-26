@@ -2,6 +2,39 @@
 
 A privacy-first legal case management workspace for active litigation. All AI runs locally. No data leaves the machine.
 
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/case-graph-dark-desktop.png">
+        <img alt="A case as a correspondence graph: swim lanes per party, deadlines and cost exposure in the rail" src="docs/screenshots/case-graph-light-desktop.png">
+      </picture>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/case-truth-dark-desktop.png">
+        <img alt="The Truth Map: contested claims with their evidence" src="docs/screenshots/case-truth-light-desktop.png">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/triage-dark-desktop.png">
+        <img alt="The triage inbox: bundles by email, with case and proceeding" src="docs/screenshots/triage-light-desktop.png">
+      </picture>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/document-dark-desktop.png">
+        <img alt="A document as a HUD: key passages, pins and the AI summary" src="docs/screenshots/document-light-desktop.png">
+      </picture>
+    </td>
+  </tr>
+</table>
+
+<sub>Rendered from the seeded demo (`make screenshots`), never by hand. See [Screenshots and visual checks](#screenshots-and-visual-checks).</sub>
+
 ## Features
 
 - **Hybrid Search** — Global search with autocomplete (Cmd+K). Combines **Semantic Similarity** (via local `nomic-embed-text` embeddings) with high-speed text pattern matching.
@@ -110,6 +143,19 @@ A token acts as you and can never see more than you can. Every call is rate limi
 **Network exposure:** `/mcp` is meant to sit behind your TLS reverse proxy like the rest of the app. It authenticates with a bearer token only (never cookies), so DNS-rebinding and cross-site request attacks gain nothing without the token itself; the SDK's Host-header allow-list is therefore disabled. To pin the endpoint to your public hostname anyway, set `MCP_ALLOWED_HOSTS=sanctuary.example.org` (comma-separated; other Hosts get 421). Keep tokens secret, prefer expiry, and revoke what you no longer use.
 
 **Privacy:** the AI in Sanctuary itself runs locally, but an external agent does not. Case content that a tool returns is sent to whatever model that agent uses — if that is a cloud model, it leaves your machine. Prefer read-only tokens limited to the cases the agent needs.
+
+## Screenshots and visual checks
+
+One pinned Docker image ([visual-kit](https://github.com/s3ntin3l8/visual-kit)) renders everything visual against `make demo` (a throwaway, seeded instance with a fixed clock, so relative dates read the same on any day). The scenes are in [`visual/scenes.json`](visual/scenes.json); the image is pinned in [`visual/Dockerfile`](visual/Dockerfile).
+
+```bash
+make screenshots                       # the README set -> docs/screenshots (FORCE=1 the first time over hand-made files)
+make screenshots-landing OUT=dir       # the landing-page set (dark, 1600x1000 @2x and 390x844 @3x, plus a loop)
+make visual-check ROUTES=/triage       # before/after of the routes a change touches -> visual/.out/check/report/index.html
+make screenshots-audit AUDIT=2026-11-frontend-ui-ux   # every route in every form factor, local evidence for an audit
+```
+
+`make visual-check` renders the merge base (a temporary worktree) and your working tree, diffs them, and reports axe violations, console errors, horizontal overflow and unnamed controls next to the pixel diff. The same check runs on pull requests that touch the UI (advisory; it comments the summary and uploads the report). Needs Docker.
 
 ## Seed Data
 
