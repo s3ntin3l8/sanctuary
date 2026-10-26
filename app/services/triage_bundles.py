@@ -421,8 +421,8 @@ def get_triage_bundles(
         ]
     if proceeding_ids:
         unassigned = "unassigned" in proceeding_ids
-        # The value comes from a shareable URL: anything but an id matches nothing.
-        pid_ints = {int(p) for p in proceeding_ids if p.isdecimal()}
+        # The value comes from a shareable URL: anything but a plausible id matches nothing.
+        pid_ints = {int(p) for p in proceeding_ids if p.isdecimal() and len(p) <= 18}
         ordered = [
             b
             for b in ordered
@@ -454,16 +454,16 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
       proceeding_options: list of (proceeding.id, label, detail) sorted by label; the label
                           is the Aktenzeichen (court name when it has none), ``detail`` the
                           court name
-      pipeline_options:   list of (value, display_label) for pipeline states
-                          present in the queue, in canonical display order
-    Only options that have at least one matching bundle are included.
+      pipeline_options:   list of (value, display_label) for every pipeline state, in
+                          canonical display order (a chip for a state that just left
+                          the queue keeps its label)
+    Case and proceeding options only exist while a bundle matches them.
     """
     bundles = _build_bundles(db, include_sub_groups=False, owner_id=owner_id)
 
     case_ids: dict[str, str | None] = {}  # case id -> subject of one of its bundles
     has_unrouted = False
     proceeding_opts: dict[str, tuple[str, str | None]] = {}
-    pipeline_labels_present: set[str] = set()
 
     for b in bundles.values():
         cid = _bundle_case_id(b)
@@ -482,15 +482,13 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
         else:
             proceeding_opts["unassigned"] = ("Unassigned", None)
 
-        pipeline_labels_present.add(_bundle_pipeline_label(b))
-
     titles: dict[str, str] = {}
     if case_ids:
         # Same title the row shows: an ID echo-back is re-derived from the subject.
         titles = {
             cid: title
             for cid, raw in db.query(Case.id, Case.title)
-            .filter(Case.id.in_(case_ids))
+            .filter(Case.id.in_(case_ids.keys()))
             .all()
             if (title := _sanitize_case_title(raw, cid, case_ids[cid]))
         }
@@ -509,11 +507,7 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
         ("processing", "processing"),
         ("failed", "failed"),
     ]
-    pipeline_options = [
-        (value, label)
-        for value, label in canonical_pipeline
-        if value in pipeline_labels_present
-    ]
+    pipeline_options = canonical_pipeline
 
     return {
         "case_options": case_options,

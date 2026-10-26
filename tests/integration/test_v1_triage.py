@@ -111,7 +111,13 @@ def test_feed_lists_bundles_with_stats_and_pickers(db_session, sample_case):
     assert body["stats"]["needs_classification"] == 1
     assert [c["id"] for c in body["cases"]] == [sample_case.id]
     assert body["proceedings"][0]["label"].startswith("AG Hamburg")
-    assert body["filter_options"]["pipeline"]
+    # every state is listed, so a chip for one that just left the queue keeps its label
+    assert [o["value"] for o in body["filter_options"]["pipeline"]] == [
+        "ready",
+        "review_metadata",
+        "processing",
+        "failed",
+    ]
 
 
 def test_case_filter_options_carry_titles_and_a_no_case_option(db_session, sample_case):
@@ -169,9 +175,10 @@ def test_proceeding_filter_options_lead_with_the_aktenzeichen(db_session, sample
 def test_a_malformed_proceeding_filter_matches_nothing(db_session):
     _batch(db_session, _admin(db_session).id)
 
-    r = client.get("/api/v1/triage", params={"proceeding_id": "abc"})
-    assert r.status_code == 200
-    assert r.json()["bundles"] == []
+    for value in ("abc", "9" * 5000):
+        r = client.get("/api/v1/triage", params={"proceeding_id": value})
+        assert r.status_code == 200
+        assert r.json()["bundles"] == []
 
 
 def test_case_option_title_is_re_derived_when_the_stored_one_echoes_the_id(
