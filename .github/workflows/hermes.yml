@@ -37,6 +37,18 @@ on:
     # on-demand mode, so a plain comment is a cheap no-op.
 
 jobs:
+  # `auto-review` does NOT exclude dependabot PRs. A version bump can change a runtime tool
+  # version without saying so (a PR body listing only `cosign-installer 3.5.0 -> 4.1.2` hid a new
+  # default CLI covered by a high-severity advisory), and an automated reviewer reads what the
+  # bump body never mentions. It still excludes release-please PRs (`github-actions[bot]`): a
+  # changelog has nothing for a code review to say.
+  #
+  # A dependabot-authored `pull_request` run sees only the *Dependabot* secret store, so
+  # HERMES_APP_ID, HERMES_APP_PRIVATE_KEY and HERMES_API_KEY must also exist under Settings ->
+  # Secrets and variables -> Dependabot; without them the shared workflow's preflight skips the
+  # review with a notice. Mirroring those secrets is a trust decision, not a checkbox: the run
+  # executes the PR's own copy of this file on the self-hosted runner, and a dependabot branch
+  # lives in this repository, so the fork guard does not apply.
   auto-review:
     # Exclude by PR *author*, not github.actor: on `ready_for_review` the actor
     # is whoever clicked the button. `mullion/task-*` branches are reviewed by
@@ -46,7 +58,6 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.login != 's3ntin3l8-hermes[bot]' &&
-      github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.draft == false &&
       !startsWith(github.event.pull_request.head.ref, 'mullion/task-')
