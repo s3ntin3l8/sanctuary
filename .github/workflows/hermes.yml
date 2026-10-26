@@ -9,6 +9,8 @@ name: Hermes (review)
 #
 # Requirements (outside this file):
 #   - repo secrets HERMES_APP_ID, HERMES_APP_PRIVATE_KEY, HERMES_API_KEY
+#   - the same three under Settings -> Secrets and variables -> Dependabot, for dependency PRs (without
+#     them the review is skipped green with a notice: a green check there means "skipped", not "reviewed")
 #   - the s3ntin3l8-hermes GitHub App installed on this repo
 #   - a self-hosted runner for this repo (the reusable job is `runs-on:
 #     self-hosted`; it forwards the request to the Hermes API on hermes-01)
@@ -49,6 +51,10 @@ jobs:
   # review with a notice. Mirroring those secrets is a trust decision, not a checkbox: the run
   # executes the PR's own copy of this file on the self-hosted runner, and a dependabot branch
   # lives in this repository, so the fork guard does not apply.
+  #
+  # Precondition: keep the reusable's `uses:` refs unversioned (`@main`) while Dependabot's
+  # github-actions updates are enabled. SHA-pinning them would make this file Dependabot-editable, and
+  # its head copy is the code that runs with HERMES_APP_PRIVATE_KEY.
   auto-review:
     # Exclude by PR *author*, not github.actor: on `ready_for_review` the actor
     # is whoever clicked the button. `mullion/task-*` branches are reviewed by
