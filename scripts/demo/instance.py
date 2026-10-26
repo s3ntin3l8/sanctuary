@@ -3,6 +3,7 @@
     make demo          # serve it until Ctrl-C / SIGTERM, then delete everything
     make demo KEEP=1   # keep the scratch directory on exit
     DEMO_AUTH=1 make demo   # login screen on, for /login and /signup
+    DEMO_NOW=2026-10-01T09:00:00Z make demo   # fixed clock: relative dates render the same on any day
 
 Everything lives in one mkdtemp directory: a copy of the code (so `app/config.py`
 resolves PROJECT_ROOT, `.env`, `data/` and the log folder inside it), HOME and
@@ -43,6 +44,7 @@ from scripts.demo.env import (
     assert_ports_free,
     demo_env,
 )
+from scripts.demo.freeze_time import parse_demo_now
 
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON = sys.executable
@@ -221,7 +223,21 @@ def _copy_tree(tree: Path) -> None:
             shutil.copy2(src, tree / entry)
 
 
+def _python(args: list[str], *, frozen: bool) -> list[str]:
+    """`python <args>` (a `-m module ...` or a script), run through scripts.demo.freeze_time when
+    the clock is fixed, so the seed and the server agree on what "now" is."""
+    if not frozen:
+        return [PYTHON, *args]
+    target = args[1:] if args[0] == "-m" else args
+    return [PYTHON, "-m", "scripts.demo.freeze_time", *target]
+
+
 def start_demo(*, keep: bool = False, auth: bool = False) -> Demo:
+    # DEMO_NOW fixes the clock of the seed and the server, so relative dates render the same on any
+    # day (visual checks and screenshots compare text as well as pixels). Validated before anything starts.
+    demo_now = os.environ.get("DEMO_NOW", "").strip()
+    if demo_now:
+        parse_demo_now(demo_now)
     assert_ports_free([DEMO_PORT, DEMO_DB_PORT])
     if DEMO_PORT == DEMO_DB_PORT:
         raise RuntimeError("DEMO_PORT and DEMO_DB_PORT must differ")
@@ -258,6 +274,7 @@ def start_demo(*, keep: bool = False, auth: bool = False) -> Demo:
                 "TIMEZONE": "Europe/Berlin",
                 "LOG_LEVEL": "ERROR",
                 "FRONTEND_DIST": str(ROOT / "frontend" / "dist"),
+                **({"DEMO_NOW": demo_now} if demo_now else {}),
             },
         )
         assert_demo_env(env, demo_dir, cwd=tree, db_port=DEMO_DB_PORT, auth=auth)
@@ -265,23 +282,36 @@ def start_demo(*, keep: bool = False, auth: bool = False) -> Demo:
 
         _start_database(demo, db_password)
 
+        if demo_now:
+            print(f"[demo] clock fixed at {demo_now}", flush=True)
+        frozen = bool(demo_now)
+
         print("[demo] migrating...", flush=True)
         subprocess.run(
-            [PYTHON, "-m", "alembic", "upgrade", "head"], cwd=tree, env=env, check=True
+            _python(["-m", "alembic", "upgrade", "head"], frozen=frozen),
+            cwd=tree,
+            env=env,
+            check=True,
         )
         print("[demo] seeding demo data...", flush=True)
         subprocess.run(
-            [PYTHON, "scripts/seed_dummy_data.py"], cwd=tree, env=env, check=True
+            _python(["scripts/seed_dummy_data.py"], frozen=frozen),
+            cwd=tree,
+            env=env,
+            check=True,
         )
 
         print("[demo] starting the server...", flush=True)
         demo.server = subprocess.Popen(
-            [
-                PYTHON, "-m", "uvicorn", "app.main:app",
-                "--host", "127.0.0.1",
-                "--port", str(DEMO_PORT),
-                "--no-proxy-headers",
-            ],
+            _python(
+                [
+                    "-m", "uvicorn", "app.main:app",
+                    "--host", "127.0.0.1",
+                    "--port", str(DEMO_PORT),
+                    "--no-proxy-headers",
+                ],
+                frozen=frozen,
+            ),
             cwd=tree,
             env=env,
             start_new_session=True,
