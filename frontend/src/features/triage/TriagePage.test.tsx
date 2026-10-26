@@ -123,6 +123,32 @@ test('filters are restored from the URL and Clear filters resets them', async ()
   expect(search).not.toHaveTextContent('pipeline=')
 })
 
+test('opening and closing Ingest keeps the filters', async () => {
+  stub()
+  renderAt(
+    '/triage?case=ADV-024-A&case=ADV-019-C&pipeline=failed',
+    <>
+      <TriagePage />
+      <Search />
+    </>,
+  )
+  const user = userEvent.setup()
+  await screen.findByText('Klageerwiderung')
+  await user.click(screen.getByRole('button', { name: /Ingest/ }))
+  expect(screen.getByTestId('search')).toHaveTextContent('upload=1')
+  await user.keyboard('{Escape}')
+  const search = screen.getByTestId('search')
+  expect(search).not.toHaveTextContent('upload=')
+  expect(search).toHaveTextContent('case=ADV-024-A&case=ADV-019-C&pipeline=failed')
+})
+
+test('empty and repeated filter values in the URL are ignored', async () => {
+  stub()
+  renderAt('/triage?case=&case=ADV-024-A&case=ADV-024-A', <TriagePage />)
+  const chips = await screen.findByRole('group', { name: 'Active filters' })
+  expect(within(chips).getAllByRole('button', { name: /^Remove filter/ })).toHaveLength(1)
+})
+
 test('a long filter list gets a search box', async () => {
   const many = Array.from({ length: 12 }, (_, i) => ({
     value: `C-${i}`,

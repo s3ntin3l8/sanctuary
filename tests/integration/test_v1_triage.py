@@ -166,6 +166,35 @@ def test_proceeding_filter_options_lead_with_the_aktenzeichen(db_session, sample
     ]
 
 
+def test_a_malformed_proceeding_filter_matches_nothing(db_session):
+    _batch(db_session, _admin(db_session).id)
+
+    r = client.get("/api/v1/triage", params={"proceeding_id": "abc"})
+    assert r.status_code == 200
+    assert r.json()["bundles"] == []
+
+
+def test_case_option_title_is_re_derived_when_the_stored_one_echoes_the_id(
+    db_session, sample_case
+):
+    sample_case.title = sample_case.id
+    batch, _ = _batch(
+        db_session,
+        _admin(db_session).id,
+        subject=f"{sample_case.id} Mahnbescheid Müller",
+        case_id=sample_case.id,
+    )
+    db_session.commit()
+
+    body = client.get("/api/v1/triage").json()
+    (option,) = [
+        o for o in body["filter_options"]["cases"] if o["value"] == sample_case.id
+    ]
+    (bundle,) = body["bundles"]
+    assert option["detail"] == bundle["confirmed_case_title"]
+    assert option["detail"] != sample_case.id
+
+
 def test_bundle_title_is_the_subject_for_mail_and_the_lead_for_scans(db_session):
     admin = _admin(db_session)
     _batch(db_session, admin.id, subject="Mail subject", docs=1)

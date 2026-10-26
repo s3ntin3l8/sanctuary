@@ -35,10 +35,15 @@ export function filtersFromParams(params: URLSearchParams): TriageFilters {
   return {
     sort: SORTS.find((s) => s === sort) ?? defaultFilters.sort,
     dir: params.get('dir') === 'asc' ? 'asc' : 'desc',
-    case_id: params.getAll(FILTER_PARAMS.case_id),
-    proceeding_id: params.getAll(FILTER_PARAMS.proceeding_id),
-    pipeline_filter: params.getAll(FILTER_PARAMS.pipeline_filter),
+    case_id: filterValues(params, FILTER_PARAMS.case_id),
+    proceeding_id: filterValues(params, FILTER_PARAMS.proceeding_id),
+    pipeline_filter: filterValues(params, FILTER_PARAMS.pipeline_filter),
   }
+}
+
+// A hand-edited URL can hold empty or repeated values; neither is a filter.
+function filterValues(params: URLSearchParams, name: string): string[] {
+  return [...new Set(params.getAll(name).filter(Boolean))]
 }
 
 /** Write `filters` into a copy of `params`, leaving every other param (bundle, doc, upload) alone. */

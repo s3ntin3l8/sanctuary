@@ -421,7 +421,8 @@ def get_triage_bundles(
         ]
     if proceeding_ids:
         unassigned = "unassigned" in proceeding_ids
-        pid_ints = {int(p) for p in proceeding_ids if p != "unassigned"}
+        # The value comes from a shareable URL: anything but an id matches nothing.
+        pid_ints = {int(p) for p in proceeding_ids if p.isdecimal()}
         ordered = [
             b
             for b in ordered
@@ -459,7 +460,7 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
     """
     bundles = _build_bundles(db, include_sub_groups=False, owner_id=owner_id)
 
-    case_ids: set[str] = set()
+    case_ids: dict[str, str | None] = {}  # case id -> subject of one of its bundles
     has_unrouted = False
     proceeding_opts: dict[str, tuple[str, str | None]] = {}
     pipeline_labels_present: set[str] = set()
@@ -467,7 +468,7 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
     for b in bundles.values():
         cid = _bundle_case_id(b)
         if cid:
-            case_ids.add(cid)
+            case_ids.setdefault(cid, b.subject)
         else:
             has_unrouted = True
 
@@ -485,12 +486,13 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
 
     titles: dict[str, str] = {}
     if case_ids:
+        # Same title the row shows: an ID echo-back is re-derived from the subject.
         titles = {
             cid: title
-            for cid, title in db.query(Case.id, Case.title)
+            for cid, raw in db.query(Case.id, Case.title)
             .filter(Case.id.in_(case_ids))
             .all()
-            if title and title.strip() != cid
+            if (title := _sanitize_case_title(raw, cid, case_ids[cid]))
         }
     case_options: list[tuple[str, str, str | None]] = [
         (cid, cid, titles.get(cid)) for cid in sorted(case_ids)

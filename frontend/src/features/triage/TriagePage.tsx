@@ -57,6 +57,16 @@ const GRID = 'grid grid-cols-[24px_128px_198px_1fr_184px_170px_96px] items-cente
 export function TriagePage() {
   const [params, setParams] = useSearchParams()
   const filters = useMemo(() => filtersFromParams(params), [params])
+  // Edit a copy of the query string: filters, the open bundle and sort ride along.
+  const editParams = (change: (next: URLSearchParams) => void) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        change(next)
+        return next
+      },
+      { replace: true },
+    )
   const updateFilters = (change: (f: TriageFilters) => TriageFilters) =>
     setParams((p) => paramsWithFilters(p, change(filtersFromParams(p))), { replace: true })
   const [status, setStatus] = useState<Status>('all')
@@ -223,7 +233,7 @@ export function TriagePage() {
               </Badge>
             )}
           </Link>
-          <Button onClick={() => setParams({ upload: '1' })}>
+          <Button onClick={() => editParams((next) => next.set('upload', '1'))}>
             <Icon name="upload_file" size={16} /> Ingest
           </Button>
         </div>
@@ -546,7 +556,16 @@ export function TriagePage() {
         label="Retry"
         pending={batchRetry.isPending}
       />
-      <IngestModal open={uploadOpen} caseId={uploadCase} onClose={() => setParams({})} />
+      <IngestModal
+        open={uploadOpen}
+        caseId={uploadCase}
+        onClose={() =>
+          editParams((next) => {
+            next.delete('upload')
+            next.delete('case_id')
+          })
+        }
+      />
     </div>
   )
 }
