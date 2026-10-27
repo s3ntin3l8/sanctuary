@@ -40,14 +40,24 @@ jobs:
         # The py-builder stage's prune step and import check fail the build when a
         # dependency or base-image change breaks them; the runtime stage covers the
         # apt packages.
-        # COMMIT_SHA is what the shared docker-publish workflow passes (the commit it
-        # checked out); the check below fails if the Dockerfile's ARG -> ENV mapping
-        # to SANCTUARY_GIT_SHA breaks, which would otherwise ship "unknown" silently.
+        # COMMIT_SHA and COMMIT_DATE are what the shared docker-publish workflow passes
+        # (the commit it checked out); the checks below fail if the Dockerfile's
+        # ARG -> ENV mapping to SANCTUARY_GIT_SHA / SANCTUARY_BUILD_DATE breaks,
+        # which would otherwise ship "unknown" silently.
         run: |
           sha=$(git rev-parse HEAD)
-          docker build --build-arg SANCTUARY_VERSION=ci --build-arg "COMMIT_SHA=${sha}" -t sanctuary-ci-build .
-          stamped=$(docker image inspect sanctuary-ci-build --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^SANCTUARY_GIT_SHA=//p')
+          date=$(git show -s --format=%cI HEAD)
+          docker build --build-arg SANCTUARY_VERSION=ci --build-arg "COMMIT_SHA=${sha}" --build-arg "COMMIT_DATE=${date}" -t sanctuary-ci-build .
+          env_of() {
+            docker image inspect sanctuary-ci-build --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"
+          }
+          stamped=$(env_of SANCTUARY_GIT_SHA)
           if [ "$stamped" != "$sha" ]; then
             echo "::error::SANCTUARY_GIT_SHA in the image is '${stamped}', expected ${sha} (Dockerfile ARG COMMIT_SHA -> ENV mapping)"
+            exit 1
+          fi
+          stamped_date=$(env_of SANCTUARY_BUILD_DATE)
+          if [ "$stamped_date" != "$date" ]; then
+            echo "::error::SANCTUARY_BUILD_DATE in the image is '${stamped_date}', expected ${date} (Dockerfile ARG COMMIT_DATE -> ENV mapping)"
             exit 1
           fi

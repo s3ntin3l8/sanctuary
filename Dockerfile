@@ -86,14 +86,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=py-builder /opt/venv /opt/venv
 
 # Build identity shown in Settings → About (set by the publish workflows).
-# COMMIT_SHA is added by the shared docker-publish workflow: the commit it checked
-# out (the tag's commit for a release), so callers must not pass github.sha.
+# COMMIT_SHA and COMMIT_DATE (committer date, ISO 8601) are added by the shared
+# docker-publish workflow: the commit it checked out (the tag's commit for a
+# release), so callers must not pass github.sha or a trigger timestamp.
 ARG SANCTUARY_VERSION=""
 ARG COMMIT_SHA=""
-ARG SANCTUARY_BUILD_DATE=""
+ARG COMMIT_DATE=""
 ENV SANCTUARY_VERSION=$SANCTUARY_VERSION \
     SANCTUARY_GIT_SHA=$COMMIT_SHA \
-    SANCTUARY_BUILD_DATE=$SANCTUARY_BUILD_DATE
+    SANCTUARY_BUILD_DATE=$COMMIT_DATE
 
 # Copy application code
 COPY . .
