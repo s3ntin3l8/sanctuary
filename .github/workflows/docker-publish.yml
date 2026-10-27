@@ -23,5 +23,4 @@ jobs:
       platforms: linux/amd64
       build-args: |
         SANCTUARY_VERSION=edge
-        SANCTUARY_GIT_SHA=${{ github.sha }}
         SANCTUARY_BUILD_DATE=${{ github.event.head_commit.timestamp }}
