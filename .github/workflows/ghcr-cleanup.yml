@@ -1,0 +1,35 @@
+name: GHCR Cleanup
+
+# Thin caller: the manifest-aware pruning lives in the shared reusable workflow
+# (dangling untagged versions, sha-<shortsha> build tags beyond the newest 20,
+# audit-<run>-<attempt> candidate tags older than 7 days). Runs weekly and on demand;
+# `dry-run` previews what would be deleted without deleting it.
+on:
+  schedule:
+    - cron: '0 4 * * 0' # weekly, Sunday 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Simulate: log what would be deleted without deleting'
+        type: boolean
+        default: true
+
+permissions: {}
+
+# A manual run must not overlap the Sunday one: two delete+validate passes on the same
+# package can race on the same manifest lists. Queue, never cancel a prune in flight.
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    permissions:
+      packages: write
+    uses: s3ntin3l8/.github/.github/workflows/ghcr-cleanup.yml@main
+    with:
+      package-name: 'sanctuary'
+      # Sanctuary publishes ~4 edge builds a day, so the default of 10 is only ~2.5 days of
+      # rollback history.
+      keep-n-sha-tagged: 20
+      dry-run: ${{ inputs.dry-run || false }}
