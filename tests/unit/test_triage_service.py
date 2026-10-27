@@ -850,13 +850,15 @@ def test_loose_doc_with_needs_review_still_appears_in_feed(db_session):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("direction", ["asc", "desc"])
 @pytest.mark.parametrize("sort", ["received", "docs", "status"])
 def test_triage_feed_order_ignores_the_order_rows_are_read_in(
-    db_session, monkeypatch, sort
+    db_session, monkeypatch, sort, direction
 ):
     """Bundles that tie on the sort key (here: the same received_at and doc count) keep one
-    order whatever order the database returns them in, newest batch first. The demo's
-    /triage rows used to swap between two loads."""
+    order whatever order the database returns them in and whichever direction is asked for:
+    newest batch first, then unbatched documents by key. The demo's /triage rows used to
+    swap between two loads."""
     from app.models.database import Case
     from app.services import triage_bundles
 
@@ -865,7 +867,25 @@ def test_triage_feed_order_ignores_the_order_rows_are_read_in(
         _make_batch_with_docs(db_session, triage_case, None, [{"title": f"Doc {i}"}])[0]
         for i in range(3)
     ]
-    expected = sorted((b.id for b in batches), reverse=True)
+    loose = [
+        Document(
+            title=f"Loose {i}",
+            content="content",
+            case_id=triage_case.id,
+            role=DocumentRole.COVER_LETTER,
+            originator_type=OriginatorType.COURT,
+            sender="sender@example.com",
+            ingest_date=batches[0].received_at,
+            needs_review=True,
+            review_reasons=["missing_case_id"],
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(loose)
+    db_session.commit()
+    expected = [f"batch-{b.id}" for b in sorted(batches, key=lambda b: -b.id)] + sorted(
+        f"loose-{d.id}" for d in loose
+    )
 
     build = triage_bundles._build_bundles
     for reverse_read in (False, True):
@@ -877,8 +897,10 @@ def test_triage_feed_order_ignores_the_order_rows_are_read_in(
 
         monkeypatch.setattr(triage_bundles, "_build_bundles", read)
         ours = [
-            b.batch_id
-            for b in triage_bundles.get_triage_bundles(db_session, sort=sort)
-            if b.batch_id in expected
+            b.key
+            for b in triage_bundles.get_triage_bundles(
+                db_session, sort=sort, direction=direction
+            )
+            if b.key in expected
         ]
         assert ours == expected
