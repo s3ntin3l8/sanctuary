@@ -46,8 +46,8 @@ jobs:
         # which would otherwise ship "unknown" silently.
         run: |
           sha=$(git rev-parse HEAD)
-          date=$(git show -s --format=%cI HEAD)
-          docker build --build-arg SANCTUARY_VERSION=ci --build-arg "COMMIT_SHA=${sha}" --build-arg "COMMIT_DATE=${date}" -t sanctuary-ci-build .
+          commit_date=$(git show -s --format=%cI HEAD)
+          docker build --build-arg SANCTUARY_VERSION=ci --build-arg "COMMIT_SHA=${sha}" --build-arg "COMMIT_DATE=${commit_date}" -t sanctuary-ci-build .
           env_of() {
             docker image inspect sanctuary-ci-build --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"
           }
@@ -57,7 +57,7 @@ jobs:
             exit 1
           fi
           stamped_date=$(env_of SANCTUARY_BUILD_DATE)
-          if [ "$stamped_date" != "$date" ]; then
-            echo "::error::SANCTUARY_BUILD_DATE in the image is '${stamped_date}', expected ${date} (Dockerfile ARG COMMIT_DATE -> ENV mapping)"
+          if [ "$stamped_date" != "$commit_date" ]; then
+            echo "::error::SANCTUARY_BUILD_DATE in the image is '${stamped_date}', expected ${commit_date} (Dockerfile ARG COMMIT_DATE -> ENV mapping)"
             exit 1
           fi
