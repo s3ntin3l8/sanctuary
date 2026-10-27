@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.7.0](https://github.com/s3ntin3l8/sanctuary/compare/v0.6.1...v0.7.0) (2026-10-27)
+
+
+### Features
+
+* **demo:** DEMO_AUTH=1 pass to capture /login and /signup ([#448](https://github.com/s3ntin3l8/sanctuary/issues/448)) ([b8d1a6d](https://github.com/s3ntin3l8/sanctuary/commit/b8d1a6d56614fc45d709b1e72d549668df019a36)), closes [#446](https://github.com/s3ntin3l8/sanctuary/issues/446)
+* **demo:** one-command isolated demo for UI audits ([#447](https://github.com/s3ntin3l8/sanctuary/issues/447)) ([e6f00e0](https://github.com/s3ntin3l8/sanctuary/commit/e6f00e04b6caab2912f556517b2ecb2b25bb3f3f)), closes [#444](https://github.com/s3ntin3l8/sanctuary/issues/444)
+* **demo:** seed PDFs so the slice views can be captured ([#449](https://github.com/s3ntin3l8/sanctuary/issues/449)) ([6ef9b12](https://github.com/s3ntin3l8/sanctuary/commit/6ef9b12bfd59be1b9c569e208e9aab5d36c45d1d)), closes [#445](https://github.com/s3ntin3l8/sanctuary/issues/445)
+* reproducible screenshots and visual checks on visual-kit ([#465](https://github.com/s3ntin3l8/sanctuary/issues/465)) ([c4b3328](https://github.com/s3ntin3l8/sanctuary/commit/c4b3328b3b2562285674e720583f62e82570fbfd))
+* **theme:** System theme that follows the OS, as the default ([#450](https://github.com/s3ntin3l8/sanctuary/issues/450)) ([704c153](https://github.com/s3ntin3l8/sanctuary/commit/704c15385a9fb205c2d65af7cd4b2373c02c9190))
+* **triage:** case titles and readable, persistent filters ([#463](https://github.com/s3ntin3l8/sanctuary/issues/463)) ([a97ed9e](https://github.com/s3ntin3l8/sanctuary/commit/a97ed9e414a887bb0d39e498f07e3c26de051ceb))
+* **triage:** editable draft cases, pre-trial proceeding, short year date, drag-and-drop, and OCR sanitization ([#423](https://github.com/s3ntin3l8/sanctuary/issues/423)) ([89c1924](https://github.com/s3ntin3l8/sanctuary/commit/89c19240720387ebee1e633f558e1b73d520168d))
+
+
+### Bug Fixes
+
+* **deps:** bump docling stack to 2.142.1 for pillow 13 ([#441](https://github.com/s3ntin3l8/sanctuary/issues/441)) ([e308f46](https://github.com/s3ntin3l8/sanctuary/commit/e308f4674452e4005787977adf506543a0b110fa))
+* **docker:** derive site-packages path in prune step ([#438](https://github.com/s3ntin3l8/sanctuary/issues/438)) ([4e1ebf7](https://github.com/s3ntin3l8/sanctuary/commit/4e1ebf72a218e3bb8a0befe42a71c05b986689a3))
+* give the triage feed a stable order for tied bundles ([#472](https://github.com/s3ntin3l8/sanctuary/issues/472)) ([4df129c](https://github.com/s3ntin3l8/sanctuary/commit/4df129ccb1d1a2fa1d0791b9474638ae1722e81b))
+* key-passage highlights no longer end mid-word ([#471](https://github.com/s3ntin3l8/sanctuary/issues/471)) ([e268bcc](https://github.com/s3ntin3l8/sanctuary/commit/e268bcc83b1a2456205e7fc01709dec4ed7b4d14))
+* **release:** stamp the built commit via COMMIT_SHA, not github.sha ([#476](https://github.com/s3ntin3l8/sanctuary/issues/476)) ([2776a9f](https://github.com/s3ntin3l8/sanctuary/commit/2776a9f4e0316aabb9f3d0e953474ebc06caf8f3))
+* **theme:** restore the tertiary text step in the light theme ([#462](https://github.com/s3ntin3l8/sanctuary/issues/462)) ([4cf6b1b](https://github.com/s3ntin3l8/sanctuary/commit/4cf6b1b1e284c19166ac2d0383ab312a2924bd02))
+* **triage:** cover letter heads its group, loose documents share one group ([a70f001](https://github.com/s3ntin3l8/sanctuary/commit/a70f00149479d69e220634d15f1597c2df9533eb))
+
 ## [0.6.1](https://github.com/s3ntin3l8/sanctuary/compare/v0.6.0...v0.6.1) (2026-10-19)
 
 
