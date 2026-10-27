@@ -17,16 +17,21 @@ Returns ``(start, end)`` character offsets in the original ``content`` string, o
 from __future__ import annotations
 
 import difflib
+from array import array
+
+# A span is widened to word boundaries by at most this many characters; a longer
+# alphanumeric run (hash, base64, id) is not a word, so the span stays as matched.
+_SNAP_MAX = 32
 
 _QUOTES = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 
 
-def _project(s: str) -> tuple[str, list[int]]:
+def _project(s: str) -> tuple[str, array]:
     """Normalize ``s`` (quotes folded, whitespace runs collapsed, ends
     stripped) and return it with, for every normalized character, its offset
     in ``s``."""
     chars: list[str] = []
-    origin: list[int] = []
+    origin = array("l")
     pending_space = False
     for i, ch in enumerate(s.translate(_QUOTES)):
         if ch.isspace():
@@ -42,17 +47,33 @@ def _project(s: str) -> tuple[str, list[int]]:
 
 
 def _snap_to_words(content: str, start: int, end: int) -> tuple[int, int]:
-    """Widen a span so it does not begin or end inside a word, then drop
-    whitespace at its edges."""
-    while start > 0 and content[start - 1].isalnum() and content[start].isalnum():
-        start -= 1
-    while end < len(content) and content[end - 1].isalnum() and content[end].isalnum():
-        end += 1
-    while start < end and content[start].isspace():
-        start += 1
-    while end > start and content[end - 1].isspace():
-        end -= 1
-    return start, end
+    """Widen a span so it does not begin or end inside a word (by at most
+    ``_SNAP_MAX`` characters), then drop whitespace at its edges."""
+    lo = start
+    while (
+        lo > 0
+        and content[lo - 1].isalnum()
+        and content[lo].isalnum()
+        and start - lo < _SNAP_MAX
+    ):
+        lo -= 1
+    if lo > 0 and content[lo - 1].isalnum() and content[lo].isalnum():
+        lo = start
+    hi = end
+    while (
+        hi < len(content)
+        and content[hi - 1].isalnum()
+        and content[hi].isalnum()
+        and hi - end < _SNAP_MAX
+    ):
+        hi += 1
+    if hi < len(content) and content[hi - 1].isalnum() and content[hi].isalnum():
+        hi = end
+    while lo < hi and content[lo].isspace():
+        lo += 1
+    while hi > lo and content[hi - 1].isspace():
+        hi -= 1
+    return lo, hi
 
 
 def find_text_offsets(content: str, text: str) -> tuple[int, int] | None:
@@ -71,7 +92,9 @@ def find_text_offsets(content: str, text: str) -> tuple[int, int] | None:
     if norm_text:
         norm_idx = norm_content.find(norm_text)
         if norm_idx != -1 and norm_content.find(norm_text, norm_idx + 1) == -1:
-            return origin[norm_idx], origin[norm_idx + len(norm_text) - 1] + 1
+            return _snap_to_words(
+                content, origin[norm_idx], origin[norm_idx + len(norm_text) - 1] + 1
+            )
 
     # Pass 3 — fuzzy windowed ratio (paraphrased / punctuation-shifted quotes)
     target_len = len(norm_text)

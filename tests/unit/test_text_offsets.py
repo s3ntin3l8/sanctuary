@@ -79,3 +79,23 @@ def test_fuzzy_match_never_ends_inside_a_word():
     assert not content[end - 1].isalnum() or not content[end].isalnum()
     assert "1601" in content[start:end]
     assert content[start:end] == text.rstrip(".")
+
+
+@pytest.mark.unit
+def test_normalized_match_does_not_end_inside_a_longer_word():
+    # The double space defeats the exact pass; the normalized pass must not stop at "Unterhalt|s".
+    content = "Er schuldet rückständigen  Unterhaltsanspruch seit Januar."
+    start, end = find_text_offsets(content, "rückständigen Unterhalt")
+    assert content[start:end] == "rückständigen  Unterhaltsanspruch"
+
+
+@pytest.mark.unit
+def test_snapping_does_not_swallow_a_long_alphanumeric_run():
+    # A fuzzy window that begins inside a long hash/id must not widen over all of it.
+    junk = "a" * 200
+    content = f"{junk}\nDer Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt für Januar."
+    start, end = find_text_offsets(
+        content, "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt."
+    )
+    assert end - start < 80
+    assert "Der Beklagte" in content[start:end]
