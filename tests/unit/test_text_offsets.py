@@ -54,3 +54,56 @@ def test_fuzzy_match_for_punctuation_shifted_quote():
 @pytest.mark.unit
 def test_unrelated_text_returns_none():
     assert find_text_offsets("alpha beta gamma delta epsilon", "xyz123 qrs789") is None
+
+
+@pytest.mark.unit
+def test_normalized_span_covers_exactly_the_match_after_whitespace_runs():
+    # Whitespace before the match used to shift the mapped start earlier.
+    content = "Kopf\n\n  Zeile   eins\n\nDer  Beklagte\tschuldet   Unterhalt. Ende"
+    text = "Der Beklagte schuldet Unterhalt."
+    start, end = find_text_offsets(content, text)
+    assert content[start:end] == "Der  Beklagte\tschuldet   Unterhalt."
+
+
+@pytest.mark.unit
+def test_fuzzy_match_never_ends_inside_a_word():
+    content = (
+        "kanzlei@sanctuary-counsel.de.\n\n"
+        "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt für den "
+        "Zeitraum Januar bis Oktober 2025."
+    )
+    # Not verbatim (trailing period), so it falls through to the fuzzy pass.
+    text = "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt."
+    start, end = find_text_offsets(content, text)
+    assert content[start:].startswith("Der Beklagte")
+    assert not content[end - 1].isalnum() or not content[end].isalnum()
+    assert "1601" in content[start:end]
+    assert content[start:end] == text.rstrip(".")
+
+
+@pytest.mark.unit
+def test_normalized_match_does_not_end_inside_a_longer_word():
+    # The double space defeats the exact pass; the normalized pass must not stop at "Unterhalt|s".
+    content = "Er schuldet rückständigen  Unterhaltsanspruch seit Januar."
+    start, end = find_text_offsets(content, "rückständigen Unterhalt")
+    assert content[start:end] == "rückständigen  Unterhaltsanspruch"
+
+
+@pytest.mark.unit
+def test_snapping_does_not_swallow_a_long_alphanumeric_run():
+    # A fuzzy window that begins inside a long hash/id must not widen over all of it.
+    junk = "a" * 200
+    content = f"{junk}\nDer Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt für Januar."
+    start, end = find_text_offsets(
+        content, "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt."
+    )
+    assert end - start < 80
+    assert "Der Beklagte" in content[start:end]
+
+
+@pytest.mark.unit
+def test_a_run_longer_than_the_snap_limit_is_left_as_matched():
+    # The cap is deliberate: past it the span may still end inside the run.
+    content = "Die Nummer  " + "X" * 60
+    start, end = find_text_offsets(content, "Die Nummer " + "X" * 16)
+    assert content[start:end] == "Die Nummer  " + "X" * 16
