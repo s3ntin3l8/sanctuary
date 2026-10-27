@@ -52,7 +52,7 @@ test('queue: a live import shows in the hover card, the modal, and can be stoppe
   const user = userEvent.setup()
 
   expect(await screen.findByText('Importing from Gmail · 1/3')).toBeInTheDocument()
-  await user.click(await screen.findByRole('button', { name: 'Processing queue' }))
+  await user.click(await screen.findByRole('button', { name: /^Processing queue/ }))
   const dialog = screen.getByRole('dialog')
   expect(within(dialog).getByText(/Importing 1\/3/)).toBeVisible()
   expect(within(dialog).getByRole('link', { name: 'Import history' })).toHaveAttribute(
@@ -89,7 +89,7 @@ test(
   async () => {
     shellStub({ 'GET /api/v1/worker-queue': { body: queueWith(finished) } })
     renderAt('/', <Shell />)
-    await screen.findByRole('button', { name: 'Processing queue' })
+    await screen.findByRole('button', { name: /^Processing queue/ })
     await new Promise((resolve) => setTimeout(resolve, 5_500))
     expect(screen.queryByText(/Gmail import finished/)).toBeNull()
   },

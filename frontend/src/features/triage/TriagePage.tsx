@@ -833,16 +833,6 @@ function BundleRow({
       <div
         className={`${GRID} ${b.status === 'needs_review' && b.confirmed_case_id ? 'opacity-90' : ''} cursor-pointer px-3 py-2.5 text-[12px] hover:bg-accent/5`}
         onClick={onToggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onToggle()
-          }
-        }}
-        aria-expanded={expanded}
       >
         <input
           type="checkbox"
@@ -853,7 +843,16 @@ function BundleRow({
           onChange={(e) => onSelect(e.target.checked)}
           className="h-3.5 w-3.5 accent-accent"
         />
-        <span>
+        {/* The row itself is not a button (it holds real controls); this is its keyboard toggle. */}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle()
+          }}
+          className="text-left"
+        >
           <span className="flex items-center gap-1 font-mono text-[11px] text-tealink">
             <Icon name={sourceIcon} size={12} className="text-muted" /> ib-
             {String(b.batch_id ?? b.lead_doc_id).padStart(4, '0')}
@@ -861,7 +860,7 @@ function BundleRow({
           <span className="block font-mono text-[10px] text-muted">
             {formatShortDate(b.received_at)} · {b.source_type}
           </span>
-        </span>
+        </button>
         <span>
           <span className="flex items-center gap-1.5 text-[11px]">
             {pluralize(b.doc_count, 'doc')} · {b.total_pages} pp

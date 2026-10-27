@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import { NavLink } from 'react-router'
 
 import { Icon } from '../ui/Icon'
@@ -10,7 +9,9 @@ type Props = {
   legacy?: boolean
   active?: boolean
   onClick?: () => void
-  badge?: ReactNode
+  /** A pending count shown as a badge; it is part of the accessible name (WCAG 2.5.3). */
+  count?: number
+  tone?: 'danger' | 'warning'
 }
 
 const base =
@@ -20,11 +21,22 @@ const base =
  * One 40×40 rail control. `to` renders a link (`legacy` forces a full page
  * load for views still served by the server), otherwise a button.
  */
-export function RailButton({ icon, label, to, legacy, active, onClick, badge }: Props) {
+export function RailButton({
+  icon,
+  label: baseLabel,
+  to,
+  legacy,
+  active,
+  onClick,
+  count = 0,
+  tone = 'warning',
+}: Props) {
+  // The badge text is visible, so the name must contain it (axe label-content-name-mismatch).
+  const label = count > 0 ? `${baseLabel}, ${shownCount(count)}` : baseLabel
   const content = (
     <>
       <Icon name={icon} size={22} filled={active} />
-      {badge}
+      <CountBadge count={count} tone={tone} />
     </>
   )
   const activeClass = 'bg-accent/10 text-accent'
@@ -61,14 +73,16 @@ export function RailButton({ icon, label, to, legacy, active, onClick, badge }: 
   )
 }
 
-export function CountBadge({ count, tone }: { count: number; tone: 'danger' | 'warning' }) {
+const shownCount = (count: number) => (count > 99 ? '99+' : String(count))
+
+function CountBadge({ count, tone }: { count: number; tone: 'danger' | 'warning' }) {
   if (count <= 0) return null
   const colors = tone === 'danger' ? 'bg-[#ffb4ab] text-[#690005]' : 'bg-warning text-on-warning'
   return (
     <span
       className={`absolute -top-0.5 -right-0.5 min-w-4 rounded-full px-1 text-center font-mono text-[9px] font-bold leading-4 ${colors}`}
     >
-      {count > 99 ? '99+' : count}
+      {shownCount(count)}
     </span>
   )
 }

@@ -7,7 +7,7 @@ import { formatEur } from '../format'
 import { formatDueRelative, formatShortDate } from '../time'
 import { Icon } from '../ui/Icon'
 import { Popover } from '../ui/Popover'
-import { CountBadge, RailButton } from './RailButton'
+import { RailButton } from './RailButton'
 
 type Kind = Schemas['NotificationGroup']['kind']
 
@@ -41,7 +41,7 @@ export function NotificationsPanel() {
           label="Notifications"
           active={open}
           onClick={() => setOpen((v) => !v)}
-          badge={<CountBadge count={total} tone="warning" />}
+          count={total}
         />
       }
     >
