@@ -13,6 +13,11 @@
     ".venv",
     "frontend/node_modules"
   ],
+  "cacheKeyFiles": [
+    "requirements.txt",
+    "requirements-dev.txt",
+    "frontend/package-lock.json"
+  ],
   "clock": "2026-10-01T09:00:00Z",
   "scenes": [
     {
@@ -313,7 +318,7 @@
           "wait": 1200
         }
       ],
-      "viewports": []
+      "stills": false
     }
   ]
 }
