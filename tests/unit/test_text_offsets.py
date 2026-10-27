@@ -54,3 +54,28 @@ def test_fuzzy_match_for_punctuation_shifted_quote():
 @pytest.mark.unit
 def test_unrelated_text_returns_none():
     assert find_text_offsets("alpha beta gamma delta epsilon", "xyz123 qrs789") is None
+
+
+@pytest.mark.unit
+def test_normalized_span_covers_exactly_the_match_after_whitespace_runs():
+    # Whitespace before the match used to shift the mapped start earlier.
+    content = "Kopf\n\n  Zeile   eins\n\nDer  Beklagte\tschuldet   Unterhalt. Ende"
+    text = "Der Beklagte schuldet Unterhalt."
+    start, end = find_text_offsets(content, text)
+    assert content[start:end] == "Der  Beklagte\tschuldet   Unterhalt."
+
+
+@pytest.mark.unit
+def test_fuzzy_match_never_ends_inside_a_word():
+    content = (
+        "kanzlei@sanctuary-counsel.de.\n\n"
+        "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt für den "
+        "Zeitraum Januar bis Oktober 2025."
+    )
+    # Not verbatim (trailing period), so it falls through to the fuzzy pass.
+    text = "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt."
+    start, end = find_text_offsets(content, text)
+    assert content[start:].startswith("Der Beklagte")
+    assert not content[end - 1].isalnum() or not content[end].isalnum()
+    assert "1601" in content[start:end]
+    assert content[start:end] == text.rstrip(".")

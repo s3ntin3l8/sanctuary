@@ -10,32 +10,49 @@ Three passes:
 2. normalized substring — whitespace collapsed, curly quotes folded (must be unique)
 3. fuzzy windowed difflib ratio ≥ 0.85 (only for text ≥ 20 chars)
 
-Returns ``(start, end)`` byte offsets in the original ``content`` string, or
+Returns ``(start, end)`` character offsets in the original ``content`` string, or
 ``None`` when the passage cannot be confidently located.
 """
 
 from __future__ import annotations
 
 import difflib
-import re
+
+_QUOTES = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 
 
-def _normalize(s: str) -> str:
-    s = s.replace("‘", "'").replace("’", "'")
-    s = s.replace("“", '"').replace("”", '"')
-    return re.sub(r"\s+", " ", s).strip()
+def _project(s: str) -> tuple[str, list[int]]:
+    """Normalize ``s`` (quotes folded, whitespace runs collapsed, ends
+    stripped) and return it with, for every normalized character, its offset
+    in ``s``."""
+    chars: list[str] = []
+    origin: list[int] = []
+    pending_space = False
+    for i, ch in enumerate(s.translate(_QUOTES)):
+        if ch.isspace():
+            pending_space = bool(chars)
+            continue
+        if pending_space:
+            chars.append(" ")
+            origin.append(i - 1)
+            pending_space = False
+        chars.append(ch)
+        origin.append(i)
+    return "".join(chars), origin
 
 
-def _norm_to_orig(content: str, norm_idx: int) -> int:
-    """Map a position in the normalized projection of ``content`` back to
-    its offset in the original ``content`` string."""
-    norm_walked = 0
-    for m in re.finditer(r"\S+|\s+", content):
-        token = _normalize(m.group())
-        if norm_walked + len(token) > norm_idx:
-            return m.start()
-        norm_walked += len(token) + 1  # +1 for collapsed space
-    return len(content)
+def _snap_to_words(content: str, start: int, end: int) -> tuple[int, int]:
+    """Widen a span so it does not begin or end inside a word, then drop
+    whitespace at its edges."""
+    while start > 0 and content[start - 1].isalnum() and content[start].isalnum():
+        start -= 1
+    while end < len(content) and content[end - 1].isalnum() and content[end].isalnum():
+        end += 1
+    while start < end and content[start].isspace():
+        start += 1
+    while end > start and content[end - 1].isspace():
+        end -= 1
+    return start, end
 
 
 def find_text_offsets(content: str, text: str) -> tuple[int, int] | None:
@@ -49,13 +66,12 @@ def find_text_offsets(content: str, text: str) -> tuple[int, int] | None:
         return idx, idx + len(text)
 
     # Pass 2 — normalized, unique
-    norm_text = _normalize(text)
-    norm_content = _normalize(content)
+    norm_text, _ = _project(text)
+    norm_content, origin = _project(content)
     if norm_text:
         norm_idx = norm_content.find(norm_text)
         if norm_idx != -1 and norm_content.find(norm_text, norm_idx + 1) == -1:
-            orig_idx = _norm_to_orig(content, norm_idx)
-            return orig_idx, min(orig_idx + len(text), len(content))
+            return origin[norm_idx], origin[norm_idx + len(norm_text) - 1] + 1
 
     # Pass 3 — fuzzy windowed ratio (paraphrased / punctuation-shifted quotes)
     target_len = len(norm_text)
@@ -73,7 +89,8 @@ def find_text_offsets(content: str, text: str) -> tuple[int, int] | None:
                 best_ratio = ratio
                 best_pos = i
         if best_ratio >= 0.85 and best_pos >= 0:
-            orig_idx = _norm_to_orig(content, best_pos)
-            return orig_idx, min(orig_idx + len(text), len(content))
+            return _snap_to_words(
+                content, origin[best_pos], origin[best_pos + target_len - 1] + 1
+            )
 
     return None

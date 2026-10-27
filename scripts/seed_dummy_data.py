@@ -2626,7 +2626,7 @@ _add_claim_evidence(
             claim_id=cl2.id,
             document_id=p8_klage.id,
             role=ClaimEvidenceRole.SUPPORTS,
-            excerpt="Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt.",
+            excerpt="Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt",
             confidence=RelationshipConfidence.USER_CONFIRMED,
         ),
         ClaimEvidence(
