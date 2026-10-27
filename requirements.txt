@@ -106,7 +106,7 @@ pyobjc-framework-CoreML==11.1; sys_platform == 'darwin'
 pyobjc-framework-Quartz==11.1; sys_platform == 'darwin'
 pyobjc-framework-Vision==11.1; sys_platform == 'darwin'
 pypdfium2==5.14.0
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
 python-docx==1.2.0
 python-dotenv==1.2.4
 python-multipart==0.0.32
