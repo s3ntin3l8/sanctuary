@@ -99,3 +99,11 @@ def test_snapping_does_not_swallow_a_long_alphanumeric_run():
     )
     assert end - start < 80
     assert "Der Beklagte" in content[start:end]
+
+
+@pytest.mark.unit
+def test_a_run_longer_than_the_snap_limit_is_left_as_matched():
+    # The cap is deliberate: past it the span may still end inside the run.
+    content = "Die Nummer  " + "X" * 60
+    start, end = find_text_offsets(content, "Die Nummer " + "X" * 16)
+    assert content[start:end] == "Die Nummer  " + "X" * 16

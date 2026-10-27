@@ -47,8 +47,10 @@ def _project(s: str) -> tuple[str, array]:
 
 
 def _snap_to_words(content: str, start: int, end: int) -> tuple[int, int]:
-    """Widen a span so it does not begin or end inside a word (by at most
-    ``_SNAP_MAX`` characters), then drop whitespace at its edges."""
+    """Widen a span so it does not begin or end inside a word, then drop
+    whitespace at its edges. Only where the enclosing alphanumeric run is at
+    most ``_SNAP_MAX`` characters longer than the span: a longer run (hash,
+    base64, id) is not a word and the span stays as matched."""
     lo = start
     while (
         lo > 0
