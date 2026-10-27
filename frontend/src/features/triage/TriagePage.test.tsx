@@ -373,7 +373,9 @@ test('keyboard: Enter on a row action does not toggle the row, ⌘↵ opens conf
   row.focus()
   await user.keyboard('{Enter}')
   expect(await screen.findByText('Bundle contents · 3')).toBeVisible()
-  const checkbox = within(row).getByRole('checkbox')
+  const checkbox = within(row.closest('li') as HTMLElement).getByRole('checkbox', {
+    name: /^Select /,
+  })
   checkbox.focus()
   await user.keyboard('{Enter}')
   expect(screen.getByText('Bundle contents · 3')).toBeVisible()

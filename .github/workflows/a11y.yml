@@ -1,0 +1,67 @@
+name: Accessibility
+
+# Blocks on serious or critical axe violations on the main screens, rendered from the seeded demo
+# (`make demo`), in dark and light. The e2e job stays advisory, so this is its own job.
+# Locally: start `make demo`, then `E2E_BASE_URL=http://127.0.0.1:3985 pytest tests/e2e/test_axe_smoke.py -n0`.
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "app/api/**"
+      - "scripts/demo/**"
+      - "scripts/seed_dummy_data.py"
+      - "tests/e2e/test_axe_smoke.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "Makefile"
+      - "tests/e2e/conftest.py"
+      - ".github/visual-setup.sh"
+      - ".github/workflows/a11y.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  axe:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: "pip"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install what the demo needs
+        run: .github/visual-setup.sh
+      - name: Install Playwright browser
+        run: .venv/bin/playwright install --with-deps chromium
+      - name: Log in to Docker Hub
+        # Avoids the anonymous pull rate limit (the demo's database and the test conftest's
+        # testcontainers each pull pgvector); anonymous when the secrets are unset.
+        uses: s3ntin3l8/.github/.github/actions/dockerhub-login@3b9d7cfd58090eb37898f24d654a0788f944e090 # main @ 2026-10-10
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Start the demo
+        run: |
+          DEMO_NOW=2026-10-01T09:00:00Z setsid make demo > demo.log 2>&1 &
+          for _ in $(seq 1 300); do
+            grep -q DEMO_READY demo.log && exit 0
+            sleep 1
+          done
+          cat demo.log
+          exit 1
+      - name: No serious or critical axe violations
+        run: E2E_REQUIRED=1 E2E_BASE_URL=http://127.0.0.1:3985 .venv/bin/python -m pytest tests/e2e/test_axe_smoke.py -n0 -p no:cacheprovider
+      - name: Demo log
+        if: failure()
+        run: tail -60 demo.log

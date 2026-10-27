@@ -9,7 +9,7 @@ import { formatAgo, toMillis } from '../time'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
-import { CountBadge, RailButton } from './RailButton'
+import { RailButton } from './RailButton'
 
 type Queue = Schemas['QueueView']
 type Tab = 'active' | 'queued' | 'failed' | 'recent'
@@ -28,13 +28,8 @@ export function ProcessingQueue() {
         icon="sync"
         label="Processing queue"
         onClick={() => setOpen(true)}
-        badge={
-          failed > 0 ? (
-            <CountBadge count={failed} tone="danger" />
-          ) : (
-            <CountBadge count={active} tone="warning" />
-          )
-        }
+        count={failed > 0 ? failed : active}
+        tone={failed > 0 ? 'danger' : 'warning'}
       />
       {queue && (
         <div className="pointer-events-none absolute bottom-0 left-12 z-90 hidden w-64 rounded-xl border border-line bg-card p-3 text-[11px] shadow-[0_18px_44px_rgba(0,0,0,.45)] group-hover:block">

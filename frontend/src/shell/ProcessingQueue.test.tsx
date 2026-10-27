@@ -38,7 +38,7 @@ test('queue: says why a document is held back from relationship detection', asyn
   renderAt('/', <ProcessingQueue />)
 
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Processing queue' }))
+  await user.click(await screen.findByRole('button', { name: /^Processing queue/ }))
   await user.click(await screen.findByRole('tab', { name: /Queued/ }))
 
   expect(await screen.findByText('Waiting for earlier documents of the case')).toBeVisible()
@@ -80,7 +80,7 @@ test('queue: opens on Failed when something failed, lists every failed stage and
   })
   renderAt('/', <ProcessingQueue />)
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Processing queue' }))
+  await user.click(await screen.findByRole('button', { name: /^Processing queue/ }))
 
   expect(await screen.findByRole('tab', { name: /Failed/, selected: true })).toBeVisible()
   const link = screen.getByRole('link', { name: 'Klageschrift.pdf' })
@@ -121,7 +121,7 @@ test('queue: system strip shows workers, backlog and the GPU gate, and tolerates
   })
   renderAt('/', <ProcessingQueue />)
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Processing queue' }))
+  await user.click(await screen.findByRole('button', { name: /^Processing queue/ }))
   const strip = await screen.findByLabelText('System status')
   expect(within(strip).getByText('ai down')).toBeVisible()
   expect(within(strip).getByText('backlog 3 ingest · 12 ai · 0 maint')).toBeVisible()
@@ -150,7 +150,7 @@ test('queue: recent tab lists finished stages with their duration', async () => 
   })
   renderAt('/', <ProcessingQueue />)
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Processing queue' }))
+  await user.click(await screen.findByRole('button', { name: /^Processing queue/ }))
   expect(await screen.findByText('Workers: unknown (broker unreachable)')).toBeVisible()
   await user.click(screen.getByRole('tab', { name: /Recent/ }))
   expect(screen.getByRole('link', { name: 'Beschluss.pdf' })).toBeVisible()

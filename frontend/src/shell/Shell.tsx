@@ -11,7 +11,7 @@ import { NotificationsPanel } from './NotificationsPanel'
 import { ProcessingQueue } from './ProcessingQueue'
 import { ProfileMenu } from './ProfileMenu'
 import { overlayOpen } from './keys'
-import { CountBadge, RailButton } from './RailButton'
+import { RailButton } from './RailButton'
 
 /** The 56px icon rail plus the global overlays, wrapping every signed-in page. */
 export function Shell() {
@@ -91,7 +91,8 @@ export function Shell() {
           icon="inbox"
           label="Triage"
           to="/triage"
-          badge={<CountBadge count={shell?.triage_count ?? 0} tone="danger" />}
+          count={shell?.triage_count ?? 0}
+          tone="danger"
         />
         <RailButton icon="folder_open" label="Cases" to="/cases" />
         <div className="flex-1" />
