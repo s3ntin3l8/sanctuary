@@ -1,12 +1,17 @@
 """Accessibility smoke test: no serious or critical axe violations on the main screens.
 
-axe-core ships in ``frontend/node_modules`` (a dependency of ``@axe-core/playwright``), so the
-page runs the same engine the visual-kit audit records, here as a gate. The CI database is empty,
-so this covers the shell, the empty states and the forms, not seeded content: the demo audit
-(``make screenshots-audit``) is the wider sweep.
+axe-core is a frontend devDependency, the engine visual-kit's audit records, here as a gate.
+CI (``.github/workflows/a11y.yml``) runs it against ``make demo``, so it audits seeded content;
+against an empty database it covers the shell and the empty states only. ``/login`` and
+``/signup`` need the demo's login screen on and stay in ``make screenshots-audit-auth``.
+
+``E2E_REQUIRED=1`` (set in CI) turns a missing axe-core or an unreachable server into a failure
+instead of a skip, so the gate cannot go green by not running.
 """
 
+import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 from playwright.sync_api import Page
@@ -45,8 +50,16 @@ def _describe(violations: list[dict]) -> str:
 @pytest.mark.parametrize("route", ROUTES)
 def test_no_serious_axe_violations(page: Page, route: str, theme: str):
     # `site-theme` is the SPA's own choice (frontend/src/theme.ts); it wins over the OS scheme.
+    if not AXE_JS.exists():
+        message = "axe-core is missing: run `npm --prefix frontend ci`"
+        if os.getenv("E2E_REQUIRED") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
     page.add_init_script(f"localStorage.setItem('site-theme', '{theme}')")
     page.goto(route)
     page.wait_for_load_state("networkidle")
+    # A redirect (to /login, say) would otherwise make this audit the wrong screen.
+    landed = urlparse(page.url).path.rstrip("/")
+    assert landed == route.rstrip("/"), f"{route} redirected to {page.url}"
     violations = _blocking_violations(page)
     assert not violations, f"{route} ({theme})\n{_describe(violations)}"

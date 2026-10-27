@@ -38,7 +38,11 @@ def require_running_server():
     try:
         httpx.get(url, timeout=2.0)
     except httpx.HTTPError:
-        pytest.skip(f"E2E server not reachable at {url} — run `make run` first")
+        message = f"E2E server not reachable at {url} — run `make run` first"
+        # A required gate (CI's Accessibility job) must not go green by skipping.
+        if os.getenv("E2E_REQUIRED") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
 
 
 @pytest.fixture(scope="session")
