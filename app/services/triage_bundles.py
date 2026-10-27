@@ -381,22 +381,24 @@ def get_triage_bundles(
         "processing": 3,
     }
 
+    # Bundles that tie on the sort key (equal doc counts, or the same `received_at`) would otherwise
+    # follow the unordered SELECT, which moves when rows are rewritten: the feed reshuffled between
+    # two loads. Pre-sort them newest batch first; `sorted` is stable, also with `reverse=True`, so
+    # ties keep that order in either direction.
+    pool = sorted(bundles.values(), key=lambda b: (-(b.batch_id or 0), b.key))
+
     if sort == "docs":
-        ordered = sorted(
-            bundles.values(),
-            key=lambda b: b.doc_count,
-            reverse=(direction == "desc"),
-        )
+        ordered = sorted(pool, key=lambda b: b.doc_count, reverse=(direction == "desc"))
     elif sort == "status":
         ordered = sorted(
-            bundles.values(),
+            pool,
             key=lambda b: _STATUS_ORDER.get(b.mock_status, 99),
             reverse=(direction == "desc"),
         )
     else:
         # "received" (default) — urgency-first, recency as tiebreaker.
         ordered = sorted(
-            bundles.values(),
+            pool,
             key=lambda b: (
                 0
                 if (
