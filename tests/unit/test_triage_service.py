@@ -847,3 +847,38 @@ def test_loose_doc_with_needs_review_still_appears_in_feed(db_session):
         b.batch_id is None and any(d.id == loose.id for d in b.documents)
         for b in bundles
     ), "loose doc with needs_review must remain visible in triage"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("sort", ["received", "docs", "status"])
+def test_triage_feed_order_ignores_the_order_rows_are_read_in(
+    db_session, monkeypatch, sort
+):
+    """Bundles that tie on the sort key (here: the same received_at and doc count) keep one
+    order whatever order the database returns them in, newest batch first. The demo's
+    /triage rows used to swap between two loads."""
+    from app.models.database import Case
+    from app.services import triage_bundles
+
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
+    batches = [
+        _make_batch_with_docs(db_session, triage_case, None, [{"title": f"Doc {i}"}])[0]
+        for i in range(3)
+    ]
+    expected = sorted((b.id for b in batches), reverse=True)
+
+    build = triage_bundles._build_bundles
+    for reverse_read in (False, True):
+
+        def read(*args, _reverse=reverse_read, **kwargs):
+            bundles = build(*args, **kwargs)
+            items = list(bundles.items())
+            return dict(reversed(items) if _reverse else items)
+
+        monkeypatch.setattr(triage_bundles, "_build_bundles", read)
+        ours = [
+            b.batch_id
+            for b in triage_bundles.get_triage_bundles(db_session, sort=sort)
+            if b.batch_id in expected
+        ]
+        assert ours == expected

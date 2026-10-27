@@ -381,16 +381,22 @@ def get_triage_bundles(
         "processing": 3,
     }
 
+    def _tiebreak(b: BundleView) -> tuple[int, str]:
+        # Bundles that tie on the sort key (equal doc counts, or the same
+        # `received_at`) would otherwise follow the unordered SELECT, which
+        # moves when rows are rewritten: the feed reshuffled between two loads.
+        return (b.batch_id or 0, b.key)
+
     if sort == "docs":
         ordered = sorted(
             bundles.values(),
-            key=lambda b: b.doc_count,
+            key=lambda b: (b.doc_count, _tiebreak(b)),
             reverse=(direction == "desc"),
         )
     elif sort == "status":
         ordered = sorted(
             bundles.values(),
-            key=lambda b: _STATUS_ORDER.get(b.mock_status, 99),
+            key=lambda b: (_STATUS_ORDER.get(b.mock_status, 99), _tiebreak(b)),
             reverse=(direction == "desc"),
         )
     else:
@@ -406,6 +412,8 @@ def get_triage_bundles(
                 )
                 else 1,
                 -(b.received_at.timestamp() if b.received_at else 0),
+                -(b.batch_id or 0),
+                b.key,
             ),
             reverse=(direction == "asc"),
         )
