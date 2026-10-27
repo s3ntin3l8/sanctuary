@@ -43,9 +43,6 @@ def _describe(violations: list[dict]) -> str:
     return "\n".join(lines)
 
 
-@pytest.mark.skipif(
-    not AXE_JS.exists(), reason="run `npm --prefix frontend ci` for axe-core"
-)
 @pytest.mark.parametrize("theme", ["dark", "light"])
 @pytest.mark.parametrize("route", ROUTES)
 def test_no_serious_axe_violations(page: Page, route: str, theme: str):

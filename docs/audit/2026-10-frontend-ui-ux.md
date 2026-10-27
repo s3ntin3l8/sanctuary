@@ -62,7 +62,7 @@ Checked and left alone. A fix here would be a regression.
 
 - **Token contrast test** (`frontend/src/styles/contrast.test.ts`, runs in `make frontend-test`): every text token must reach 4.5:1 on all six surfaces, and `on-accent`/`on-danger`/`on-warning` on their fills, in both themes. It also checks status colours on their own alpha tints (`bg-warning/10` and similar) and the highlight text tokens. Checked that it fails on the old `--warning` value.
 - The same test requires `--muted` to stay at least 1.3× above `--muted2` in contrast, in both themes, so the tertiary text step cannot collapse again.
-- **axe in the capture config** (`"axe": true` in `docs/audit/capture.json`): a re-audit reports the same rules; the before/after of this audit is `color-contrast` 83 → 0 nodes, `link-in-text-block` 4 → 0.
+- **axe on every capture** (visual-kit records it per shot in `metrics.json`; at the time of this audit it was `"axe": true` in the now-removed `docs/audit/capture.json`): a re-audit reports the same rules; the before/after of this audit is `color-contrast` 83 → 0 nodes, `link-in-text-block` 4 → 0.
 - Automated afterwards ([#459](https://github.com/s3ntin3l8/sanctuary/issues/459)): `tests/e2e/test_axe_smoke.py` fails the `Accessibility` workflow on serious or critical axe violations on the main screens (seeded demo, dark and light), and `make screenshots-audit-auth` records axe on `/login` and `/signup`.
 
 ---

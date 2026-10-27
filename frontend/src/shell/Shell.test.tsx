@@ -33,7 +33,7 @@ function renderShell() {
 
 test('rail links: triage is a full page load, cases is client-side', async () => {
   renderShell()
-  expect(await screen.findByRole('link', { name: 'Triage' })).toHaveAttribute('href', '/triage')
+  expect(await screen.findByRole('link', { name: /^Triage/ })).toHaveAttribute('href', '/triage')
   expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute('href', '/cases')
   expect(screen.queryByRole('link', { name: 'Costs' })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument()
