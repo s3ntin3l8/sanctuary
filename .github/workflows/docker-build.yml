@@ -40,4 +40,14 @@ jobs:
         # The py-builder stage's prune step and import check fail the build when a
         # dependency or base-image change breaks them; the runtime stage covers the
         # apt packages.
-        run: docker build --build-arg SANCTUARY_VERSION=ci -t sanctuary-ci-build .
+        # COMMIT_SHA is what the shared docker-publish workflow passes (the commit it
+        # checked out); the check below fails if the Dockerfile's ARG -> ENV mapping
+        # to SANCTUARY_GIT_SHA breaks, which would otherwise ship "unknown" silently.
+        run: |
+          sha=$(git rev-parse HEAD)
+          docker build --build-arg SANCTUARY_VERSION=ci --build-arg "COMMIT_SHA=${sha}" -t sanctuary-ci-build .
+          stamped=$(docker image inspect sanctuary-ci-build --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^SANCTUARY_GIT_SHA=//p')
+          if [ "$stamped" != "$sha" ]; then
+            echo "::error::SANCTUARY_GIT_SHA in the image is '${stamped}', expected ${sha} (Dockerfile ARG COMMIT_SHA -> ENV mapping)"
+            exit 1
+          fi
