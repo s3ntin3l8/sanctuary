@@ -118,7 +118,7 @@ rapidocr==3.10.0
 red-black-tree-mod==1.22
 RTFDE==0.1.2.2
 slowapi==0.1.10
-sse-starlette==3.5.0
+sse-starlette==3.5.1
 referencing==0.37.0
 regex==2026.9.29
 requests==2.34.2
@@ -133,7 +133,7 @@ shellingham==1.5.4
 six==1.17.0
 soupsieve==3.0.4
 SQLAlchemy==2.1.6
-starlette==1.9.0
+starlette==1.10.0
 sympy==1.14.0
 tabulate==0.10.0
 tnefparse==1.4.0
