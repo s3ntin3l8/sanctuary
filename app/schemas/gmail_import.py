@@ -74,6 +74,8 @@ class GmailNewMessages(BaseModel):
     since: datetime | None
     # When the last background/manual check reached Gmail.
     checked_at: datetime | None
+    # The grant was revoked or expired: nothing new is seen until it is renewed.
+    reconnect_required: bool
     # The oldest 100, oldest first.
     items: list[GmailIndexedMessage]
 

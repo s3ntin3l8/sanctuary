@@ -657,6 +657,7 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
                 )
                 return "Not configured"
 
+            checked_at = datetime.now(UTC)
             service = connect_gmail(db, user_id, sj)
             query = build_query(
                 allowlist,
@@ -679,6 +680,10 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
                     return "Index superseded"
 
             gmail_index_service.assign_group_keys(db, user_id)
+            # Indexing the whole mailbox covers what a new-mail check looks at.
+            user_settings_service.record_gmail_check(
+                db, user_id, checked_at.isoformat()
+            )
             db.commit()
             gmail_runs.finish_run("index", user_id, run_id)
             return f"Indexed {len(new_ids) - skipped} new messages for user {user_id}"

@@ -6378,6 +6378,10 @@
             "title": "Items",
             "type": "array"
           },
+          "reconnect_required": {
+            "title": "Reconnect Required",
+            "type": "boolean"
+          },
           "since": {
             "anyOf": [
               {
@@ -6405,6 +6409,7 @@
           "sync_mode",
           "since",
           "checked_at",
+          "reconnect_required",
           "items"
         ],
         "title": "GmailNewMessages",

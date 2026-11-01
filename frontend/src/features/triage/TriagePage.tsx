@@ -26,7 +26,11 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
 import { Menu } from '../../ui/Menu'
 import { GmailImportStatus, useGmailRunBanner } from '../import/GmailImportStatus'
-import { NewMailNotice, useNewMailToReview } from '../import/NewMailBanner'
+import {
+  NewMailNotice,
+  useGmailReconnectRequired,
+  useNewMailToReview,
+} from '../import/NewMailBanner'
 import { BundleStateBar } from '../../ui/PipelineBar'
 import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
@@ -209,6 +213,7 @@ export function TriagePage() {
   const stats = query.data?.stats
   const gmailRun = useGmailRunBanner()
   const newMail = useNewMailToReview()
+  const gmailReconnect = useGmailReconnectRequired()
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex flex-wrap items-center gap-4 border-b border-line bg-panel px-6 py-4">
@@ -239,7 +244,7 @@ export function TriagePage() {
         </div>
       </header>
 
-      {(gmailRun.run || newMail) && (
+      {(gmailRun.run || newMail || gmailReconnect) && (
         <div className="px-6 pt-3">
           {gmailRun.run ? (
             <GmailImportStatus run={gmailRun.run} variant="compact" onDismiss={gmailRun.dismiss} />

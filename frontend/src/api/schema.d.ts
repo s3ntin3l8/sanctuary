@@ -5165,6 +5165,8 @@ export interface components {
             count: number;
             /** Items */
             items: components["schemas"]["GmailIndexedMessage"][];
+            /** Reconnect Required */
+            reconnect_required: boolean;
             /** Since */
             since: string | null;
             /**

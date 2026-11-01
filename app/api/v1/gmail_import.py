@@ -182,9 +182,15 @@ def _new_view(db: Session, user: User) -> GmailNewMessages:
     checked = cfg.get("gmail_last_check_at")
     checked_at = datetime.fromisoformat(checked) if checked else None
     mode = cast(SyncMode, cfg.get("gmail_sync_mode") or "off")
+    reconnect = bool(cfg.get("gmail_reconnect_required"))
     if since is None:
         return GmailNewMessages(
-            count=0, sync_mode=mode, since=None, checked_at=checked_at, items=[]
+            count=0,
+            sync_mode=mode,
+            since=None,
+            checked_at=checked_at,
+            reconnect_required=reconnect,
+            items=[],
         )
     count, rows = gmail_index_service.new_messages(db, user.id, since)
     cached = gmail_cache.cached_ids(user.id, [row.gmail_id for row in rows])
@@ -194,6 +200,7 @@ def _new_view(db: Session, user: User) -> GmailNewMessages:
         sync_mode=mode,
         since=since,
         checked_at=checked_at,
+        reconnect_required=reconnect,
         items=[
             _indexed_message(row, False, row.gmail_id in cached, own) for row in rows
         ],

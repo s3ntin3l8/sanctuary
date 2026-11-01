@@ -117,6 +117,22 @@ def test_index_stores_headers_groups_them_and_reports_progress(gmail_user, db_se
     assert state["skipped"] == 0
 
 
+def test_a_full_index_counts_as_a_new_mail_check_and_clears_a_stale_error(
+    gmail_user, db_session
+):
+    user_settings_service.record_gmail_sync_outcome(
+        db_session, gmail_user.id, error="revoked", reconnect_required=True
+    )
+    db_session.commit()
+
+    _run_index(gmail_user.id, ["g1"], [[_raw("g1", "8372/25 a", 1)]])
+
+    sj = _settings(db_session, gmail_user.id)
+    assert sj["gmail_last_check_at"]
+    assert sj["gmail_last_sync_error"] is None
+    assert sj["gmail_reconnect_required"] is False
+
+
 def test_index_refresh_only_fetches_ids_it_does_not_have(gmail_user, db_session):
     _run_index(
         gmail_user.id,
