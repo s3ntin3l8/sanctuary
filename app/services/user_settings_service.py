@@ -347,6 +347,17 @@ def record_gmail_check(db, user_id: int, checked_at: str) -> None:
     )
 
 
+def record_gmail_index_check(db, user_id: int, checked_at: str) -> None:
+    """A mailbox index reached Gmail: the grant works and nothing new was missed.
+
+    Unlike ``record_gmail_check`` this keeps ``gmail_last_sync_error``, the last
+    sync/import failure: a header-only refresh proves nothing about that.
+    """
+    _update_gmail(
+        db, user_id, gmail_last_check_at=checked_at, gmail_reconnect_required=False
+    )
+
+
 def set_gmail_sync_point(db, user_id: int, since: str) -> None:
     """Move the sync point without forgetting failed messages (unlike reset)."""
     _update_gmail(db, user_id, gmail_last_sync_at=since)

@@ -176,6 +176,8 @@ function RefRow({ g, nested, h }: { g: Group; nested: boolean; h: Handlers }) {
   const noCase = !g.matched_case_id && g.key !== UNREFERENCED
   const { parties, matter } = splitTopic(g.topic)
   const done = isDone(g)
+  const pending = g.count - g.ingested_count
+  const importN = Math.min(h.oldestN, pending)
   return (
     <div className={`border-b border-line2 ${nested ? 'ml-6 border-l border-l-line' : ''}`}>
       <div
@@ -233,10 +235,11 @@ function RefRow({ g, nested, h }: { g: Group; nested: boolean; h: Handlers }) {
               size="sm"
               variant="secondary"
               disabled={h.busy}
-              aria-label={`Import oldest ${h.oldestN} from ${referenceLabel(g)}`}
+              aria-label={`Import ${importN}: oldest not-yet-imported ${importN === 1 ? 'message' : 'messages'} of ${referenceLabel(g)}`}
+              title={`Imports the oldest ${importN} of this reference's ${pending} pending ${pending === 1 ? 'message' : 'messages'}${importN < pending ? ` (the "Import next" number is ${h.oldestN})` : ''}`}
               onClick={() => h.onImportGroup(g)}
             >
-              Import {h.oldestN}
+              Import {importN}
             </Button>
           )}
         </div>

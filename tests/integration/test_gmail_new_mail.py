@@ -110,6 +110,19 @@ def test_new_is_mail_received_after_the_sync_point_and_not_imported(db_session):
     assert body["since"].startswith("2024-01-10")
 
 
+def test_new_reports_a_grant_that_needs_renewing(db_session):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    assert _new()["reconnect_required"] is False
+
+    user_settings_service.record_gmail_sync_outcome(
+        db_session, uid, error="revoked", reconnect_required=True
+    )
+    db_session.commit()
+
+    assert _new()["reconnect_required"] is True
+
+
 def test_new_goes_by_when_gmail_received_it_not_the_date_header(db_session):
     uid = _admin(db_session)
     _connect(db_session, uid)
@@ -160,6 +173,7 @@ def test_nothing_is_new_without_a_connection_or_sync_point(db_session):
         "sync_mode": "off",
         "since": None,
         "checked_at": None,
+        "reconnect_required": False,
         "items": [],
     }
     uid = _admin(db_session)

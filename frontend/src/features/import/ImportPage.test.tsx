@@ -107,7 +107,14 @@ const messages = {
   next_cursor: null,
 }
 
-const noNew = { count: 0, sync_mode: 'notify', since: null, checked_at: null, items: [] }
+const noNew = {
+  count: 0,
+  sync_mode: 'notify',
+  since: null,
+  checked_at: null,
+  reconnect_required: false,
+  items: [],
+}
 
 const base = {
   'GET /api/v1/settings/gmail': { body: gmail },
@@ -202,6 +209,13 @@ test('import: "next N oldest" covers everything; a row imports only its own refe
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
   expect(await post()).toEqual({ oldest_n: 25, group: null, new: false })
 
+  // A row never promises more than it has: 2 pending, so "Import 2" although the field says 25.
+  expect(
+    screen.getByRole('button', {
+      name: 'Import 2: oldest not-yet-imported messages of 3 F 426/25',
+    }),
+  ).toHaveTextContent('Import 2')
+
   // Opening a reference doesn't scope the global button.
   await user.click(screen.getByRole('button', { name: 'Expand 8372/25' }))
   const count = screen.getByRole('spinbutton', { name: 'How many' })
@@ -213,7 +227,12 @@ test('import: "next N oldest" covers everything; a row imports only its own refe
   expect(await post()).toEqual({ oldest_n: 10, group: null, new: false })
 
   fetch.mockClear()
-  await user.click(screen.getByRole('button', { name: 'Import oldest 10 from 8372/25' }))
+  // 8372/25 has 3 pending of 4: the label is what the click really imports, not the field.
+  await user.click(
+    screen.getByRole('button', {
+      name: 'Import 3: oldest not-yet-imported messages of 8372/25',
+    }),
+  )
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
   expect(await post()).toEqual({ oldest_n: 10, group: '8372-25', new: false })
 })
