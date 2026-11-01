@@ -212,7 +212,7 @@ test('import: "next N oldest" covers everything; a row imports only its own refe
   // A row never promises more than it has: 2 pending, so "Import 2" although the field says 25.
   expect(
     screen.getByRole('button', {
-      name: 'Import the oldest 2 not-yet-imported messages of 3 F 426/25',
+      name: 'Import 2: oldest not-yet-imported messages of 3 F 426/25',
     }),
   ).toHaveTextContent('Import 2')
 
@@ -230,7 +230,7 @@ test('import: "next N oldest" covers everything; a row imports only its own refe
   // 8372/25 has 3 pending of 4: the label is what the click really imports, not the field.
   await user.click(
     screen.getByRole('button', {
-      name: 'Import the oldest 3 not-yet-imported messages of 8372/25',
+      name: 'Import 3: oldest not-yet-imported messages of 8372/25',
     }),
   )
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())

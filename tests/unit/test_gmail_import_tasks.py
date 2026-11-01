@@ -117,7 +117,7 @@ def test_index_stores_headers_groups_them_and_reports_progress(gmail_user, db_se
     assert state["skipped"] == 0
 
 
-def test_a_full_index_counts_as_a_new_mail_check_and_clears_a_stale_error(
+def test_a_full_index_counts_as_a_new_mail_check_and_clears_the_reconnect_flag(
     gmail_user, db_session
 ):
     user_settings_service.record_gmail_sync_outcome(
@@ -129,8 +129,9 @@ def test_a_full_index_counts_as_a_new_mail_check_and_clears_a_stale_error(
 
     sj = _settings(db_session, gmail_user.id)
     assert sj["gmail_last_check_at"]
-    assert sj["gmail_last_sync_error"] is None
     assert sj["gmail_reconnect_required"] is False
+    # What the last sync/import said is not this refresh's to wipe.
+    assert sj["gmail_last_sync_error"] == "revoked"
 
 
 def test_index_refresh_only_fetches_ids_it_does_not_have(gmail_user, db_session):

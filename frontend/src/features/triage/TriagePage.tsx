@@ -27,6 +27,7 @@ import { Icon } from '../../ui/Icon'
 import { Menu } from '../../ui/Menu'
 import { GmailImportStatus, useGmailRunBanner } from '../import/GmailImportStatus'
 import {
+  GmailReconnectNotice,
   NewMailNotice,
   useGmailReconnectRequired,
   useNewMailToReview,
@@ -247,7 +248,14 @@ export function TriagePage() {
       {(gmailRun.run || newMail || gmailReconnect) && (
         <div className="px-6 pt-3">
           {gmailRun.run ? (
-            <GmailImportStatus run={gmailRun.run} variant="compact" onDismiss={gmailRun.dismiss} />
+            <div className="flex flex-col gap-2">
+              <GmailImportStatus
+                run={gmailRun.run}
+                variant="compact"
+                onDismiss={gmailRun.dismiss}
+              />
+              <GmailReconnectNotice />
+            </div>
           ) : (
             <NewMailNotice />
           )}

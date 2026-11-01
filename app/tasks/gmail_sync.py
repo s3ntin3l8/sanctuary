@@ -681,7 +681,7 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
 
             gmail_index_service.assign_group_keys(db, user_id)
             # Indexing the whole mailbox covers what a new-mail check looks at.
-            user_settings_service.record_gmail_check(
+            user_settings_service.record_gmail_index_check(
                 db, user_id, checked_at.isoformat()
             )
             db.commit()

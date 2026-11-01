@@ -235,7 +235,7 @@ function RefRow({ g, nested, h }: { g: Group; nested: boolean; h: Handlers }) {
               size="sm"
               variant="secondary"
               disabled={h.busy}
-              aria-label={`Import the oldest ${importN} not-yet-imported ${importN === 1 ? 'message' : 'messages'} of ${referenceLabel(g)}`}
+              aria-label={`Import ${importN}: oldest not-yet-imported ${importN === 1 ? 'message' : 'messages'} of ${referenceLabel(g)}`}
               title={`Imports the oldest ${importN} of this reference's ${pending} pending ${pending === 1 ? 'message' : 'messages'}${importN < pending ? ` (the "Import next" number is ${h.oldestN})` : ''}`}
               onClick={() => h.onImportGroup(g)}
             >

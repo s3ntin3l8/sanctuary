@@ -163,7 +163,7 @@ test('banner: a revoked Gmail grant is announced even with nothing new', async (
       body: { ...news, count: 0, items: [], reconnect_required: true },
     },
   })
-  const alert = await screen.findByRole('alert')
+  const alert = await screen.findByRole('status')
   expect(alert).toHaveTextContent('Gmail needs to be reconnected.')
   expect(alert).toHaveTextContent('has not been checked since 2026-10-09')
   expect(within(alert).getByRole('link', { name: 'Reconnect' })).toHaveAttribute(
@@ -183,7 +183,26 @@ test('triage: a revoked grant is announced even with nothing new', async () => {
   })
   renderAt('/triage', <TriagePage />)
 
-  expect(await screen.findByRole('alert')).toHaveTextContent('Gmail needs to be reconnected.')
+  expect(await screen.findByRole('status')).toHaveTextContent('Gmail needs to be reconnected.')
+})
+
+test('triage: the reconnect notice stays while a Gmail run is showing', async () => {
+  stubApi({
+    'GET /api/v1/triage': { body: triageView },
+    'GET /api/v1/gmail/new': {
+      body: { ...news, count: 0, items: [], reconnect_required: true },
+    },
+    'GET /api/v1/worker-queue': {
+      body: {
+        ...emptyQueue,
+        gmail_import: { ...idle, active: true, total: 3, done: 1, current_subject: 'Ladung' },
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+
+  expect(await screen.findByRole('status')).toHaveTextContent('Gmail needs to be reconnected.')
+  expect(screen.getByText(/Ladung/)).toBeVisible()
 })
 
 test('banner: not shown to people who import automatically', async () => {
