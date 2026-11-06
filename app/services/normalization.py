@@ -89,6 +89,13 @@ def _sub_unit_collapse(s: str, canonical_names: set[str]) -> str:
     return s
 
 
+_SUB_UNIT_ENTITY_TYPES = (
+    EntityType.ORGANIZATION,
+    EntityType.COURT,
+    EntityType.LAW_FIRM,
+)
+
+
 def normalize_entity_name(
     name: str,
     entity_type: EntityType,
@@ -108,13 +115,8 @@ def normalize_entity_name(
     if entity_type == EntityType.PERSON:
         s = _strip_person_honorifics(s)
         s = _comma_reverse(s)
-    elif entity_type in (
-        EntityType.ORGANIZATION,
-        EntityType.COURT,
-        EntityType.LAW_FIRM,
-    ):
-        if canonical_names:
-            s = _sub_unit_collapse(s, canonical_names)
+    elif entity_type in _SUB_UNIT_ENTITY_TYPES and canonical_names:
+        s = _sub_unit_collapse(s, canonical_names)
 
     s = _strip_diacritics(s)
     s = s.lower()

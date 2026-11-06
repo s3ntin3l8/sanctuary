@@ -115,14 +115,13 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> Non
                 arg,
             )
             return
-    elif not spec.self_claims:
-        if not claim_stage_for_dispatch(doc_id, stage, db):
-            logger.info(
-                "dispatch_pipeline_retry: %s already claimed for doc %d — skipping",
-                stage_label,
-                doc_id,
-            )
-            return
+    elif not spec.self_claims and not claim_stage_for_dispatch(doc_id, stage, db):
+        logger.info(
+            "dispatch_pipeline_retry: %s already claimed for doc %d — skipping",
+            stage_label,
+            doc_id,
+        )
+        return
 
     # Diagnostic: log every dispatch attempt so we can correlate which docs
     # actually got their tasks queued vs. which got lost in transit. When
