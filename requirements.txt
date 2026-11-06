@@ -29,7 +29,7 @@ defusedxml==0.7.1
 # (which provides the `docling.*` import namespace). Keep both pinned in lockstep.
 docling==2.142.1
 docling-slim==2.142.1
-docling-core==2.104.0
+docling-core==2.106.0
 docling-ibm-models==4.0.4
 docling-parse==7.23.0
 # doclang: base dep of docling-core 2.104+; transitive, not imported by this app,
