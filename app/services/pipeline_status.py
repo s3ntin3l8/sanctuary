@@ -1957,11 +1957,12 @@ def recover_embeddings_behind_failed_stage(
             mark_skipped(doc.id, PipelineStage.EMBEDDINGS, db, reason="upstream_failed")
             skipped += 1
             handled.append(doc.id)
-        elif metadata in terminal:
-            if claim_stage_for_dispatch(doc.id, PipelineStage.EMBEDDINGS, db):
-                dispatch_task(generate_embedding_task, doc.id)
-                dispatched += 1
-                handled.append(doc.id)
+        elif metadata in terminal and claim_stage_for_dispatch(
+            doc.id, PipelineStage.EMBEDDINGS, db
+        ):
+            dispatch_task(generate_embedding_task, doc.id)
+            dispatched += 1
+            handled.append(doc.id)
     if handled:
         logger.info(
             "recover_embeddings_behind_failed_stage: dispatched %d, skipped %d: %s",
