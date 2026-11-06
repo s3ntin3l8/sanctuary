@@ -108,13 +108,16 @@ def normalize_entity_name(
     if entity_type == EntityType.PERSON:
         s = _strip_person_honorifics(s)
         s = _comma_reverse(s)
-    elif entity_type in (
-        EntityType.ORGANIZATION,
-        EntityType.COURT,
-        EntityType.LAW_FIRM,
+    elif (
+        entity_type
+        in (
+            EntityType.ORGANIZATION,
+            EntityType.COURT,
+            EntityType.LAW_FIRM,
+        )
+        and canonical_names
     ):
-        if canonical_names:
-            s = _sub_unit_collapse(s, canonical_names)
+        s = _sub_unit_collapse(s, canonical_names)
 
     s = _strip_diacritics(s)
     s = s.lower()
