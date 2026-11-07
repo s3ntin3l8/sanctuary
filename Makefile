@@ -199,8 +199,11 @@ screenshots-audit-auth: visual/.kit/run.sh ## Audit evidence for /login and /sig
 	@test -n "$(AUDIT)" || { echo "AUDIT=YYYY-MM-<scope>-<topic> is required"; exit 1; }
 	VISUAL_CONFIG=visual/scenes.auth.json $(VISUAL_RUN) audit --slug "$(AUDIT)-auth" $(if $(FORCE),--force)
 
-visual-check: visual/.kit/run.sh ## Before/after of the touched routes (ROUTES=/triage,/cases) against BASE (default origin/main) -> visual/.out/check/report/
-	$(VISUAL_RUN) check $(if $(ROUTES),--routes "$(ROUTES)") $(if $(BASE),--base "$(BASE)") $(if $(FORCE),--force)
+# Only a whole number from 1 to 99 is forwarded (what the launcher accepts): an ambient REPEAT=yes, 0 or 100 in the environment is ignored, as the launcher does.
+REPEAT_N := $(and $(REPEAT),$(if $(word 2,$(strip $(REPEAT))),,$(filter $(shell seq 1 99),$(strip $(REPEAT)))))
+
+visual-check: visual/.kit/run.sh ## Before/after of the touched routes (ROUTES=/triage,/cases) against BASE (default origin/main) -> visual/.out/check/report/; REPEAT=N also recaptures the head N-1 times and fails if it is not deterministic
+	$(VISUAL_RUN) check $(if $(ROUTES),--routes "$(ROUTES)") $(if $(BASE),--base "$(BASE)") $(if $(FORCE),--force) $(if $(REPEAT_N),--repeat "$(REPEAT_N)")
 
 migrate: db-up ## Run database migrations
 	$(ALEMBIC) upgrade head
