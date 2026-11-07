@@ -18,6 +18,9 @@
     "requirements-dev.txt",
     "frontend/package-lock.json"
   ],
+  "baseHarness": [
+    "scripts/demo"
+  ],
   "clock": "2026-10-01T09:00:00Z",
   "scenes": [
     {
