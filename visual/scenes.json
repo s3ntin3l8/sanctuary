@@ -49,7 +49,6 @@
     },
     {
       "name": "case-graph",
-      "baseline": true,
       "path": "/cases/ADV-024-A?view=graph",
       "tags": [
         "check",
@@ -115,6 +114,7 @@
     },
     {
       "name": "costs",
+      "baseline": true,
       "path": "/costs",
       "tags": [
         "check",
