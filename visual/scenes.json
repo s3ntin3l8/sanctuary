@@ -58,6 +58,7 @@
     },
     {
       "name": "case-truth",
+      "baseline": true,
       "path": "/cases/ADV-024-A?view=truth",
       "tags": [
         "check",
@@ -83,6 +84,7 @@
     },
     {
       "name": "triage",
+      "baseline": true,
       "path": "/triage",
       "tags": [
         "check",
@@ -112,6 +114,7 @@
     },
     {
       "name": "costs",
+      "baseline": true,
       "path": "/costs",
       "tags": [
         "check",
@@ -120,6 +123,7 @@
     },
     {
       "name": "document",
+      "baseline": true,
       "path": "/document/30",
       "tags": [
         "check",

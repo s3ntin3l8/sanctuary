@@ -28,7 +28,10 @@ def document_sort_key(doc: Document) -> tuple:
     """The bundle's significance order: tier, cover letter first, exhibit, ingest date.
 
     Cover letters win a tier tie so the user's eye lands on the document that
-    heads the group first.
+    heads the group first. The id closes the key: documents ingested in one
+    instant (a seed, a bulk import) tie on every other part, and without it
+    their order is whatever the database returned. An unsaved document has no
+    id and sorts first.
     """
     return (
         _SIG_ORDER.get(doc.significance_tier, 99)
@@ -37,6 +40,7 @@ def document_sort_key(doc: Document) -> tuple:
         0 if doc.role == DocumentRole.COVER_LETTER else 1,
         exhibits.sort_key(doc.meta),
         doc.ingest_date or datetime.min.replace(tzinfo=UTC),
+        doc.id or 0,
     )
 
 

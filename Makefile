@@ -16,7 +16,7 @@ BEAT := $(CELERY) beat --loglevel=INFO
 
 NPM_FE := npm --prefix frontend
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed demo screenshots screenshots-landing screenshots-audit screenshots-audit-auth visual-check migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed demo screenshots screenshots-landing screenshots-audit screenshots-audit-auth visual-check visual-baseline migrate lint clean redis db-up prod prod-down _check-no-celery _check-venv-python
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -215,6 +215,9 @@ endif
 
 visual-check: visual/.kit/run.sh ## Before/after of the touched routes (ROUTES=/triage,/cases) against BASE (default origin/main) -> visual/.out/check/report/; REPEAT=N also recaptures the head N-1 times and fails if it is not deterministic
 	$(VISUAL_RUN) check $(if $(ROUTES),--routes "$(ROUTES)") $(if $(BASE),--base "$(BASE)") $(if $(FORCE),--force) $(if $(REPEAT_N),--repeat "$(REPEAT_N)")
+
+visual-baseline: visual/.kit/run.sh ## Regenerate the committed baselines (visual/baselines): the scenes flagged "baseline": true
+	$(VISUAL_RUN) baseline $(if $(FORCE),--force)
 
 migrate: db-up ## Run database migrations
 	$(ALEMBIC) upgrade head

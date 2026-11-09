@@ -3,8 +3,14 @@ name: Visual check
 # Advisory: renders the routes a UI change touches on the merge base and on the PR in visual-kit's pinned
 # image and comments what changed (pixels, axe, console errors, overflow, unnamed controls). The report is
 # the `visual-check-report` artifact. Locally: `make visual-check ROUTES=/triage`.
+# `health-gate` adds a second, separate check (`visual / health`, not required) for new console errors and
+# serious axe nodes. `baselines-hint` adds a note to the comment when the PR moves a shot that has a committed
+# baseline (visual/baselines; `/update-baselines` regenerates them, see visual-baselines.yml).
 on:
   pull_request:
+    # ready_for_review: a PR opened as a draft is skipped below, and marking it ready is the event that should
+    # start the check.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "frontend/**"
       - "app/api/**"
@@ -32,3 +38,5 @@ jobs:
       python-version: "3.14"
       node-version: "26"
       timeout-minutes: 45
+      health-gate: true
+      baselines-hint: true

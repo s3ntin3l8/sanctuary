@@ -153,9 +153,10 @@ make screenshots                       # the README set -> docs/screenshots (FOR
 make screenshots-landing OUT=dir       # the landing-page set (dark, 1600x1000 @2x and 390x844 @3x, plus a loop)
 make visual-check ROUTES=/triage       # before/after of the routes a change touches -> visual/.out/check/report/index.html
 make screenshots-audit AUDIT=2026-11-frontend-ui-ux   # every route in every form factor, local evidence for an audit
+make visual-baseline                   # regenerate the committed baselines (visual/baselines): the scenes flagged "baseline": true
 ```
 
-`make visual-check` renders the merge base (a temporary worktree) and your working tree, diffs them, and reports axe violations, console errors, horizontal overflow and unnamed controls next to the pixel diff. The same check runs on pull requests that touch the UI (advisory; it comments the summary and uploads the report). Needs Docker.
+`make visual-check` renders the merge base (a temporary worktree) and your working tree, diffs them, and reports axe violations, console errors, horizontal overflow and unnamed controls next to the pixel diff. The same check runs on pull requests that touch the UI (advisory; it comments the summary and uploads the report). A PR that moves a scene with a committed baseline gets a note: comment `/update-baselines` on it and CI regenerates `visual/baselines` onto the PR branch. A weekly workflow (`visual-refresh.yml`) re-renders the README screenshots and the baselines and opens a pull request only when an image changed. Needs Docker.
 
 ## Seed Data
 
