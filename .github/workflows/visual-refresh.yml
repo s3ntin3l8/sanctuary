@@ -6,6 +6,12 @@ name: Visual refresh
 # (`make visual-baseline`, PR from `bot/refresh-baselines`): the safety net for a UI PR that moved a baseline scene
 # and forgot `/update-baselines`. The mechanics, the tolerance and the self-approval of the PR's held checks live in
 # the shared workflow in s3ntin3l8/.github (visual-refresh.yml); `workflow_dispatch` runs both on demand.
+#
+# `paths` is a git pathspec: `docs/screenshots/*.png` leaves out `case-views.{webm,mp4,jpg}`, the loop the readme
+# profile re-encodes on every run. The shared workflow refuses any changed file that is not a PNG (or JSON, with
+# `allow-json`), and a loop is never byte-identical, so listing the folder would fail the job on its first real
+# change. The loop is not shown in the README; regenerate it by hand with `make screenshots` when it is wanted.
+# Both jobs use the shared tolerance (`max-diff-pixels: 20`): a re-render within 20 px keeps the committed image.
 on:
   schedule:
     - cron: "47 5 * * 1"
@@ -23,7 +29,7 @@ jobs:
     with:
       python-version: "3.14"
       node-version: "26"
-      paths: "docs/screenshots"
+      paths: "docs/screenshots/*.png"
       title: "chore(ui): refresh screenshots"
 
   # After the screenshots job, never beside it: the shared workflow runs one refresh at a time per repo, and a
