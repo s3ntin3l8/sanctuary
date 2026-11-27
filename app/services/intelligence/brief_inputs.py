@@ -32,6 +32,22 @@ def _iso(value) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _legal_significance(summary) -> str | None:
+    """The legal bullet of any stored summary shape (dict, ``[{kind, text}]``, str)."""
+    if isinstance(summary, dict):
+        return summary.get("legal_significance")
+    if isinstance(summary, list):
+        return next(
+            (
+                b.get("text")
+                for b in summary
+                if isinstance(b, dict) and b.get("kind") == "legal"
+            ),
+            None,
+        )
+    return summary or None
+
+
 def brief_inputs_hash(db: Session, case: Case) -> str:
     docs = db.execute(
         select(
@@ -102,7 +118,7 @@ def brief_inputs_hash(db: Session, case: Case) -> str:
                 _iso(d.issued_date),
                 d.attributed_originator,
                 str(d.originator_type) if d.originator_type else None,
-                (d.ai_summary or {}).get("legal_significance"),
+                _legal_significance(d.ai_summary),
                 _iso(d.ai_summary_approved_at),
             ]
             for d in docs

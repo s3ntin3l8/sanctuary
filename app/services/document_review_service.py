@@ -241,6 +241,10 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
     )
     conf = doc.extraction_confidence or {}
     editable = access_service.editable_case_ids(db, user)
+    if not doc.case_id or doc.case_id == "_TRIAGE":
+        can_edit = access_service.is_admin(user) or doc.owner_id == user.id
+    else:
+        can_edit = editable is None or doc.case_id in editable
     proc_q = db.query(Proceeding).order_by(Proceeding.court_name.asc())
     if editable is not None:
         proc_q = proc_q.filter(Proceeding.case_id.in_(editable))
@@ -259,6 +263,7 @@ def review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
         "page_count": doc.page_count or 0,
         "packet_starts": [int(p) for p in (doc.meta or {}).get("packet_starts") or []],
         "held_for_split": doc.held_for_split_at is not None,
+        "can_edit": can_edit,
         "case_id": doc.case_id,
         "case": case_ref(ctx["current_case"]) if ctx.get("current_case") else None,
         "proceeding": proceeding_ref(doc.proceeding) if doc.proceeding else None,

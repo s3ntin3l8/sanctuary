@@ -147,7 +147,9 @@ test('?open=1 starts the Review tab filtered to documents that need review', asy
   })
   page('/cases/ADV-024-A?view=review&open=1')
   const spine = await screen.findByRole('complementary', { name: 'Case spine' })
-  expect(within(spine).getByRole('button', { name: 'Show all documents' })).toBeVisible()
+  expect(
+    within(spine).getByRole('button', { name: '1 to review: show all documents' }),
+  ).toBeVisible()
   expect(
     within(spine).getAllByRole('button', { name: /Klageerwiderung|Antragsschrift/ }),
   ).toHaveLength(1)

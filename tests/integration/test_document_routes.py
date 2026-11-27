@@ -142,7 +142,7 @@ def test_retry_stage_happy_path_dispatches(db_session):
     doc = _doc_with_stages(
         db_session, enrich={"status": StageStatus.FAILED.value, "error": "boom"}
     )
-    with patch("app.api.v1.documents.dispatch_pipeline_retry") as mock_dispatch:
+    with patch("app.services.stage_retry.dispatch_pipeline_retry") as mock_dispatch:
         response = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry")
 
     assert response.status_code == 200

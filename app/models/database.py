@@ -95,6 +95,10 @@ from app.models.enums import (
     ProposalStatus,
     RelationshipConfidence,
     RelationshipType,
+    ReviewerKind,
+    ReviewFindingStatus,
+    ReviewTargetKind,
+    ReviewVerdict,
     SignificanceTier,
     UserReactionType,
     UserRole,
@@ -2003,3 +2007,81 @@ class Entity(Base):
     @validates("case_id")
     def validate_case_id(self, key, case_id):
         return normalize_case_id(case_id)
+
+
+def _values(enum_cls):
+    return SAEnum(enum_cls, values_callable=lambda obj: [e.value for e in obj])
+
+
+class AiReviewFinding(Base):
+    """A second opinion on one piece of AI output (``ai_review_service``).
+
+    Written by an MCP agent (``agent_token_id``) or the cloud verifier. ``agree``
+    is stored as ``noted``; ``disagree``/``uncertain`` stay ``pending`` until the
+    user confirms (applying ``proposed_value`` through the target's own service)
+    or dismisses it. ``ai_value`` is the output as it was when the finding was
+    recorded; once the output changes, a pending finding becomes ``stale``.
+    """
+
+    __tablename__ = "ai_review_findings"
+    __table_args__ = (
+        Index(
+            "ix_ai_review_findings_pending",
+            "status",
+            postgresql_where=_sa_text("status = 'pending'"),
+        ),
+        # One open finding per reviewer and target: a repeated review updates it.
+        Index(
+            "uq_ai_review_findings_pending_target",
+            "reviewer_kind",
+            _sa_text("coalesce(agent_token_id, 0)"),
+            "target_kind",
+            "case_id",
+            _sa_text("coalesce(document_id, 0)"),
+            _sa_text("coalesce(target_id, 0)"),
+            _sa_text("coalesce(field, '')"),
+            unique=True,
+            postgresql_where=_sa_text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reviewer_kind: Mapped[ReviewerKind] = mapped_column(
+        _values(ReviewerKind), nullable=False
+    )
+    agent_token_id: Mapped[int | None] = _agent_token_column()
+    target_kind: Mapped[ReviewTargetKind] = mapped_column(
+        _values(ReviewTargetKind), nullable=False
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    case_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # The relationship, claim, proposal, action item, cost signal or entity.
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    field: Mapped[str | None] = mapped_column(String, nullable=True)
+    verdict: Mapped[ReviewVerdict] = mapped_column(
+        _values(ReviewVerdict), nullable=False
+    )
+    ai_value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    proposed_value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    cited_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Model and prompt version of the stage (or brief) that produced ai_value.
+    reviewed_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[ReviewFindingStatus] = mapped_column(
+        _values(ReviewFindingStatus), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

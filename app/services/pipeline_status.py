@@ -408,6 +408,11 @@ def mark_completed(
             provider=prov.provider,
             prompt_version=prov.prompt_version,
         )
+    if stage in _REVIEWED_STAGES:
+        # A second-opinion finding on output this run rewrote no longer applies.
+        from app.services.ai_review_service import mark_stale
+
+        mark_stale(db, document_id=doc_id)
     _update_stage(
         doc_id,
         stage,
@@ -416,6 +421,19 @@ def mark_completed(
         extra_sets=extra,
         commit=commit,
     )
+
+
+# Stages whose output second-opinion findings review (ai_review_service).
+_REVIEWED_STAGES = frozenset(
+    {
+        PipelineStage.EXTRACT,
+        PipelineStage.METADATA,
+        PipelineStage.ENRICH,
+        PipelineStage.RELATIONSHIPS,
+        PipelineStage.CLAIMS,
+        PipelineStage.ENTITIES,
+    }
+)
 
 
 def mark_failed(

@@ -96,6 +96,13 @@ export function reviewItems(review: Review): Item[] {
       target: 'review-summary',
     })
   }
+  if (reasons.has('ai_review_disagreement')) {
+    items.push({
+      key: 'second-opinion',
+      label: 'A second opinion disagrees with the AI',
+      target: 'review-second-opinion',
+    })
+  }
   if (reasons.has('contradiction_detected')) {
     items.push({
       key: 'contradiction',

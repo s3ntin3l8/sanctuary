@@ -126,6 +126,17 @@ def action_item_view(
     )
 
 
+def request_brief_refresh(db: Session, case: Case) -> None:
+    """Mark the brief as regenerating (the last good one stays) and queue it (commits)."""
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.generate_case_brief import refresh_case_brief_task
+
+    case.brief_state = BriefState.PROCESSING
+    case.brief_error = None
+    db.commit()
+    dispatch_task(refresh_case_brief_task, case.id)
+
+
 def serialize_brief(db: Session, case: Case) -> BriefView:
     """The last good brief plus the job state of its regeneration.
 

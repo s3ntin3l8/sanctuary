@@ -4286,6 +4286,11 @@
             ],
             "title": "Bundle Prev Id"
           },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
           "case": {
             "anyOf": [
               {
@@ -4732,6 +4737,11 @@
               }
             ],
             "title": "Bundle Prev Id"
+          },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
           },
           "case": {
             "anyOf": [
@@ -9894,6 +9904,222 @@
         "title": "ResolvedReference",
         "type": "object"
       },
+      "ReviewFindingStatus": {
+        "description": "``noted`` = an agreement (nothing to resolve); ``stale`` = the AI output\nit reviewed has changed since.",
+        "enum": [
+          "pending",
+          "confirmed",
+          "dismissed",
+          "stale",
+          "noted"
+        ],
+        "title": "ReviewFindingStatus",
+        "type": "string"
+      },
+      "ReviewFindingView": {
+        "properties": {
+          "agent_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Token Name"
+          },
+          "ai_value": {
+            "title": "Ai Value"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "cited_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cited Excerpt"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Title"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "proposed_value": {
+            "title": "Proposed Value"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "reviewed_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Model"
+          },
+          "reviewed_prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Prompt Version"
+          },
+          "reviewer_kind": {
+            "$ref": "#/components/schemas/ReviewerKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReviewFindingStatus"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_kind": {
+            "$ref": "#/components/schemas/ReviewTargetKind"
+          },
+          "target_label": {
+            "title": "Target Label",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/ReviewVerdict"
+          }
+        },
+        "required": [
+          "id",
+          "reviewer_kind",
+          "agent_token_name",
+          "target_kind",
+          "target_label",
+          "document_id",
+          "document_title",
+          "case_id",
+          "target_id",
+          "field",
+          "verdict",
+          "ai_value",
+          "proposed_value",
+          "rationale",
+          "cited_excerpt",
+          "reviewed_model",
+          "reviewed_prompt_version",
+          "status",
+          "created_at",
+          "resolved_at"
+        ],
+        "title": "ReviewFindingView",
+        "type": "object"
+      },
+      "ReviewTargetKind": {
+        "description": "Which AI output a second-opinion finding is about.",
+        "enum": [
+          "document_field",
+          "summary",
+          "case_assignment",
+          "relationship",
+          "claim",
+          "claim_evidence_proposal",
+          "claim_merge_proposal",
+          "action_item",
+          "cost_signal",
+          "entity",
+          "ocr_text",
+          "case_brief"
+        ],
+        "title": "ReviewTargetKind",
+        "type": "string"
+      },
+      "ReviewVerdict": {
+        "enum": [
+          "agree",
+          "disagree",
+          "uncertain"
+        ],
+        "title": "ReviewVerdict",
+        "type": "string"
+      },
+      "ReviewerKind": {
+        "description": "Who wrote a second-opinion finding: an MCP agent or the cloud verifier.",
+        "enum": [
+          "agent",
+          "verifier"
+        ],
+        "title": "ReviewerKind",
+        "type": "string"
+      },
       "RoleHealthView": {
         "description": "Live health per role; a separate call because it talks to the endpoints.",
         "properties": {
@@ -13811,6 +14037,68 @@
         ]
       }
     },
+    "/api/v1/cases/{case_id}/review-findings": {
+      "get": {
+        "operationId": "v1_case_findings_api_v1_cases__case_id__review_findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReviewFindingStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewFindingView"
+                  },
+                  "title": "Response V1 Case Findings Api V1 Cases  Case Id  Review Findings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Case Findings",
+        "tags": [
+          "review-findings"
+        ]
+      }
+    },
     "/api/v1/cases/{case_id}/shares": {
       "get": {
         "operationId": "v1_list_shares_api_v1_cases__case_id__shares_get",
@@ -15580,6 +15868,52 @@
         ]
       }
     },
+    "/api/v1/documents/{doc_id}/review-findings": {
+      "get": {
+        "operationId": "v1_document_findings_api_v1_documents__doc_id__review_findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewFindingView"
+                  },
+                  "title": "Response V1 Document Findings Api V1 Documents  Doc Id  Review Findings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Document Findings",
+        "tags": [
+          "review-findings"
+        ]
+      }
+    },
     "/api/v1/documents/{doc_id}/status": {
       "get": {
         "description": "Upload-progress polling: terminal states carry no further changes.",
@@ -16564,7 +16898,7 @@
     },
     "/api/v1/relationships/{rel_id}/confirm": {
       "post": {
-        "description": "Promote an AI-detected relationship to user-confirmed; closes the target's thread.\n\nEmail-header edges are already facts about the mail \u2014 there is nothing to\nconfirm, and promoting one would turn a References-only link into a\nthread-closing claim. They can still be rejected.",
+        "description": "Promote an AI-detected relationship to user-confirmed; closes the target's thread.",
         "operationId": "v1_confirm_relationship_api_v1_relationships__rel_id__confirm_post",
         "parameters": [
           {
@@ -16595,6 +16929,92 @@
         "summary": "V1 Confirm Relationship",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/review-findings/{finding_id}/confirm": {
+      "post": {
+        "description": "Accept the finding; a disagreement's proposed value is applied.",
+        "operationId": "v1_confirm_finding_api_v1_review_findings__finding_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "title": "Finding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewFindingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Confirm Finding",
+        "tags": [
+          "review-findings"
+        ]
+      }
+    },
+    "/api/v1/review-findings/{finding_id}/dismiss": {
+      "post": {
+        "description": "Reject the finding; the AI output stays as it is.",
+        "operationId": "v1_dismiss_finding_api_v1_review_findings__finding_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "title": "Finding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewFindingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Dismiss Finding",
+        "tags": [
+          "review-findings"
         ]
       }
     },

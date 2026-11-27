@@ -493,3 +493,23 @@ class CostService:
         self.db.flush()
         self.db.refresh(cost)
         return cost
+
+
+def set_client_role(db: Session, signal: CostSignal, role: str) -> None:
+    """Who won the cost ruling, from the client's side (``winner``/``loser``, or
+    ``unset``); overrides any auto-detect and recomputes the case exposure.
+    Commits. Access checks are the caller's job."""
+    from app.services.case_service import recompute_total_cost_exposure
+
+    allocation = dict(signal.allocation or {})
+    if role == "unset":
+        allocation.pop("client_role", None)
+    else:
+        allocation["client_role"] = role
+    # A manual choice supersedes any prior auto-detect, so drop its markers.
+    allocation.pop("auto_detected", None)
+    allocation.pop("rationale", None)
+    signal.allocation = allocation
+    db.commit()
+    if signal.case_id:
+        recompute_total_cost_exposure(signal.case_id, db)

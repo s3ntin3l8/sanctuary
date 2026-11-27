@@ -842,6 +842,17 @@ def build_proceeding_exposure(case_id: str, db: Session) -> list[dict]:
     return rows
 
 
+def close_case(db: Session, case: Case) -> None:
+    """Accept an AI close suggestion: close the case and all its proceedings (commits)."""
+    case.status = CaseStatus.CLOSED
+    case.closed_at = now_utc()
+    case.pending_close = False
+    db.query(Proceeding).filter(Proceeding.case_id == case.id).update(
+        {"status": ProceedingStatus.CLOSED}
+    )
+    db.commit()
+
+
 class CaseIdTaken(ValueError):
     """A case with this id already exists."""
 

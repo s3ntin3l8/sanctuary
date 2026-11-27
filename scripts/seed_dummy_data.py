@@ -3596,6 +3596,134 @@ for _doc, _note in [
 db.commit()
 
 
+# ── Second opinions (AiReviewFinding) and a stale brief — ADV-031-B ────────
+# An agent reviewed the Klageerwiderung: it disputes the tier (pending, so the
+# document carries the review reason), agrees with the sender, and its earlier
+# objection to the document type went stale when the type changed. The case
+# brief is stale (its inputs hash cannot match) and has one finding of its own.
+# The agent's token is revoked: it exists only to name the reviewer.
+import secrets as _secrets
+
+from app.models.database import AiReviewFinding, ApiToken
+from app.models.enums import (
+    ApiTokenAccess,
+    ReviewerKind,
+    ReviewFindingStatus,
+    ReviewTargetKind,
+    ReviewVerdict,
+)
+from app.services.api_token_service import hash_secret
+from app.services.intelligence.prompts import PROMPT_VERSION
+
+db.query(ApiToken).filter(
+    ApiToken.user_id == _admin.id, ApiToken.name == "Claude Code"
+).delete(synchronize_session=False)
+_review_token = ApiToken(
+    user_id=_admin.id,
+    name="Claude Code",
+    token_hash=hash_secret(_secrets.token_urlsafe(32)),
+    prefix="snc_demo",
+    access=ApiTokenAccess.READ_WRITE,
+    all_cases=True,
+    revoked_at=_today,
+)
+db.add(_review_token)
+db.flush()
+
+_seed_model = "qwen3:14b"
+_finding_common = {
+    "reviewer_kind": ReviewerKind.AGENT,
+    "agent_token_id": _review_token.id,
+    "case_id": "ADV-031-B",
+    "reviewed_model": _seed_model,
+    "reviewed_prompt_version": PROMPT_VERSION,
+}
+db.add_all(
+    [
+        AiReviewFinding(
+            **_finding_common,
+            target_kind=ReviewTargetKind.DOCUMENT_FIELD,
+            document_id=_b_erwiderung.id,
+            field="significance_tier",
+            verdict=ReviewVerdict.DISAGREE,
+            ai_value="significant",
+            proposed_value="critical",
+            rationale=(
+                "The defence rests on limitation (§ 634a BGB): if it holds, the "
+                "claim fails as a whole, and the reply sets a four-week deadline."
+            ),
+            cited_excerpt="Etwaige Ansprüche sind nach § 634a BGB verjährt.",
+            status=ReviewFindingStatus.PENDING,
+            created_at=_today - timedelta(hours=3),
+        ),
+        AiReviewFinding(
+            **_finding_common,
+            target_kind=ReviewTargetKind.DOCUMENT_FIELD,
+            document_id=_b_erwiderung.id,
+            field="sender",
+            verdict=ReviewVerdict.AGREE,
+            ai_value="gegenseite@kanzlei-opposition.de",
+            rationale="The letterhead and signature are opposing counsel's.",
+            cited_excerpt="Kanzlei Voss Rechtsanwälte",
+            status=ReviewFindingStatus.NOTED,
+            created_at=_today - timedelta(hours=3),
+        ),
+        AiReviewFinding(
+            **_finding_common,
+            target_kind=ReviewTargetKind.DOCUMENT_FIELD,
+            document_id=_b_erwiderung.id,
+            field="document_type",
+            verdict=ReviewVerdict.DISAGREE,
+            ai_value="correspondence",
+            proposed_value="statement",
+            rationale="A Klageerwiderung is a pleading, not correspondence.",
+            cited_excerpt="Klageerwiderung",
+            status=ReviewFindingStatus.STALE,
+            created_at=_today - timedelta(days=2),
+        ),
+        AiReviewFinding(
+            **_finding_common,
+            target_kind=ReviewTargetKind.CASE_BRIEF,
+            field="next_move",
+            verdict=ReviewVerdict.DISAGREE,
+            ai_value="Auf das Sachverständigengutachten warten.",
+            proposed_value=(
+                "Den Auslagenvorschuss von 2.500 € einzahlen; ohne ihn wird das "
+                "Gutachten nicht eingeholt."
+            ),
+            rationale="The Beweisbeschluss makes the expert report depend on the advance.",
+            cited_excerpt=(
+                "Es wird Beweis erhoben durch Einholung eines Sachverständigengutachtens."
+            ),
+            status=ReviewFindingStatus.PENDING,
+            created_at=_today - timedelta(hours=2),
+        ),
+    ]
+)
+_b_erwiderung.review_reasons = [
+    *(_b_erwiderung.review_reasons or []),
+    "ai_review_disagreement",
+]
+_b_erwiderung.needs_review = True
+
+case_b.ai_brief = {
+    "posture": (
+        "Die Beklagte stützt sich auf Verjährung; das Gericht hat ein "
+        "Sachverständigengutachten zur Abdichtung angeordnet."
+    ),
+    "pressure_points": ["Hemmung der Verjährung durch Verhandlungen (§ 203 BGB)"],
+    "next_move": "Auf das Sachverständigengutachten warten.",
+    "detected_status": "pre_trial",
+    "status_rationale": "Beweisaufnahme angeordnet.",
+    "close_suggestion_rationale": "",
+}
+case_b.ai_brief_updated_at = datetime(2026, 9, 20)
+case_b.ai_brief_model = _seed_model
+case_b.ai_brief_prompt_version = PROMPT_VERSION
+# Written before the Replik arrived: no hash of the current inputs matches it.
+case_b.ai_brief_inputs_hash = "seed-brief-before-replik"
+db.commit()
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 from app.models.database import ActionItem as _AI
 from app.models.database import Document as _Doc

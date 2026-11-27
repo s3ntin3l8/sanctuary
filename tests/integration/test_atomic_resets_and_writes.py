@@ -373,15 +373,15 @@ def test_batch_analysis_retry_409s_when_every_failed_sibling_was_reclaimed(
     url = f"/api/v1/documents/{doc_a.id}/pipeline/batch_analysis/retry"
 
     with (
-        patch("app.api.v1.documents.reset_stage", return_value=False),
-        patch("app.api.v1.documents.dispatch_pipeline_retry") as dispatch,
+        patch("app.services.stage_retry.reset_stage", return_value=False),
+        patch("app.services.stage_retry.dispatch_pipeline_retry") as dispatch,
     ):
         lost_race = client.post(url)
     assert lost_race.status_code == 409
     assert lost_race.json()["code"] == "in_flight"
     dispatch.assert_not_called()
 
-    with patch("app.api.v1.documents.dispatch_pipeline_retry") as dispatch:
+    with patch("app.services.stage_retry.dispatch_pipeline_retry") as dispatch:
         ok = client.post(url)
     assert ok.status_code == 200
     dispatch.assert_called_once()

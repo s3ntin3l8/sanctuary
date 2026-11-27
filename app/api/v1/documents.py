@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import FileResponse
@@ -28,7 +27,6 @@ from app.models.database import (
 )
 from app.models.enums import (
     PipelineStage,
-    RelationshipConfidence,
     StageStatus,
 )
 from app.repositories.document_pin import DocumentPinRepository
@@ -64,12 +62,14 @@ from app.services.document_review_service import (
     review_view,
 )
 from app.services.pipeline_status import (
-    STAGE_REGISTRY,
-    get_upstream_blocking,
     reset_all_stages,
-    reset_stage,
     retry_on_db_locked,
     stages_dict,
+)
+from app.services.stage_retry import (
+    RetryRefused,
+    lock_document_row,
+    retry_document_stage,
 )
 from app.services.triage_retry import dispatch_pipeline_retry, rearm_batch_barriers
 
@@ -248,17 +248,20 @@ def summary_action(
     db: Session = Depends(get_db),
     doc: Document = Depends(require_document_access(edit=True)),
 ):
+    from app.services import summary_service
     from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 
     if body.action == "approve":
-        if not summary_bullets_from_ai_summary(doc.ai_summary):
-            raise ApiError(409, "no_summary", "There is no summary to approve.")
-        doc.ai_summary_approved_at = datetime.now(UTC)
+        try:
+            summary_service.approve(doc)
+        except summary_service.NoSummary:
+            raise ApiError(
+                409, "no_summary", "There is no summary to approve."
+            ) from None
     elif body.action == "unapprove":
-        doc.ai_summary_approved_at = None
+        summary_service.unapprove(doc)
     else:
-        doc.ai_summary = None
-        doc.ai_summary_approved_at = None
+        summary_service.discard(doc)
     db.commit()
     db.refresh(doc)
     enrich = (stages_dict(doc).get("enrich") or {}).get("status")
@@ -432,24 +435,10 @@ def confirm_relationship(
     rel: DocumentRelationship = Depends(_owned_relationship),
     db: Session = Depends(get_db),
 ):
-    """Promote an AI-detected relationship to user-confirmed; closes the target's thread.
+    """Promote an AI-detected relationship to user-confirmed; closes the target's thread."""
+    from app.services import relationship_review_service
 
-    Email-header edges are already facts about the mail — there is nothing to
-    confirm, and promoting one would turn a References-only link into a
-    thread-closing claim. They can still be rejected.
-    """
-    from app.services.ingestion.service import refresh_review_reasons
-    from app.services.intelligence.thread_open_scanner import recompute_thread_open
-
-    if rel.confidence == RelationshipConfidence.EMAIL_HEADER:
-        return
-    source_id, target_id = rel.from_document_id, rel.to_document_id
-    rel.confidence = RelationshipConfidence.USER_CONFIRMED
-    db.commit()
-    recompute_thread_open(target_id, db)
-    source = db.get(Document, source_id)
-    if source:
-        refresh_review_reasons(source, db)
+    relationship_review_service.confirm(db, rel)
 
 
 @router.delete("/relationships/{rel_id}", status_code=204, response_class=Response)
@@ -459,29 +448,12 @@ def reject_relationship(
 ):
     """Drop a relationship and remember the rejection so later detection runs
     don't recreate it; reopens the target's thread if nothing confirmed remains."""
-    from app.repositories.document_relationship import reject_edge
-    from app.services.ingestion.service import refresh_review_reasons
-    from app.services.intelligence.thread_open_scanner import recompute_thread_open
+    from app.services import relationship_review_service
 
-    source_id, target_id = rel.from_document_id, rel.to_document_id
-    reject_edge(db, rel)
-    db.commit()
-    recompute_thread_open(target_id, db)
-    source = db.get(Document, source_id)
-    if source:
-        refresh_review_reasons(source, db)
+    relationship_review_service.reject(db, rel)
 
 
 # --- Pipeline retries --------------------------------------------------------
-
-
-def _lock_row(doc_id: int, db: Session) -> None:
-    from sqlalchemy import text
-
-    db.execute(
-        text("SELECT id FROM documents WHERE id = :doc_id FOR UPDATE"),
-        {"doc_id": doc_id},
-    )
 
 
 @router.post("/documents/{doc_id}/pipeline/{stage}/retry", response_model=PipelineView)
@@ -492,52 +464,10 @@ def retry_stage(
     db: Session = Depends(get_db),
     doc: Document = Depends(require_document_access(edit=True)),
 ):
-    _lock_row(doc.id, db)
-    db.refresh(doc)
-    stages = stages_dict(doc)
-    current = (stages.get(stage.value) or {}).get("status")
-    if current in ("running", "retrying"):
-        raise ApiError(409, "in_flight", f"Stage '{stage.value}' is already {current}.")
-    blocking = get_upstream_blocking(stage, stages)
-    if blocking:
-        labels = ", ".join(STAGE_REGISTRY[PipelineStage(b)].label for b in blocking)
-        raise ApiError(
-            409,
-            "upstream_running",
-            f"Waiting for {labels} — {STAGE_REGISTRY[stage].label} re-runs automatically afterwards.",
-        )
-    if stage == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
-        siblings = (
-            db.query(Document)
-            .filter(Document.ingest_batch_id == doc.ingest_batch_id)
-            .all()
-        )
-        reset_any = False
-        claimed_since_read: list[int] = []
-        for sibling in siblings:
-            if (stages_dict(sibling).get("batch_analysis") or {}).get(
-                "status"
-            ) == "failed":
-                if reset_stage(sibling.id, PipelineStage.BATCH_ANALYSIS, db):
-                    reset_any = True
-                else:
-                    claimed_since_read.append(sibling.id)
-        if claimed_since_read and not reset_any:
-            # Every failed sibling was re-claimed by another dispatcher after the
-            # read above: that retry is already running, don't start a second.
-            raise ApiError(
-                409,
-                "in_flight",
-                "Batch analysis is already being retried "
-                f"(documents {', '.join(map(str, claimed_since_read))}).",
-            )
-    elif not reset_stage(doc.id, stage, db):
-        # A dispatcher claimed the stage after the status check above.
-        raise ApiError(409, "in_flight", f"Stage '{stage.value}' is already running.")
-    if stage == PipelineStage.EXTRACT and doc.ingest_batch_id:
-        rearm_batch_barriers(doc.ingest_batch_id, db)
-    db.refresh(doc)
-    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, stage, db)
+    try:
+        retry_document_stage(db, doc, stage)
+    except RetryRefused as exc:
+        raise ApiError(409, exc.code, exc.detail) from exc
     return pipeline_view(doc)
 
 
@@ -549,7 +479,7 @@ def retry_all_stages(
     doc: Document = Depends(require_document_access(edit=True)),
 ):
     def _do_reset():
-        _lock_row(doc.id, db)
+        lock_document_row(doc.id, db)
         db.refresh(doc)
         # All-or-nothing and atomic with the in-flight check: returns the
         # running stage keys (nothing reset) or [] after resetting everything.

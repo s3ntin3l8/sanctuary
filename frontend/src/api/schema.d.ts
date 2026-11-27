@@ -624,6 +624,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/review-findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Case Findings */
+        get: operations["v1_case_findings_api_v1_cases__case_id__review_findings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/shares": {
         parameters: {
             query?: never;
@@ -1309,6 +1326,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{doc_id}/review-findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Document Findings */
+        get: operations["v1_document_findings_api_v1_documents__doc_id__review_findings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{doc_id}/status": {
         parameters: {
             query?: never;
@@ -1769,12 +1803,48 @@ export interface paths {
         /**
          * V1 Confirm Relationship
          * @description Promote an AI-detected relationship to user-confirmed; closes the target's thread.
-         *
-         *     Email-header edges are already facts about the mail — there is nothing to
-         *     confirm, and promoting one would turn a References-only link into a
-         *     thread-closing claim. They can still be rejected.
          */
         post: operations["v1_confirm_relationship_api_v1_relationships__rel_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-findings/{finding_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Confirm Finding
+         * @description Accept the finding; a disagreement's proposed value is applied.
+         */
+        post: operations["v1_confirm_finding_api_v1_review_findings__finding_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-findings/{finding_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Dismiss Finding
+         * @description Reject the finding; the AI output stays as it is.
+         */
+        post: operations["v1_dismiss_finding_api_v1_review_findings__finding_id__dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4547,6 +4617,11 @@ export interface components {
             bundle_next_id: number | null;
             /** Bundle Prev Id */
             bundle_prev_id: number | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
             case: components["schemas"]["CaseRef"] | null;
             /** Case Id */
             case_id: string | null;
@@ -4652,6 +4727,11 @@ export interface components {
             bundle_next_id: number | null;
             /** Bundle Prev Id */
             bundle_prev_id: number | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
             case: components["schemas"]["CaseRef"] | null;
             /** Case Id */
             case_id: string | null;
@@ -6271,6 +6351,72 @@ export interface components {
             /** Inherited From Title */
             inherited_from_title: string | null;
         };
+        /**
+         * ReviewFindingStatus
+         * @description ``noted`` = an agreement (nothing to resolve); ``stale`` = the AI output
+         *     it reviewed has changed since.
+         * @enum {string}
+         */
+        ReviewFindingStatus: "pending" | "confirmed" | "dismissed" | "stale" | "noted";
+        /** ReviewFindingView */
+        ReviewFindingView: {
+            /** Agent Token Name */
+            agent_token_name: string | null;
+            /** Ai Value */
+            ai_value: unknown;
+            /** Case Id */
+            case_id: string;
+            /** Cited Excerpt */
+            cited_excerpt: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Document Id */
+            document_id: number | null;
+            /** Document Title */
+            document_title: string | null;
+            /** Field */
+            field: string | null;
+            /** Id */
+            id: number;
+            /** Proposed Value */
+            proposed_value: unknown;
+            /** Rationale */
+            rationale: string;
+            /** Resolved At */
+            resolved_at: string | null;
+            /** Reviewed Model */
+            reviewed_model: string | null;
+            /** Reviewed Prompt Version */
+            reviewed_prompt_version: string | null;
+            reviewer_kind: components["schemas"]["ReviewerKind"];
+            status: components["schemas"]["ReviewFindingStatus"];
+            /** Target Id */
+            target_id: number | null;
+            target_kind: components["schemas"]["ReviewTargetKind"];
+            /** Target Label */
+            target_label: string;
+            verdict: components["schemas"]["ReviewVerdict"];
+        };
+        /**
+         * ReviewTargetKind
+         * @description Which AI output a second-opinion finding is about.
+         * @enum {string}
+         */
+        ReviewTargetKind: "document_field" | "summary" | "case_assignment" | "relationship" | "claim" | "claim_evidence_proposal" | "claim_merge_proposal" | "action_item" | "cost_signal" | "entity" | "ocr_text" | "case_brief";
+        /**
+         * ReviewVerdict
+         * @enum {string}
+         */
+        ReviewVerdict: "agree" | "disagree" | "uncertain";
+        /**
+         * ReviewerKind
+         * @description Who wrote a second-opinion finding: an MCP agent or the cloud verifier.
+         * @enum {string}
+         */
+        ReviewerKind: "agent" | "verifier";
         /**
          * RoleHealthView
          * @description Live health per role; a separate call because it talks to the endpoints.
@@ -8173,6 +8319,39 @@ export interface operations {
             };
         };
     };
+    v1_case_findings_api_v1_cases__case_id__review_findings_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["ReviewFindingStatus"] | null;
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingView"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_list_shares_api_v1_cases__case_id__shares_get: {
         parameters: {
             query?: never;
@@ -9442,6 +9621,37 @@ export interface operations {
             };
         };
     };
+    v1_document_findings_api_v1_documents__doc_id__review_findings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingView"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_document_status_api_v1_documents__doc_id__status_get: {
         parameters: {
             query?: never;
@@ -10245,6 +10455,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_finding_api_v1_review_findings__finding_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_finding_api_v1_review_findings__finding_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingView"];
+                };
             };
             /** @description Error */
             default: {
