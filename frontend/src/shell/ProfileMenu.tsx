@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 
 import { useLogout, useShell } from '../api/shell'
+import { PrivacyNote } from './PrivacyNote'
 import { initials } from '../format'
 import { leaveTo } from '../navigation'
 import { Icon } from '../ui/Icon'
@@ -57,7 +58,7 @@ export function ProfileMenu() {
         />
       )}
       <div className="mx-2.5 my-1 flex items-center gap-1.5 border-t border-line2 pt-2 text-[10px] text-muted">
-        <Icon name="lock" size={12} /> Local · nothing leaves this device
+        <PrivacyNote onNavigate={() => setOpen(false)} />
       </div>
       <button
         type="button"

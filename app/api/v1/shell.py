@@ -9,7 +9,7 @@ from app.dependencies import get_current_user, get_db
 from app.helpers import triage_inbox_count
 from app.models.database import User
 from app.schemas.user import CurrentUser, ShellView
-from app.services import timezone_service
+from app.services import ai_config, timezone_service
 from app.services.user_settings_service import get_theme
 
 router = APIRouter(tags=["shell"])
@@ -24,4 +24,5 @@ def shell(db: Session = Depends(get_db), user: User = Depends(get_current_user))
         triage_count=triage_inbox_count(db, user.id),
         timezone=timezone_service.get_user_tz().key,
         theme=get_theme(db, user.id),
+        ai_external=ai_config.external_ai_in_use(db),
     )

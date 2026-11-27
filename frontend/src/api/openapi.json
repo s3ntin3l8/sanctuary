@@ -10391,6 +10391,10 @@
       "ShellView": {
         "description": "Everything the persistent app shell (rail, profile menu) renders.",
         "properties": {
+          "ai_external": {
+            "title": "Ai External",
+            "type": "boolean"
+          },
           "theme": {
             "enum": [
               "system",
@@ -10416,7 +10420,8 @@
           "user",
           "triage_count",
           "timezone",
-          "theme"
+          "theme",
+          "ai_external"
         ],
         "title": "ShellView",
         "type": "object"

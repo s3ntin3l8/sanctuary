@@ -72,6 +72,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing: `ap
 
 ## Navigation and ID conventions
 
+* **Privacy note** (`frontend/src/shell/PrivacyNote.tsx`, profile menu and settings header) reads `ShellView.ai_external` (`ai_config.external_ai_in_use`: the active chat or embeddings endpoint, the OCR endpoint while Chandra is the extraction engine, or the verifier while it is on, is `is_external_endpoint`). False: "Local · nothing leaves this device"; true: "External AI endpoint in use · document text leaves this device", linking to Settings → AI; nothing renders until the shell has answered, an unreadable AI key counts as local (no AI call can be made), and every AI-settings mutation (endpoints, roles, engine, verifier) invalidates `['shell']`. The Gmail page's warning uses the same `external_ai_in_use`. Never hardcode the local claim elsewhere
 * **Sidebar** is a 56px icon-rail nav (Home, Triage, Cases; theme, search/⌘K, processing queue, profile menu → Settings). It is not a case list. SPA: `frontend/src/shell/`.
 * **`Case.id`** (e.g. `ADV-024-A`) is the lead identifier in: top-bar pill, breadcrumb, URLs, chat, reports.
 * **Breadcrumb format:** `Cases › ADV-024-A · Case Title`

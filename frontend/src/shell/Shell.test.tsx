@@ -8,11 +8,11 @@ import { renderAt, stubApi } from '../test/render'
 import { displayTimeZone, formatShortDate, setDisplayTimeZone } from '../time'
 import { Shell } from './Shell'
 
-function renderShell() {
+function renderShell(shell = shellView) {
   setDisplayTimeZone(null)
   vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
   const fetch = stubApi({
-    'GET /api/v1/shell': { body: shellView },
+    'GET /api/v1/shell': { body: shell },
     'GET /api/v1/notifications': { body: notificationsView },
     'GET /api/v1/worker-queue': {
       body: { ...emptyQueue, counts: { executing: 1, queued: 2, failed: 0, ai_inflight: 0 } },
@@ -53,6 +53,23 @@ test('profile menu signs out and leaves for /login', async () => {
   )
   await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
   await waitFor(() => expect(navigation.leaveTo).toHaveBeenCalledWith('/login'))
+})
+
+test('the profile menu says nothing leaves the device while every AI endpoint is local', async () => {
+  renderShell()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Account menu' }))
+  expect(screen.getByText(/Local · nothing leaves this device/)).toBeVisible()
+  expect(screen.queryByText(/document text leaves this device/)).not.toBeInTheDocument()
+})
+
+test('the profile menu names an external AI endpoint and links to its settings', async () => {
+  renderShell({ ...shellView, ai_external: true })
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Account menu' }))
+  const link = screen.getByRole('link', { name: /External AI endpoint in use/ })
+  expect(link).toHaveAttribute('href', '/settings/ai')
+  expect(screen.queryByText(/nothing leaves this device/)).not.toBeInTheDocument()
 })
 
 test('⌘K opens the palette and search results navigate', async () => {

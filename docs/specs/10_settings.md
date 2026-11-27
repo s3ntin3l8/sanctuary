@@ -68,6 +68,9 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 
 ```
 ⚙ Settings                       local · nothing leaves this device
+                                 (external AI endpoint in use: "external AI
+                                  endpoint in use · document text leaves this
+                                  device", linking to AI & Models)
 
  WORKSPACE      Account · Appearance
  INTELLIGENCE   AI & Models* · Identity & Context*

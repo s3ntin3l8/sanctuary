@@ -39,6 +39,25 @@ test('settings nav hides admin-only tabs for regular users', async () => {
   expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
 })
 
+test.each([
+  [false, /local · nothing leaves this device/, null],
+  [true, /external AI endpoint in use/, '/settings/ai'],
+])(
+  'the settings header tells where document text goes (external: %s)',
+  async (aiExternal, text, href) => {
+    stubApi({
+      'GET /api/v1/shell': { body: { ...shellView, ai_external: aiExternal } },
+      'GET /api/v1/settings/account': { body: account },
+    })
+    renderAt('/settings/account', <AccountPage />, <SettingsLayout />)
+    const banner = await screen.findByRole('banner')
+    const note = await within(banner).findByText(text)
+    expect(note).toBeVisible()
+    if (href) expect(note.closest('a')).toHaveAttribute('href', href)
+    else expect(within(banner).queryByRole('link')).not.toBeInTheDocument()
+  },
+)
+
 test('settings nav keeps Import history inside Settings, with Gmail marked only on its own page', async () => {
   stubApi({
     'GET /api/v1/shell': { body: shellView },
@@ -121,6 +140,42 @@ test('ai: lists endpoints and switching a role endpoint puts the role', async ()
       model: '',
     }),
   )
+})
+
+test('ai: moving a role to another endpoint refreshes the privacy note', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/shell': { body: shellView },
+    'GET /api/v1/settings/ai': { body: aiSettings },
+    'GET /api/v1/settings/ai/health': {
+      body: {
+        chat: { ok: true, provider: 'ollama', detail: '' },
+        embed: { ok: true, provider: 'ollama', detail: '' },
+        ocr: { ok: true, provider: 'ollama', detail: '' },
+      },
+    },
+    'GET /api/v1/settings/ai/instances/inst_a/models': {
+      body: { chat: ['qwen3.5:9b'], embed: ['nomic-embed-text'], ocr: [] },
+    },
+    'GET /api/v1/settings/ai/instances/inst_b/models': {
+      body: { chat: [], embed: [], ocr: ['chandra-ocr'] },
+    },
+    'PUT /api/v1/settings/ai/roles/ocr': {
+      body: {
+        role: { ...aiSettings.roles[2], active_id: 'inst_a', model: '' },
+        health: { ok: true, provider: 'ollama', detail: '' },
+        warning: null,
+        embed_index: aiSettings.embed_index,
+      },
+    },
+  })
+  const shellCalls = () =>
+    fetch.mock.calls.filter(([r]) => new URL(r.url).pathname === '/api/v1/shell').length
+  renderAt('/settings/ai', <AiPage />, <SettingsLayout />)
+  const ocrEndpoint = await screen.findByLabelText('Endpoint', { selector: '#endpoint-ocr' })
+  await waitFor(() => expect(shellCalls()).toBeGreaterThan(0))
+  const before = shellCalls()
+  await userEvent.selectOptions(ocrEndpoint, 'inst_a')
+  await waitFor(() => expect(shellCalls()).toBeGreaterThan(before))
 })
 
 test('data: clearing the workspace needs a confirmation and reports the result', async () => {
