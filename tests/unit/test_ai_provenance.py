@@ -221,7 +221,7 @@ def test_a_document_started_without_a_call_never_adopts_a_later_tasks_model(
     EXTRACT, EMBEDDINGS); the next task starts doc B and calls a model. A
     later completion of A outside a started scope must keep A's stored values."""
     from app.models.database import Document
-    from app.tasks.celery_app import _reset_ai_provenance
+    from app.tasks.celery_app import _pop_ai_provenance, _push_ai_provenance
 
     a, b = (
         Document(title="a", case_id=sample_case.id),
@@ -230,10 +230,11 @@ def test_a_document_started_without_a_call_never_adopts_a_later_tasks_model(
     db_session.add_all([a, b])
     db_session.commit()
 
-    _reset_ai_provenance()  # task_prerun of task 1
+    _push_ai_provenance(task_id="t1")  # task 1 starts A, never calls a model
     mark_started(a.id, PipelineStage.EMBEDDINGS, db_session)
+    _pop_ai_provenance(task_id="t1")
 
-    _reset_ai_provenance()  # task_prerun of task 2
+    _push_ai_provenance(task_id="t2")  # task 2 reads B with Chandra
     mark_started(b.id, PipelineStage.EXTRACT, db_session)
     ai_provenance.note("chandra-ocr-2-8b", "chandra", prompt_version=None)
     mark_completed(b.id, PipelineStage.EXTRACT, db_session)
@@ -243,13 +244,35 @@ def test_a_document_started_without_a_call_never_adopts_a_later_tasks_model(
     assert row.model is None
 
     # Within one task too: a failed or skipped start leaves the scope.
-    _reset_ai_provenance()
     mark_started(a.id, PipelineStage.ENTITIES, db_session)
     mark_failed(a.id, PipelineStage.ENTITIES, db_session, error="boom")
     mark_started(b.id, PipelineStage.ENTITIES, db_session)
     ai_provenance.note("qwen3.5-9b", "lmstudio")
     mark_completed(a.id, PipelineStage.ENTITIES, db_session)
     assert _stage_row(db_session, a.id, PipelineStage.ENTITIES).model is None
+    _pop_ai_provenance(task_id="t2")
+
+
+@pytest.mark.unit
+def test_an_eager_task_inside_a_stage_leaves_the_stage_scope_intact(
+    db_session, sample_document
+):
+    """With CELERY_TASK_ALWAYS_EAGER a task dispatched mid-stage runs inside the
+    enclosing task; its own scope must not replace the enclosing one."""
+    from app.tasks.celery_app import _pop_ai_provenance, _push_ai_provenance
+
+    _push_ai_provenance(task_id="outer")
+    mark_started(sample_document.id, PipelineStage.ENRICH, db_session)
+    ai_provenance.note("qwen3.5-9b", "lmstudio")
+
+    _push_ai_provenance(task_id="inner")  # eager child task
+    ai_provenance.note("other-model", "ollama")
+    _pop_ai_provenance(task_id="inner")
+
+    mark_completed(sample_document.id, PipelineStage.ENRICH, db_session)
+    _pop_ai_provenance(task_id="outer")
+    row = _stage_row(db_session, sample_document.id, PipelineStage.ENRICH)
+    assert (row.model, row.provider) == ("qwen3.5-9b", "lmstudio")
 
 
 @pytest.mark.unit

@@ -10,12 +10,14 @@ A scope belongs to the documents started in it. A stage that starts several
 documents before one AI call (BATCH_ANALYSIS) shares that call's provenance;
 a document completed without having been started in the current scope (an
 idempotent re-dispatch, a recovery sweep) leaves its stored provenance alone.
-Completing a document takes it out of the scope, and every Celery task starts
-with an empty one (``reset``, wired to ``task_prerun`` in ``celery_app``), so a
-document is never credited with a call made for another task.
+Completing a document takes it out of the scope, and every Celery task runs
+in an empty one (``push`` on ``task_prerun``, ``pop`` on ``task_postrun`` in
+``celery_app``), so a document is never credited with a call made for another
+task. Push/pop rather than a plain reset keeps an enclosing task's scope intact
+when a task is run eagerly from inside it.
 """
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 
 from app.services.intelligence.prompts import PROMPT_VERSION
@@ -37,9 +39,14 @@ class _Scope:
 _scope: ContextVar[_Scope | None] = ContextVar("ai_provenance_scope", default=None)
 
 
-def reset() -> None:
-    """Drop the current scope: the next ``begin`` opens a fresh one."""
-    _scope.set(None)
+def push() -> Token:
+    """Start an empty scope for a task; hand the token back to ``pop``."""
+    return _scope.set(None)
+
+
+def pop(token: Token) -> None:
+    """Restore the scope that was current before the matching ``push``."""
+    _scope.reset(token)
 
 
 def begin(doc_id: int) -> None:
