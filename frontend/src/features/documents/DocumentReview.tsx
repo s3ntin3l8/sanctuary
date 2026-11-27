@@ -28,7 +28,7 @@ import { QueryState } from '../../ui/QueryState'
 import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
 import { useDocumentFindings } from '../../api/reviewFindings'
-import { FindingList } from './SecondOpinion'
+import { FindingList, useVerifierModel, VerifyButton } from './SecondOpinion'
 import { ReviewChecklist } from '../triage/ReviewChecklist'
 import { EmailSources } from '../triage/EmailSources'
 import { EditDraftCaseModal } from '../triage/EditDraftCaseModal'
@@ -170,8 +170,9 @@ function Section({
 /** An agent's or the verifier's second opinion on this document's AI output. */
 function SecondOpinion({ review }: { review: Review }) {
   const query = useDocumentFindings(review.id)
+  const verifierModel = useVerifierModel({ docId: review.id })
   const findings = query.data ?? []
-  if (findings.length === 0) return null
+  if (findings.length === 0 && !verifierModel) return null
   const pending = findings.filter((f) => f.status === 'pending').length
   return (
     <Section
@@ -187,8 +188,13 @@ function SecondOpinion({ review }: { review: Review }) {
           String(findings.length)
         )
       }
+      action={verifierModel && <VerifyButton target={{ docId: review.id }} model={verifierModel} />}
     >
-      <FindingList findings={findings} canResolve={review.can_edit} />
+      {findings.length > 0 ? (
+        <FindingList findings={findings} canResolve={review.can_edit} />
+      ) : (
+        <p className="text-[11px] text-muted">No second opinion on this document yet.</p>
+      )}
     </Section>
   )
 }

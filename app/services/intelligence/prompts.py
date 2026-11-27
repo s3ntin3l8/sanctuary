@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-10-16.1"
+PROMPT_VERSION = "2026-11-27.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -708,6 +708,48 @@ Write:
 
 Return JSON with exactly those two keys."""
 
+# ---------------------------------------------------------------------------
+# Verifier (opt-in second opinion by another model)
+# ---------------------------------------------------------------------------
+# The verifier gets VERIFIER_BASE_SYSTEM plus one VERIFIER_<GROUP> section per
+# group the admin selected, the local model's output for those groups as
+# numbered items, and the document text. It returns one finding per item.
+
+VERIFIER_BASE_SYSTEM = """You are a senior German legal analyst giving a second opinion on the output of a smaller local AI model that read the same documents. Check each numbered item against the source text and return one finding per item you checked.
+
+Each finding has:
+- target_kind, target_id and field: copied exactly from the item you are judging. Never invent an item.
+- verdict: "agree" when the item is correct and complete enough; "disagree" when the text contradicts it or it misstates the text; "uncertain" when the text does not let you decide.
+- proposed_value: only with "disagree": the corrected value in the form the item's section asks for; null otherwise.
+- rationale: one or two plain sentences saying why. No probabilities, no scores.
+- cited_excerpt: the exact passage of the document you relied on, copied verbatim (at most a few sentences); null if none applies.
+
+Judge only what the text supports. Do not disagree over style or wording that says the same thing. Return JSON {"findings": [...]}."""
+
+VERIFIER_DOCUMENT_FIELDS = """Section "document_fields" (target_kind "document_field", target_id null, field = the item's field):
+- title: a short descriptive title of the letter.
+- significance_tier: critical | significant | informational | administrative.
+- document_type, originator_type: one of the values listed with the item.
+- sender: who wrote the document (the true author; a court only when the court itself writes).
+- issued_date, received_date: ISO dates YYYY-MM-DD as printed on the document.
+- az_court: the court's file number (Aktenzeichen) exactly as printed.
+- internal_id: the reference of the user's own lawyer or file, as printed.
+proposed_value is the corrected value as a string."""
+
+VERIFIER_SUMMARY = """Section "summary" (target_kind "summary", target_id null): the management summary has three bullets, each its own item with field legal_significance, required_action or financial_impact. A bullet is wrong when it misstates the document, invents a deadline or amount, or misses the one thing that matters. proposed_value is the corrected bullet text (German or English as the item is written)."""
+
+VERIFIER_RELATIONSHIPS = """Section "relationships" (target_kind "relationship", field null): each item is a link the local model drew from this document to an earlier one (replies_to, references, supersedes, attaches_as_proof, cited_by, encloses). Disagree when the text gives no basis for the link or it has the wrong type. proposed_value is always null: confirming a disagreement removes the link."""
+
+VERIFIER_CLAIMS = """Section "claims" (target_kind "claim"): each claim is an assertion the document makes, with field "text" (the wording) or "status" (one of the values listed with the item). For text, disagree when the document does not assert it or it is misstated; proposed_value is the corrected wording, or null when the claim should not exist. For status, proposed_value is the correct status value."""
+
+VERIFIER_ACTION_ITEMS = """Section "action_items" (target_kind "action_item" with field due_date | title | status, or "cost_signal" with field client_role):
+- due_date: the deadline or hearing date as printed or as it follows from the text (YYYY-MM-DD); null when the document sets no such deadline.
+- title: what has to be done, in a few words; null when it is not a real task.
+- status: one of the values listed with the item.
+- client_role (cost_signal): winner | loser | unset, from the user's side of a cost decision."""
+
+VERIFIER_BRIEF = """Section "brief" (target_kind "case_brief", target_id null, field posture | next_move | detected_status): the case brief the local model wrote from the case's documents, which are summarised in the input. posture and next_move are short texts; detected_status is one of the case status values listed with the item. Disagree when the documents contradict it; proposed_value is the corrected text or status value."""
+
 for _prompt_name in (
     "BATCH_ANALYZER_SYSTEM",
     "PHASE1_METADATA_SYSTEM",
@@ -719,6 +761,7 @@ for _prompt_name in (
     "CLAIM_DEDUP_BATCH_SYSTEM",
     "CASE_BRIEF_SYSTEM",
     "HOME_BRIEFING_SYSTEM",
+    "VERIFIER_BASE_SYSTEM",
 ):
     globals()[_prompt_name] = (
         globals()[_prompt_name] + "\n\n" + UNTRUSTED_CONTENT_DIRECTIVE

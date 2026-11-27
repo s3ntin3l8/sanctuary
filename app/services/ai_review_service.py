@@ -1,6 +1,7 @@
 """Second-opinion findings on AI output (``AiReviewFinding``).
 
-A reviewer (an MCP agent now, the cloud verifier later) records whether it
+A reviewer (an MCP agent, or the opt-in verifier model,
+``app/services/intelligence/verifier.py``) records whether it
 agrees with one piece of AI output: a document field, the summary, a
 relationship, a claim, ... (``ReviewTargetKind``). ``agree`` is kept as
 ``noted``; ``disagree`` and ``uncertain`` wait as ``pending`` for the user.
@@ -85,7 +86,7 @@ _ENUM_FIELDS: dict[str, type] = {
     "document_type": DocumentType,
     "originator_type": OriginatorType,
 }
-_SUMMARY_KEYS = ("legal_significance", "required_action", "financial_impact")
+SUMMARY_KEYS = ("legal_significance", "required_action", "financial_impact")
 CLAIM_FIELDS = ("status", "text")
 ACTION_ITEM_FIELDS = ("due_date", "title", "status")
 COST_SIGNAL_FIELDS = ("client_role",)
@@ -360,13 +361,13 @@ def _json(value: Any) -> Any:
     return value
 
 
-def _summary_value(ai_summary: Any) -> dict[str, Any] | None:
+def summary_value(ai_summary: Any) -> dict[str, Any] | None:
     from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 
     if not ai_summary:
         return None
     if isinstance(ai_summary, dict):
-        return {k: ai_summary.get(k) for k in _SUMMARY_KEYS}
+        return {k: ai_summary.get(k) for k in SUMMARY_KEYS}
     by_kind = {
         b["kind"]: b["text"] for b in summary_bullets_from_ai_summary(ai_summary)
     }
@@ -389,7 +390,7 @@ def current_value(db: Session, target: Target) -> Any:
         return _json(getattr(doc, field))
     if kind == ReviewTargetKind.SUMMARY:
         assert doc is not None
-        return _summary_value(doc.ai_summary)
+        return summary_value(doc.ai_summary)
     if kind == ReviewTargetKind.CASE_ASSIGNMENT:
         assert doc is not None
         return {"case_id": doc.case_id, "proceeding_id": doc.proceeding_id}
@@ -506,14 +507,14 @@ def _validate_proposed(
             return _iso_date(proposed, field)
         return _text(proposed, field, max_len=500)
     if kind == ReviewTargetKind.SUMMARY:
-        if not isinstance(proposed, dict) or set(proposed) - set(_SUMMARY_KEYS):
+        if not isinstance(proposed, dict) or set(proposed) - set(SUMMARY_KEYS):
             raise _invalid(
                 "proposed_value must be an object with "
                 "legal_significance, required_action and financial_impact."
             )
         out = {
             k: (_text(proposed[k], k) if proposed.get(k) is not None else None)
-            for k in _SUMMARY_KEYS
+            for k in SUMMARY_KEYS
         }
         if not any(out.values()):
             raise _invalid("The proposed summary is empty.")
@@ -619,7 +620,12 @@ def _provenance(db: Session, target: Target) -> tuple[str | None, str | None]:
 # --- Recording ------------------------------------------------------------------
 
 
-def _key_filter(db: Session, kind, token_id, target: Target):
+def _key_filter(
+    db: Session,
+    kind,
+    token_id,
+    target: Target,
+):
     return db.query(AiReviewFinding).filter(
         AiReviewFinding.reviewer_kind == kind,
         AiReviewFinding.agent_token_id.is_(None)
@@ -672,7 +678,8 @@ def record_finding(
 
     ``proposed_value`` is validated against the target for ``disagree`` and
     must be absent otherwise. A reviewer's pending finding on the same target
-    is updated in place rather than duplicated.
+    is updated in place rather than duplicated, and so is its earlier agreement
+    with the same output when it agrees again.
     """
     rationale = _text(rationale, "rationale")
     excerpt = (

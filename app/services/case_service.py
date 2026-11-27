@@ -36,6 +36,7 @@ from app.repositories.document import DocumentRepository
 from app.repositories.entity import EntityRepository
 from app.repositories.legal_cost import LegalCostRepository
 from app.services import audit_service
+from app.services.ai_config import rename_verifier_case
 from app.services.fees.calculator import (
     allocation_from_ruling,
     court_fees,
@@ -1318,6 +1319,7 @@ class CaseService:
 
         # Case → Proceedings cascade is wired via ORM relationship.
         self.db.delete(case)
+        rename_verifier_case(self.db, case_id, None)
         audit_service.record(
             self.db,
             AuditEventType.CASE_DELETED,
@@ -1480,6 +1482,7 @@ class CaseService:
         if dir_existed:
             shutil.rmtree(case_dir)
 
+        rename_verifier_case(self.db, case_id, None)
         audit_service.record(
             self.db,
             AuditEventType.CASE_PURGED,

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type Schemas, unwrap } from './client'
 
 export type ReviewFinding = Schemas['ReviewFindingView']
+export type VerifierStatus = Schemas['VerifierStatus']
 
 const KEY = 'review-findings'
 
@@ -52,5 +53,39 @@ export function useFindingDecision() {
         queryClient.invalidateQueries({ queryKey: [key] })
       }
     },
+  })
+}
+
+/** Whether the verifier may check this document or case (switched on, case in scope). */
+export function useVerifierStatus(target: { docId: number } | { caseId: string }) {
+  return useQuery<VerifierStatus, ApiError>({
+    queryKey: ['verifier', target],
+    queryFn: () =>
+      unwrap(
+        'docId' in target
+          ? api.GET('/api/v1/documents/{doc_id}/verifier', {
+              params: { path: { doc_id: target.docId } },
+            })
+          : api.GET('/api/v1/cases/{case_id}/verifier', {
+              params: { path: { case_id: target.caseId } },
+            }),
+      ),
+    staleTime: 60_000,
+  })
+}
+
+/** Queue the verifier's check; its findings arrive in "Second opinion" when it is done. */
+export function useVerify() {
+  return useMutation<Schemas['VerifyQueued'], ApiError, { docId: number } | { caseId: string }>({
+    mutationFn: (target) =>
+      unwrap(
+        'docId' in target
+          ? api.POST('/api/v1/documents/{doc_id}/verify', {
+              params: { path: { doc_id: target.docId } },
+            })
+          : api.POST('/api/v1/cases/{case_id}/verify', {
+              params: { path: { case_id: target.caseId } },
+            }),
+      ),
   })
 }

@@ -289,6 +289,35 @@ class DebugCaptureUpdate(BaseModel):
     enabled: bool
 
 
+VerifierGroup = Literal[
+    "document_fields", "summary", "relationships", "claims", "action_items", "brief"
+]
+
+
+class VerifierView(BaseModel):
+    """The opt-in verifier: a second model that checks the local AI's output.
+    The endpoint's API key is never part of it."""
+
+    enabled: bool
+    instance_id: str | None
+    endpoint_label: str | None
+    model: str
+    groups: list[VerifierGroup]
+    all_cases: bool
+    case_ids: list[str]
+    # The endpoint is on the public internet: document text leaves this machine.
+    is_external: bool
+
+
+class VerifierUpdate(BaseModel):
+    enabled: bool
+    instance_id: str | None = None
+    model: str = Field("", max_length=200)
+    groups: list[VerifierGroup] = Field(default_factory=list, max_length=6)
+    all_cases: bool = False
+    case_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
 # --- Appearance --------------------------------------------------------------
 
 

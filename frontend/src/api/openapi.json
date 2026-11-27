@@ -12374,6 +12374,181 @@
         "title": "UserRole",
         "type": "string"
       },
+      "VerifierStatus": {
+        "description": "Whether the verifier may check this document or case, and with which model.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "required": [
+          "available",
+          "model"
+        ],
+        "title": "VerifierStatus",
+        "type": "object"
+      },
+      "VerifierUpdate": {
+        "properties": {
+          "all_cases": {
+            "default": false,
+            "title": "All Cases",
+            "type": "boolean"
+          },
+          "case_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Case Ids",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "groups": {
+            "items": {
+              "enum": [
+                "document_fields",
+                "summary",
+                "relationships",
+                "claims",
+                "action_items",
+                "brief"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "title": "Groups",
+            "type": "array"
+          },
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "model": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "VerifierUpdate",
+        "type": "object"
+      },
+      "VerifierView": {
+        "description": "The opt-in verifier: a second model that checks the local AI's output.\nThe endpoint's API key is never part of it.",
+        "properties": {
+          "all_cases": {
+            "title": "All Cases",
+            "type": "boolean"
+          },
+          "case_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Case Ids",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Label"
+          },
+          "groups": {
+            "items": {
+              "enum": [
+                "document_fields",
+                "summary",
+                "relationships",
+                "claims",
+                "action_items",
+                "brief"
+              ],
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "is_external": {
+            "title": "Is External",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "instance_id",
+          "endpoint_label",
+          "model",
+          "groups",
+          "all_cases",
+          "case_ids",
+          "is_external"
+        ],
+        "title": "VerifierView",
+        "type": "object"
+      },
+      "VerifyQueued": {
+        "properties": {
+          "queued": {
+            "title": "Queued",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queued"
+        ],
+        "title": "VerifyQueued",
+        "type": "object"
+      },
       "WorkerStatus": {
         "properties": {
           "concurrency": {
@@ -14342,6 +14517,92 @@
         ]
       }
     },
+    "/api/v1/cases/{case_id}/verifier": {
+      "get": {
+        "description": "Whether this user may ask the verifier to check this case.",
+        "operationId": "v1_case_verifier_api_v1_cases__case_id__verifier_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifierStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Case Verifier",
+        "tags": [
+          "review-findings"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/verify": {
+      "post": {
+        "description": "Queue the verifier's check of the case brief and every document filed in\nthe case (each sends its text to the verifier's endpoint).",
+        "operationId": "v1_verify_case_api_v1_cases__case_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Verify Case",
+        "tags": [
+          "review-findings"
+        ]
+      }
+    },
     "/api/v1/cases/{case_id}/viewed": {
       "post": {
         "description": "Record the visit once the dashboard has rendered its \"new since\" markers.",
@@ -16006,6 +16267,92 @@
         "summary": "V1 Summary Action",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/verifier": {
+      "get": {
+        "description": "Whether this user may ask the verifier to check this document.",
+        "operationId": "v1_document_verifier_api_v1_documents__doc_id__verifier_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifierStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Document Verifier",
+        "tags": [
+          "review-findings"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/verify": {
+      "post": {
+        "description": "Queue the verifier's check of this document's AI output (sends its text\nto the verifier's endpoint).",
+        "operationId": "v1_verify_document_api_v1_documents__doc_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Verify Document",
+        "tags": [
+          "review-findings"
         ]
       }
     },
@@ -18194,6 +18541,78 @@
           }
         },
         "summary": "V1 Set Role",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/verifier": {
+      "get": {
+        "description": "The opt-in verifier (a second model checking the local AI's output).",
+        "operationId": "v1_verifier_settings_api_v1_settings_ai_verifier_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifierView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Verifier Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Switch the verifier, pick its endpoint and model, its groups and cases.\n\nTurning it on needs an endpoint, a model, a group and a case scope; while\nit is off the rest may be saved incomplete.",
+        "operationId": "v1_update_verifier_api_v1_settings_ai_verifier_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifierUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifierView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Verifier",
         "tags": [
           "settings"
         ]

@@ -113,6 +113,7 @@ celery_app = Celery(
         "app.tasks.generate_case_brief",
         "app.tasks.generate_home_briefing",
         "app.tasks.maintenance",
+        "app.tasks.verify",
     ],
 )
 

@@ -15,7 +15,7 @@ import { AgentBadge } from '../../../ui/AgentBadge'
 import { Badge } from '../../../ui/Badge'
 import { Icon } from '../../../ui/Icon'
 import { useToast } from '../../../ui/toast'
-import { FindingList } from '../../documents/SecondOpinion'
+import { FindingList, useVerifierModel, VerifyButton } from '../../documents/SecondOpinion'
 
 const PARTY_TONE: Record<string, string> = {
   own: 'bg-success',
@@ -217,14 +217,20 @@ export function Rail({
 /** Second opinions on the brief itself (its posture, next move or status). */
 function BriefFindings({ caseId, canResolve }: { caseId: string; canResolve: boolean }) {
   const query = useCaseFindings(caseId)
+  const verifierModel = useVerifierModel({ caseId })
   const findings = (query.data ?? []).filter((f) => f.target_kind === 'case_brief')
-  if (findings.length === 0) return null
+  if (findings.length === 0 && !verifierModel) return null
   return (
     <div className="mt-3 border-t border-line2 pt-2.5">
-      <h4 className="mb-1.5 text-[9px] font-bold tracking-[.1em] text-muted uppercase">
+      <h4 className="mb-1.5 flex items-center text-[9px] font-bold tracking-[.1em] text-muted uppercase">
         Second opinion
+        {verifierModel && (
+          <span className="ml-auto normal-case">
+            <VerifyButton target={{ caseId }} model={verifierModel} />
+          </span>
+        )}
       </h4>
-      <FindingList findings={findings} canResolve={canResolve} />
+      {findings.length > 0 && <FindingList findings={findings} canResolve={canResolve} />}
     </div>
   )
 }

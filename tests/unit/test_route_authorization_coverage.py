@@ -164,6 +164,10 @@ _BODY_ID_REVIEWED: dict[str, str] = {
         "client_id is Google's OAuth client id, not a record id; admin-only route"
     ),
     "PUT /api/v1/settings/ai/roles/{role}": "admin-only route",
+    "PUT /api/v1/settings/ai/verifier": (
+        "admin-only route; instance_id must be a configured endpoint and every "
+        "case_id an existing case (the instance-wide verifier scope)"
+    ),
     "GET /api/v1/settings/ai/logs": "admin-only route; ids only filter the local runs index",
     "POST /api/v1/cases": "case_id is the id of the new case, not a reference",
     "POST /api/v1/cases/{case_id}/costs": (

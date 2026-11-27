@@ -49,6 +49,7 @@ def record_run(
     reasoning_tokens: int | None = None,
     watchdog: str | None = None,
     started_at: str | None = None,
+    external: bool = False,
 ) -> None:
     """Append one entry to runs.jsonl.
 
@@ -59,6 +60,9 @@ def record_run(
     ``doc_id``/``batch_id``/``case_id`` carry the same three-ID
     cross-referencing the chat pipeline uses: pass whichever are known so a
     doc's OCR row joins its chat rows under the same filters.
+
+    ``external`` marks a call whose prompt left this machine (the verifier on a
+    public endpoint), so the egress is visible in the index.
     """
     entry = {
         "ts": started_at or datetime.now(get_user_tz()).isoformat(timespec="seconds"),
@@ -81,6 +85,7 @@ def record_run(
         "status": status,
         "error": error,
         "watchdog": watchdog,
+        "external": external,
     }
     line = json.dumps(entry, ensure_ascii=False) + "\n"
 

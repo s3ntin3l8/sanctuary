@@ -320,6 +320,18 @@ class AIProvider:
         self._detected_type: ProviderType | None = None
         self._user_context: str = ""
 
+    @classmethod
+    def for_endpoint(
+        cls, role: str, *, base_url: str, provider: str, api_key: str
+    ) -> AIProvider:
+        """A provider bound to one endpoint, independent of the role singletons
+        (no user-context preamble, never reloaded from the database)."""
+        inst = cls(role=role)
+        inst.base_url = normalize_base_url(base_url)
+        inst.provider = provider
+        inst.api_key = api_key
+        return inst
+
     def reload_from_db(self, db) -> None:
         """Refresh connection config from the active instance for this role."""
         cfg: ChatConfig | EmbedConfig | OcrConfig

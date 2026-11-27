@@ -194,6 +194,179 @@ def get_ocr_config(db=None) -> OcrConfig:
     )
 
 
+# --- Verifier (opt-in second opinion by another model) ---------------------------
+#
+# Not a fourth entry in _ACTIVE_KEY_BY_ROLE: those roles fall back to the
+# first instance (and the env endpoint) when nothing is picked, which for the
+# verifier would mean sending document text somewhere nobody chose. The
+# verifier resolves only on an exact ``active_verifier_id`` match, with its own
+# model, and only while ``verifier_enabled`` is on.
+
+# Groups of AI output the verifier can check, as the settings page offers them.
+VERIFIER_GROUPS = (
+    "document_fields",
+    "summary",
+    "relationships",
+    "claims",
+    "action_items",
+    "brief",
+)
+DOCUMENT_VERIFIER_GROUPS = tuple(g for g in VERIFIER_GROUPS if g != "brief")
+
+
+@dataclass(frozen=True)
+class VerifierSettings:
+    """The stored verifier switch and scope (``AppSettings.settings_json["ai"]``)."""
+
+    enabled: bool
+    instance_id: str | None
+    model: str
+    groups: tuple[str, ...]
+    all_cases: bool
+    case_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class VerifierConfig:
+    """Connection of the configured verifier: an endpoint and a model."""
+
+    id: str
+    label: str
+    base_url: str
+    provider: str
+    api_key: str
+    model: str
+
+
+def get_verifier_settings(db) -> VerifierSettings:
+    ai = _raw_ai_section(db)
+    groups = ai.get("verifier_groups")
+    case_ids = ai.get("verifier_case_ids")
+    return VerifierSettings(
+        enabled=bool(ai.get("verifier_enabled", False)),
+        instance_id=ai.get("active_verifier_id") or None,
+        model=(ai.get("verifier_model") or "").strip(),
+        groups=tuple(
+            g
+            for g in (groups if isinstance(groups, list) else [])
+            if g in VERIFIER_GROUPS
+        ),
+        all_cases=bool(ai.get("verifier_all_cases", False)),
+        case_ids=tuple(
+            c
+            for c in (case_ids if isinstance(case_ids, list) else [])
+            if isinstance(c, str)
+        ),
+    )
+
+
+def get_verifier_config(db) -> VerifierConfig | None:
+    """The verifier's endpoint and model, or None when either is not chosen.
+
+    No fallback to another instance or to the env endpoint.
+    """
+    vs = get_verifier_settings(db)
+    if not vs.instance_id or not vs.model:
+        return None
+    inst = get_instance(db, vs.instance_id)
+    if inst is None or not (inst.get("base_url") or "").strip():
+        return None
+    return VerifierConfig(
+        id=inst["id"],
+        label=inst.get("label", ""),
+        base_url=normalize_base_url(inst["base_url"]),
+        provider=(inst.get("provider") or "auto").strip(),
+        api_key=(inst.get("api_key") or _NO_KEY).strip(),
+        model=vs.model,
+    )
+
+
+def verifier_for_case(
+    db, case_id: str | None, groups: tuple[str, ...] | None = None
+) -> tuple[VerifierConfig, tuple[str, ...]] | None:
+    """The verifier and the groups it may check for ``case_id``, or None.
+
+    None unless the switch is on, an endpoint and model are chosen, the case is
+    a real case in scope (all cases, or on the allowlist; the Triage Inbox
+    never is) and at least one of ``groups`` (default: every group) is
+    selected. Every verifier call goes through here first: None means no call.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return None
+    vs = get_verifier_settings(db)
+    if not vs.enabled:
+        return None
+    if not vs.all_cases and case_id not in vs.case_ids:
+        return None
+    wanted = VERIFIER_GROUPS if groups is None else groups
+    selected = tuple(g for g in vs.groups if g in wanted)
+    if not selected:
+        return None
+    cfg = get_verifier_config(db)
+    if cfg is None:
+        return None
+    return cfg, selected
+
+
+def save_verifier_settings(db, vs: VerifierSettings) -> None:
+    """Persist the verifier switch, endpoint, model and scope (audited)."""
+    from app.services.app_settings_service import _get_or_create
+
+    settings = _get_or_create(db)
+    data = dict(settings.settings_json or {})
+    ai = dict(data.get("ai", {}))
+    ai.update(
+        {
+            "verifier_enabled": vs.enabled,
+            "active_verifier_id": vs.instance_id,
+            "verifier_model": vs.model,
+            "verifier_groups": list(vs.groups),
+            "verifier_all_cases": vs.all_cases,
+            "verifier_case_ids": list(vs.case_ids),
+        }
+    )
+    data["ai"] = ai
+    settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.AI_VERIFIER_CHANGED,
+        payload={
+            "enabled": vs.enabled,
+            "instance_id": vs.instance_id,
+            "model": vs.model,
+            "groups": list(vs.groups),
+            "all_cases": vs.all_cases,
+            "case_ids": list(vs.case_ids),
+        },
+    )
+    db.commit()
+
+
+def rename_verifier_case(db, old_id: str, new_id: str | None) -> None:
+    """Keep a renamed case on the verifier allowlist, or (``new_id`` None) take
+    a deleted or merged-away case off it, so a later case reusing the id is not
+    in scope by accident. Caller commits."""
+    from app.models.database import AppSettings
+
+    settings = db.query(AppSettings).first()
+    if settings is None or not isinstance(settings.settings_json, dict):
+        return
+    ai = settings.settings_json.get("ai") or {}
+    case_ids = ai.get("verifier_case_ids")
+    if not isinstance(case_ids, list) or old_id not in case_ids:
+        return
+    data = dict(settings.settings_json)
+    data["ai"] = {
+        **ai,
+        "verifier_case_ids": [
+            new_id if c == old_id else c
+            for c in case_ids
+            if c != old_id or new_id is not None
+        ],
+    }
+    settings.settings_json = data
+
+
 def set_active(db, role: str, instance_id: str) -> None:
     """Set the active instance for 'chat', 'embed', or 'ocr'."""
     from app.services.app_settings_service import _get_or_create

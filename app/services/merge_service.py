@@ -36,6 +36,7 @@ from app.models.enums import (
     ProceedingStatus,
 )
 from app.services import ai_review_service, audit_service
+from app.services.ai_config import rename_verifier_case
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,9 @@ def merge_cases(
     db.expire_all()
     # Row-level delete: the ORM cascade would act on stale relationship state.
     db.query(Case).filter(Case.id == source_id).delete(synchronize_session=False)
+    # The verifier's scope does not follow a merge (that would send the target's
+    # documents out unasked); the source id just leaves the allowlist.
+    rename_verifier_case(db, source_id, None)
     audit_service.record(
         db,
         AuditEventType.CASE_MERGED,
@@ -321,6 +325,7 @@ def rename_case(
     for code in db.query(OAuthCode).all():
         if case_id in (code.case_ids or []):
             code.case_ids = [new_id if c == case_id else c for c in code.case_ids]
+    rename_verifier_case(db, case_id, new_id)
     moved_dir = _move_case_dir(db, case_id, new_id)
     try:
         audit_service.record(

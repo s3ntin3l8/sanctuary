@@ -230,6 +230,7 @@
       "name": "settings-ai",
       "path": "/settings/ai",
       "tags": [
+        "check",
         "audit"
       ]
     },

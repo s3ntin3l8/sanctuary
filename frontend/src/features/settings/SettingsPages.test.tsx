@@ -409,3 +409,75 @@ test('ai logs: the prompt-capture switch lives here', async () => {
     expect(await postedJson(fetch, 'PUT', '/debug-capture')).toEqual({ enabled: false }),
   )
 })
+
+const verifierOff = {
+  enabled: false,
+  instance_id: null,
+  endpoint_label: null,
+  model: '',
+  groups: [],
+  all_cases: false,
+  case_ids: [],
+  is_external: false,
+}
+
+test('ai: the verifier warns before document text leaves the machine, and saves its scope', async () => {
+  const cloud = {
+    ...aiSettings.instances[0],
+    id: 'inst_cloud',
+    label: 'Anthropic',
+    base_url: 'https://api.anthropic.com',
+    has_api_key: true,
+    is_external: true,
+  }
+  const saved = {
+    ...verifierOff,
+    enabled: true,
+    instance_id: 'inst_cloud',
+    endpoint_label: 'Anthropic',
+    model: 'claude-opus-5',
+    groups: ['claims'],
+    all_cases: true,
+    is_external: true,
+  }
+  const fetch = stubApi({
+    'GET /api/v1/settings/ai': {
+      body: { ...aiSettings, instances: [...aiSettings.instances, cloud] },
+    },
+    'GET /api/v1/settings/ai/verifier': { body: verifierOff },
+    'GET /api/v1/settings/ai/instances/inst_cloud/models': {
+      body: { chat: ['claude-opus-5'], embed: [], ocr: [] },
+    },
+    'GET /api/v1/cases': { body: { cases: [], counts_by_status: {}, total: 0 } },
+    'PUT /api/v1/settings/ai/verifier': { body: saved },
+  })
+  renderAt('/settings/ai', <AiPage />)
+  const user = userEvent.setup()
+  const toggle = await screen.findByRole('switch', { name: 'Verify AI output with a second model' })
+  expect(toggle).not.toBeChecked()
+  expect(screen.queryByText(/leave this machine/)).not.toBeInTheDocument()
+
+  await user.selectOptions(
+    screen.getByLabelText('Endpoint', { selector: '#verifier-endpoint' }),
+    'inst_cloud',
+  )
+  expect(screen.getByText(/leave this machine/)).toBeVisible()
+  await user.selectOptions(
+    await screen.findByLabelText('Model', { selector: '#verifier-model' }),
+    'claude-opus-5',
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'Claims' }))
+  await user.click(screen.getByRole('radio', { name: 'All cases, including ones created later' }))
+  await user.click(toggle)
+  await user.click(screen.getByRole('button', { name: 'Save verifier' }))
+  await waitFor(async () =>
+    expect(await postedJson(fetch, 'PUT', '/settings/ai/verifier')).toEqual({
+      enabled: true,
+      instance_id: 'inst_cloud',
+      model: 'claude-opus-5',
+      groups: ['claims'],
+      all_cases: true,
+      case_ids: [],
+    }),
+  )
+})
