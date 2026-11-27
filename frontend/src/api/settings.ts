@@ -265,6 +265,24 @@ export function useSetHoldPackets() {
     },
   })
 }
+/** The opt-in verifier: a second model checking the local AI's output (admin only). */
+export const useVerifierSettings = () =>
+  useSettingsQuery<S['VerifierView']>('ai-verifier', () =>
+    unwrap(api.GET('/api/v1/settings/ai/verifier')),
+  )
+
+export function useSetVerifier() {
+  const queryClient = useQueryClient()
+  return useMutation<S['VerifierView'], ApiError, S['VerifierUpdate']>({
+    mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/ai/verifier', { body })),
+    onSuccess: (view) => {
+      queryClient.setQueryData(['settings', 'ai-verifier'], view)
+      // Where "Verify with <model>" shows follows the switch and the scope.
+      queryClient.invalidateQueries({ queryKey: ['verifier'] })
+    },
+  })
+}
+
 export const useSetConcurrency = (kind: 'worker' | 'ocr') =>
   useMutation<S['ConcurrencyResult'], ApiError, S['ConcurrencyUpdate']>({
     mutationFn: (body) =>

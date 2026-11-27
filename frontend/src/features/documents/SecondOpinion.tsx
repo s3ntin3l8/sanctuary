@@ -1,6 +1,11 @@
 import { Link } from 'react-router'
 
-import { type ReviewFinding, useFindingDecision } from '../../api/reviewFindings'
+import {
+  type ReviewFinding,
+  useFindingDecision,
+  useVerifierStatus,
+  useVerify,
+} from '../../api/reviewFindings'
 import { formatShortDate } from '../../time'
 import { AgentBadge } from '../../ui/AgentBadge'
 import { Badge, type Tone } from '../../ui/Badge'
@@ -192,5 +197,44 @@ export function FindingList({
         <FindingRow key={f.id} finding={f} showDocument={showDocument} canResolve={canResolve} />
       ))}
     </ul>
+  )
+}
+
+type VerifyTarget = { docId: number } | { caseId: string }
+
+/** The verifier's model when this user may ask it to check the target, else null. */
+export function useVerifierModel(target: VerifyTarget): string | null {
+  const status = useVerifierStatus(target).data
+  return status?.available ? (status.model ?? null) : null
+}
+
+/**
+ * "Verify with <model>": sends the target's AI output and text to the opt-in verifier (for a
+ * case: the brief and every document filed in it). Findings arrive in the Second opinion list
+ * once it has answered.
+ */
+export function VerifyButton({ target, model }: { target: VerifyTarget; model: string }) {
+  const verify = useVerify()
+  const toast = useToast()
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      disabled={verify.isPending || verify.isSuccess}
+      onClick={() =>
+        verify.mutate(target, {
+          onSuccess: () =>
+            toast(
+              'docId' in target
+                ? `Sent to ${model}; findings appear under Second opinion once it has answered`
+                : `Sent the brief and every document of this case to ${model}; findings appear under Second opinion as it answers`,
+            ),
+          onError: (e) => toast(e.message, 'error'),
+        })
+      }
+    >
+      <Icon name="verified" size={14} />
+      Verify with {model}
+    </Button>
   )
 }

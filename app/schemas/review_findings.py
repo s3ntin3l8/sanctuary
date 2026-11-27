@@ -39,3 +39,14 @@ class ReviewFindingView(BaseModel):
     status: ReviewFindingStatus
     created_at: datetime
     resolved_at: datetime | None
+
+
+class VerifierStatus(BaseModel):
+    """Whether the verifier may check this document or case, and with which model."""
+
+    available: bool
+    model: str | None
+
+
+class VerifyQueued(BaseModel):
+    queued: bool

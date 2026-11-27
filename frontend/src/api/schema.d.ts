@@ -710,6 +710,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/verifier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Case Verifier
+         * @description Whether this user may ask the verifier to check this case.
+         */
+        get: operations["v1_case_verifier_api_v1_cases__case_id__verifier_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Verify Case
+         * @description Queue the verifier's check of the case brief and every document filed in
+         *     the case (each sends its text to the verifier's endpoint).
+         */
+        post: operations["v1_verify_case_api_v1_cases__case_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/viewed": {
         parameters: {
             query?: never;
@@ -1374,6 +1415,47 @@ export interface paths {
         put?: never;
         /** V1 Summary Action */
         post: operations["v1_summary_action_api_v1_documents__doc_id__summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/verifier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Document Verifier
+         * @description Whether this user may ask the verifier to check this document.
+         */
+        get: operations["v1_document_verifier_api_v1_documents__doc_id__verifier_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Verify Document
+         * @description Queue the verifier's check of this document's AI output (sends its text
+         *     to the verifier's endpoint).
+         */
+        post: operations["v1_verify_document_api_v1_documents__doc_id__verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2284,6 +2366,33 @@ export interface paths {
          * @description Point a role at an endpoint and, if ``model`` is set, pick its model.
          */
         put: operations["v1_set_role_api_v1_settings_ai_roles__role__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ai/verifier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Verifier Settings
+         * @description The opt-in verifier (a second model checking the local AI's output).
+         */
+        get: operations["v1_verifier_settings_api_v1_settings_ai_verifier_get"];
+        /**
+         * V1 Update Verifier
+         * @description Switch the verifier, pick its endpoint and model, its groups and cases.
+         *
+         *     Turning it on needs an endpoint, a model, a group and a case scope; while
+         *     it is off the rest may be saved incomplete.
+         */
+        put: operations["v1_update_verifier_api_v1_settings_ai_verifier_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -7113,6 +7222,65 @@ export interface components {
          * @enum {string}
          */
         UserRole: "admin" | "user";
+        /**
+         * VerifierStatus
+         * @description Whether the verifier may check this document or case, and with which model.
+         */
+        VerifierStatus: {
+            /** Available */
+            available: boolean;
+            /** Model */
+            model: string | null;
+        };
+        /** VerifierUpdate */
+        VerifierUpdate: {
+            /**
+             * All Cases
+             * @default false
+             */
+            all_cases: boolean;
+            /** Case Ids */
+            case_ids?: string[];
+            /** Enabled */
+            enabled: boolean;
+            /** Groups */
+            groups?: ("document_fields" | "summary" | "relationships" | "claims" | "action_items" | "brief")[];
+            /** Instance Id */
+            instance_id?: string | null;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+        };
+        /**
+         * VerifierView
+         * @description The opt-in verifier: a second model that checks the local AI's output.
+         *     The endpoint's API key is never part of it.
+         */
+        VerifierView: {
+            /** All Cases */
+            all_cases: boolean;
+            /** Case Ids */
+            case_ids: string[];
+            /** Enabled */
+            enabled: boolean;
+            /** Endpoint Label */
+            endpoint_label: string | null;
+            /** Groups */
+            groups: ("document_fields" | "summary" | "relationships" | "claims" | "action_items" | "brief")[];
+            /** Instance Id */
+            instance_id: string | null;
+            /** Is External */
+            is_external: boolean;
+            /** Model */
+            model: string;
+        };
+        /** VerifyQueued */
+        VerifyQueued: {
+            /** Queued */
+            queued: boolean;
+        };
         /** WorkerStatus */
         WorkerStatus: {
             /** Concurrency */
@@ -8514,6 +8682,68 @@ export interface operations {
             };
         };
     };
+    v1_case_verifier_api_v1_cases__case_id__verifier_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifierStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_verify_case_api_v1_cases__case_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyQueued"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_mark_case_viewed_api_v1_cases__case_id__viewed_post: {
         parameters: {
             query?: never;
@@ -9705,6 +9935,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SummaryView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_document_verifier_api_v1_documents__doc_id__verifier_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifierStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_verify_document_api_v1_documents__doc_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyQueued"];
                 };
             };
             /** @description Error */
@@ -11337,6 +11629,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoleUpdateResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_verifier_settings_api_v1_settings_ai_verifier_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifierView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_update_verifier_api_v1_settings_ai_verifier_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifierUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifierView"];
                 };
             };
             /** @description Error */

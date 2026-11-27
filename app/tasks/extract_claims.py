@@ -168,6 +168,7 @@ def extract_claims_task(self, doc_id: int):
         trigger_case_brief_if_ready(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
+    extracted = False
     db = get_db_session()
     try:
         if skipped == "recent_extraction":
@@ -178,6 +179,7 @@ def extract_claims_task(self, doc_id: int):
             mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason=skipped)
         else:
             mark_completed(doc_id, PipelineStage.CLAIMS, db)
+            extracted = True
             from app.services.ingestion.service import refresh_review_reasons
 
             doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -191,5 +193,11 @@ def extract_claims_task(self, doc_id: int):
         doc_id,
         f"skipped ({skipped})" if skipped else "complete",
     )
+    if extracted:
+        # Opt-in second opinion by the verifier model; queued only when the
+        # switch is on and the document's case is in its scope.
+        from app.tasks.verify import maybe_verify_document
+
+        maybe_verify_document(doc_id)
     trigger_case_brief_if_ready(doc_id)
     return {"status": "success", "doc_id": doc_id}

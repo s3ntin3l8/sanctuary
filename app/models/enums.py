@@ -360,6 +360,7 @@ class AuditEventType(enum.StrEnum):
     AI_INSTANCE_UPDATED = "ai_instance_updated"
     AI_INSTANCE_DELETED = "ai_instance_deleted"
     AI_ACTIVE_CHANGED = "ai_active_changed"
+    AI_VERIFIER_CHANGED = "ai_verifier_changed"
     AI_USER_CONTEXT_CHANGED = "ai_user_context_changed"
     SETTINGS_THEME_CHANGED = "settings_theme_changed"
     SETTINGS_DASHBOARD_CARDS_CHANGED = "settings_dashboard_cards_changed"

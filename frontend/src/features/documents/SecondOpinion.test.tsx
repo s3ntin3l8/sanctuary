@@ -1,9 +1,9 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
-import type { ReviewFinding } from '../../api/reviewFindings'
+import { type ReviewFinding, VERIFY_REFRESH_MS } from '../../api/reviewFindings'
 import { caseDetail, conversation, documentReader } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
 import { CasePage } from '../cases/dashboard/CasePage'
@@ -132,4 +132,69 @@ test('the case brief shows its stale marker and brief findings', async () => {
   const rail = await screen.findByRole('complementary', { name: 'Case brief' })
   expect(within(rail).getByText('stale')).toBeVisible()
   expect(await within(rail).findByText('Wait for the expert report first.')).toBeVisible()
+})
+
+test('"Verify with <model>" shows only where the verifier is available, and queues a check', async () => {
+  const fetch = documentPage([], {
+    'GET /api/v1/documents/2211/verifier': {
+      body: { available: true, model: 'claude-opus-5' },
+    },
+    'POST /api/v1/documents/2211/verify': { status: 202, body: { queued: true } },
+  })
+  const user = userEvent.setup()
+  const button = await screen.findByRole('button', { name: 'Verify with claude-opus-5' })
+  expect(screen.getByText('No second opinion on this document yet.')).toBeVisible()
+  await user.click(button)
+  const calls = fetch.mock.calls.map(([r]) => `${r.method} ${new URL(r.url).pathname}`)
+  expect(calls).toContain('POST /api/v1/documents/2211/verify')
+  expect(button).toBeDisabled()
+})
+
+test('after queuing a check the findings are fetched again while the verifier answers', async () => {
+  const fetch = documentPage([], {
+    'GET /api/v1/documents/2211/verifier': {
+      body: { available: true, model: 'claude-opus-5' },
+    },
+    'POST /api/v1/documents/2211/verify': { status: 202, body: { queued: true } },
+  })
+  // Hold back the first refresh (10 s) so the test can fire it; every other
+  // timer, React Query's own included, runs as usual.
+  const [first] = VERIFY_REFRESH_MS
+  const held: (() => void)[] = []
+  const realTimeout = globalThis.setTimeout
+  const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+    fn: () => void,
+    ms?: number,
+  ) => {
+    if (ms === first) {
+      held.push(fn)
+      return 0 as unknown as ReturnType<typeof setTimeout>
+    }
+    return realTimeout(fn, ms)
+  }) as typeof setTimeout)
+  const findingsCalls = () =>
+    fetch.mock.calls.filter(
+      ([r]) => new URL(r.url).pathname === '/api/v1/documents/2211/review-findings',
+    ).length
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Verify with claude-opus-5' }))
+  await waitFor(() => expect(held).toHaveLength(1))
+  const before = findingsCalls()
+  held[0]?.()
+  await waitFor(() => expect(findingsCalls()).toBeGreaterThan(before))
+  spy.mockRestore()
+})
+
+test('no verify button and no empty section while the verifier is unavailable', async () => {
+  const fetch = documentPage([], {
+    'GET /api/v1/documents/2211/verifier': { body: { available: false, model: null } },
+  })
+  await waitFor(() =>
+    expect(fetch.mock.calls.map(([r]) => new URL(r.url).pathname)).toContain(
+      '/api/v1/documents/2211/verifier',
+    ),
+  )
+  expect(await screen.findByText('Vorwort.')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /Verify with/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('Second opinion')).not.toBeInTheDocument()
 })

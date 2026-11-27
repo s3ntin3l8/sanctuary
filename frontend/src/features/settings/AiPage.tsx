@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 
 import type { Schemas } from '../../api/client'
+import { useCasesDirectory } from '../../api/cases'
 import {
   useAiSettings,
   useCreateInstance,
@@ -13,8 +14,10 @@ import {
   useSetEngine,
   useSetHoldPackets,
   useSetRole,
+  useSetVerifier,
   useTestInstance,
   useUpdateInstance,
+  useVerifierSettings,
 } from '../../api/settings'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
@@ -67,6 +70,8 @@ export function AiPage() {
       <SettingsCard title="Roles" description="Which endpoint and model handle each job.">
         <RoleCards settings={settings} />
       </SettingsCard>
+
+      <Verifier instances={settings.instances} />
 
       <EmbeddingIndex settings={settings} />
       <ExtractionEngine
@@ -632,5 +637,211 @@ function ConcurrencyField({
         Apply
       </Button>
     </form>
+  )
+}
+
+type VerifierGroup = Schemas['VerifierView']['groups'][number]
+
+const VERIFIER_GROUPS: [VerifierGroup, string][] = [
+  ['document_fields', 'Document fields (title, type, sender, dates, file numbers)'],
+  ['summary', 'Management summary'],
+  ['relationships', 'Relationships to earlier documents'],
+  ['claims', 'Claims'],
+  ['action_items', 'Deadlines and cost decisions'],
+  ['brief', 'Case brief'],
+]
+
+/** Settings → AI → Verifier: an opt-in second model checks the local AI's output. */
+function Verifier({ instances }: { instances: Instance[] }) {
+  const query = useVerifierSettings()
+  if (!query.data) return <QueryState error={query.error} pending={query.isPending} />
+  return <VerifierForm key={JSON.stringify(query.data)} view={query.data} instances={instances} />
+}
+
+function VerifierForm({
+  view,
+  instances,
+}: {
+  view: Schemas['VerifierView']
+  instances: Instance[]
+}) {
+  const save = useSetVerifier()
+  const cases = useCasesDirectory().data?.cases ?? []
+  const toast = useToast()
+  const [enabled, setEnabled] = useState(view.enabled)
+  const [instanceId, setInstanceId] = useState(view.instance_id ?? '')
+  const [model, setModel] = useState(view.model)
+  const [groups, setGroups] = useState<VerifierGroup[]>(view.groups)
+  const [allCases, setAllCases] = useState(view.all_cases)
+  const [picked, setPicked] = useState<string[]>(view.case_ids)
+  const models = useInstanceModels(instanceId || null)
+  const instance = instances.find((i) => i.id === instanceId)
+  const options = models.data?.chat ?? []
+  const listed = model && !options.includes(model) ? [model, ...options] : options
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    save.mutate(
+      {
+        enabled,
+        instance_id: instanceId || null,
+        model,
+        groups,
+        all_cases: allCases,
+        case_ids: allCases ? [] : picked,
+      },
+      {
+        onSuccess: (v) => toast(v.enabled ? `Verifier on: ${v.model}` : 'Verifier saved (off)'),
+        onError: (err) => toast(err.message, 'error'),
+      },
+    )
+  }
+
+  return (
+    <SettingsCard
+      title="Verifier"
+      description="A second, stronger model checks what the local AI produced and records where it agrees or disagrees. You confirm or dismiss each finding under Second opinion; nothing changes on its own. Separate from agent access (MCP)."
+    >
+      <form className="space-y-4" onSubmit={submit}>
+        <div className="flex items-center gap-3 text-[12.5px]">
+          <div className="flex-1">
+            <div className="font-semibold">Verify AI output with a second model</div>
+            <div className="text-[11px] text-muted">
+              Runs after claims are extracted for a document in a chosen case, and on demand from
+              the document and case pages. Off by default.
+            </div>
+          </div>
+          <Toggle
+            checked={enabled}
+            label="Verify AI output with a second model"
+            onChange={setEnabled}
+          />
+        </div>
+
+        {instance?.is_external && (
+          <p
+            role="note"
+            className="flex gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-[12px] text-ink2"
+          >
+            <Icon name="warning" size={16} />
+            <span>
+              {instance.label} is on the public internet: document text and the local AI's output
+              for the chosen stages and cases leave this machine whenever the verifier runs.
+            </span>
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Endpoint" htmlFor="verifier-endpoint">
+            <select
+              id="verifier-endpoint"
+              value={instanceId}
+              onChange={(e) => {
+                setInstanceId(e.target.value)
+                setModel('')
+              }}
+              className={inputClass}
+            >
+              <option value="">— no endpoint —</option>
+              {instances.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Model" htmlFor="verifier-model">
+            <div className="flex gap-1">
+              <select
+                id="verifier-model"
+                value={model}
+                disabled={!instanceId}
+                onChange={(e) => setModel(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">— select a model —</option>
+                {listed.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label="Discover models for the verifier"
+                disabled={!instanceId || models.isFetching}
+                onClick={() => models.refetch()}
+              >
+                <Icon name="refresh" size={16} />
+              </Button>
+            </div>
+          </Field>
+        </div>
+
+        <fieldset className="space-y-1.5">
+          <legend className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
+            Stages to verify
+          </legend>
+          {VERIFIER_GROUPS.map(([group, label]) => (
+            <label key={group} className="flex items-center gap-2 text-[12.5px]">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-accent"
+                checked={groups.includes(group)}
+                onChange={(e) =>
+                  setGroups((g) =>
+                    e.target.checked ? [...g, group] : g.filter((x) => x !== group),
+                  )
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+
+        <fieldset className="space-y-1.5">
+          <legend className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">
+            Cases
+          </legend>
+          <label className="flex items-center gap-2 text-[12.5px]">
+            <input type="radio" checked={allCases} onChange={() => setAllCases(true)} />
+            All cases, including ones created later
+          </label>
+          <label className="flex items-center gap-2 text-[12.5px]">
+            <input type="radio" checked={!allCases} onChange={() => setAllCases(false)} />
+            Only these cases
+          </label>
+          {!allCases && (
+            <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-line p-2">
+              {cases.map((c) => (
+                <li key={c.id}>
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input
+                      type="checkbox"
+                      checked={picked.includes(c.id)}
+                      onChange={(e) =>
+                        setPicked((p) =>
+                          e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id),
+                        )
+                      }
+                    />
+                    <span className="font-mono text-[11px]">{c.id}</span>
+                    <span className="truncate text-muted">{c.title}</span>
+                  </label>
+                </li>
+              ))}
+              {cases.length === 0 && <li className="text-[12px] text-muted">No cases yet.</li>}
+            </ul>
+          )}
+        </fieldset>
+
+        <div className="flex justify-end">
+          <Button type="submit" disabled={save.isPending}>
+            Save verifier
+          </Button>
+        </div>
+      </form>
+    </SettingsCard>
   )
 }

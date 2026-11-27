@@ -100,6 +100,7 @@ def isolate_data_dir(tmp_path_factory):
         "app.services.ingestion.service",
         "app.services.ingestion.batch_orchestrator",
         "app.services.intelligence._ai_call",
+        "app.services.intelligence.verifier",
         "app.services.ai_run_index",
     ):
         mod = __import__(modname, fromlist=["DATA_DIR"])
@@ -558,6 +559,12 @@ def mock_phase4_celery_tasks():
         # CELERY_TASK_ALWAYS_EAGER, same risk as the task-body cases above.
         "app.tasks.claim_dedup.claim_dedup_task.apply_async",
         "app.tasks.claim_dedup.claim_dedup_task.delay",
+        # Queued after CLAIMS (only when the verifier is switched on) and per
+        # document by verify_case_task.
+        "app.tasks.verify.verify_document_task.delay",
+        "app.tasks.verify.verify_document_task.apply_async",
+        "app.tasks.verify.verify_case_task.delay",
+        "app.tasks.verify.verify_case_task.apply_async",
     ]
     with ExitStack() as stack:
         for target in targets:

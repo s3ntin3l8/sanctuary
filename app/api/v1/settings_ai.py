@@ -16,7 +16,7 @@ from app.core.rate_limit import limiter
 from app.core.safe_error import describe_exception
 from app.core.timezone import now_utc
 from app.dependencies import get_current_admin, get_db
-from app.models.database import Document
+from app.models.database import Case, Document
 from app.models.enums import AuditEventType
 from app.schemas.settings import (
     AiHealth,
@@ -40,16 +40,21 @@ from app.schemas.settings import (
     RoleHealthView,
     RoleUpdate,
     RoleUpdateResult,
+    VerifierUpdate,
+    VerifierView,
 )
 from app.services import audit_service
 from app.services.ai_config import (
+    VerifierSettings,
     _get_ai_section,
     _make_id,
     delete_instance,
     get_embed_config,
     get_instance,
+    get_verifier_settings,
     list_instances,
     save_instance,
+    save_verifier_settings,
     set_active,
 )
 from app.services.ai_provider import (
@@ -242,11 +247,13 @@ def remove_instance(instance_id: str, db: Session = Depends(get_db)):
         ai.get("active_chat_id"),
         ai.get("active_embed_id"),
         ai.get("active_ocr_id"),
+        ai.get("active_verifier_id"),
     ):
         raise ApiError(
             409,
             "instance_active",
-            "Cannot delete the active endpoint — switch a role to another first.",
+            "Cannot delete an endpoint in use — switch the role or the verifier "
+            "to another first.",
         )
     delete_instance(db, instance_id)
 
@@ -315,6 +322,74 @@ async def set_role(role: Role, body: RoleUpdate, db: Session = Depends(get_db)):
         warning=warning,
         embed_index=_embed_index(db),
     )
+
+
+# --- Verifier ----------------------------------------------------------------
+
+
+def _verifier_view(db: Session) -> VerifierView:
+    vs = get_verifier_settings(db)
+    inst = get_instance(db, vs.instance_id) if vs.instance_id else None
+    return VerifierView(
+        enabled=vs.enabled,
+        instance_id=vs.instance_id if inst else None,
+        endpoint_label=inst.get("label") if inst else None,
+        model=vs.model,
+        groups=list(vs.groups),  # type: ignore[arg-type]
+        all_cases=vs.all_cases,
+        case_ids=list(vs.case_ids),
+        is_external=inst is not None and is_external_endpoint(inst.get("base_url", "")),
+    )
+
+
+@router.get("/verifier", response_model=VerifierView)
+def verifier_settings(db: Session = Depends(get_db)):
+    """The opt-in verifier (a second model checking the local AI's output)."""
+    return _verifier_view(db)
+
+
+@router.put("/verifier", response_model=VerifierView)
+def update_verifier(body: VerifierUpdate, db: Session = Depends(get_db)):
+    """Switch the verifier, pick its endpoint and model, its groups and cases.
+
+    Turning it on needs an endpoint, a model, a group and a case scope; while
+    it is off the rest may be saved incomplete.
+    """
+    instance_id = (body.instance_id or "").strip() or None
+    if instance_id and get_instance(db, instance_id) is None:
+        raise ApiError(404, "not_found", "Endpoint not found.")
+    case_ids: list[str] = []
+    for raw in body.case_ids:
+        case_id = raw.strip()
+        if case_id in case_ids:
+            continue
+        case = db.get(Case, case_id) if case_id else None
+        if case is None or case.id == "_TRIAGE":
+            raise ApiError(422, "unknown_case", f"Case {case_id!r} does not exist.")
+        case_ids.append(case.id)
+    groups = list(dict.fromkeys(body.groups))
+    model = body.model.strip()
+    if body.enabled and not (
+        instance_id and model and groups and (body.all_cases or case_ids)
+    ):
+        raise ApiError(
+            422,
+            "verifier_incomplete",
+            "Pick an endpoint, a model, at least one stage and the cases to check "
+            "before turning the verifier on.",
+        )
+    save_verifier_settings(
+        db,
+        VerifierSettings(
+            enabled=body.enabled,
+            instance_id=instance_id,
+            model=model,
+            groups=tuple(groups),
+            all_cases=body.all_cases,
+            case_ids=tuple(case_ids),
+        ),
+    )
+    return _verifier_view(db)
 
 
 # --- Embedding index ---------------------------------------------------------
