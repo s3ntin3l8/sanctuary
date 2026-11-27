@@ -395,7 +395,7 @@ def test_pipeline_retry_rules(db_session):
         document_id=doc.id, stage=PipelineStage.METADATA
     ).update({"status": StageStatus.COMPLETED})
     db_session.commit()
-    with patch("app.api.v1.documents.dispatch_pipeline_retry") as dispatch:
+    with patch("app.services.stage_retry.dispatch_pipeline_retry") as dispatch:
         view = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry").json()
     assert dispatch.call_args.args[2] == PipelineStage.ENRICH
     assert (
@@ -787,7 +787,10 @@ def test_single_doc_extract_retries_rearm_the_batch_barriers(db_session):
     doc = _doc(db_session, admin.id)
     batch = _batch_with_stale_barriers(db_session, doc)
 
-    with patch("app.api.v1.documents.dispatch_pipeline_retry"):
+    with (
+        patch("app.api.v1.documents.dispatch_pipeline_retry"),
+        patch("app.services.stage_retry.dispatch_pipeline_retry"),
+    ):
         for url in (
             f"/api/v1/documents/{doc.id}/pipeline/extract/retry",
             f"/api/v1/documents/{doc.id}/pipeline/retry-all",
@@ -811,7 +814,7 @@ def test_non_extract_stage_retry_leaves_batch_barriers_alone(db_session):
     doc = _doc(db_session, admin.id)
     batch = _batch_with_stale_barriers(db_session, doc)
 
-    with patch("app.api.v1.documents.dispatch_pipeline_retry"):
+    with patch("app.services.stage_retry.dispatch_pipeline_retry"):
         r = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry")
     assert r.status_code == 200
     db_session.refresh(batch)

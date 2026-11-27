@@ -7,12 +7,15 @@ import {
   useReenrich,
   useRefreshBrief,
 } from '../../../api/caseDetail'
+import { useCaseFindings } from '../../../api/reviewFindings'
 import { formatEur } from '../../../format'
 import { formatDueRelative, formatShortDate } from '../../../time'
 import { Button } from '../../../ui/Button'
 import { AgentBadge } from '../../../ui/AgentBadge'
+import { Badge } from '../../../ui/Badge'
 import { Icon } from '../../../ui/Icon'
 import { useToast } from '../../../ui/toast'
+import { FindingList } from '../../documents/SecondOpinion'
 
 const PARTY_TONE: Record<string, string> = {
   own: 'bg-success',
@@ -50,6 +53,11 @@ export function Rail({
         <header className="mb-2 flex items-center gap-1.5">
           <Icon name="auto_awesome" size={15} className="text-accent" />
           <h3 className="text-[10px] font-bold tracking-[.12em] text-muted uppercase">Brief</h3>
+          {brief.stale && hasBrief && (
+            <span title="The case changed since this brief was written; refresh it to bring it up to date.">
+              <Badge tone="warning">stale</Badge>
+            </span>
+          )}
           {detail.can_edit && (
             <button
               type="button"
@@ -106,6 +114,7 @@ export function Rail({
             )}
           </div>
         )}
+        <BriefFindings caseId={detail.id} canResolve={detail.can_edit} />
       </section>
 
       <section>
@@ -202,6 +211,21 @@ export function Rail({
 
       <Parties detail={detail} />
     </aside>
+  )
+}
+
+/** Second opinions on the brief itself (its posture, next move or status). */
+function BriefFindings({ caseId, canResolve }: { caseId: string; canResolve: boolean }) {
+  const query = useCaseFindings(caseId)
+  const findings = (query.data ?? []).filter((f) => f.target_kind === 'case_brief')
+  if (findings.length === 0) return null
+  return (
+    <div className="mt-3 border-t border-line2 pt-2.5">
+      <h4 className="mb-1.5 text-[9px] font-bold tracking-[.1em] text-muted uppercase">
+        Second opinion
+      </h4>
+      <FindingList findings={findings} canResolve={canResolve} />
+    </div>
   )
 }
 

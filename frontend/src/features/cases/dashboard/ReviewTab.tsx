@@ -40,7 +40,8 @@ export function ReviewTab({ detail, selectedDoc, onSelect, initialOnlyOpen = fal
             <button
               type="button"
               aria-pressed={onlyOpen}
-              aria-label={onlyOpen ? 'Show all documents' : 'Show only documents to review'}
+              // The name starts with the visible text (WCAG 2.5.3, label in name).
+              aria-label={`${openCount} to review: ${onlyOpen ? 'show all documents' : 'show only these'}`}
               onClick={() => setOnlyOpen((v) => !v)}
               className="ml-2 align-middle"
             >

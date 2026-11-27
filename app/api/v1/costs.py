@@ -30,6 +30,7 @@ from app.services import access_service
 from app.services.case_overview_service import cost_row, summary_of
 from app.services.case_service import recompute_total_cost_exposure
 from app.services.cost_service import CostService, _derive_status, costs_due
+from app.services.cost_service import set_client_role as set_signal_client_role
 
 router = APIRouter(tags=["costs"])
 
@@ -219,18 +220,7 @@ def set_client_role(
     signal: CostSignal = Depends(require_cost_signal_access(edit=True)),
 ):
     """Who won the cost ruling, from the client's side; overrides any auto-detect."""
-    allocation = dict(signal.allocation or {})
-    if body.role == "unset":
-        allocation.pop("client_role", None)
-    else:
-        allocation["client_role"] = body.role
-    # A manual choice supersedes any prior auto-detect, so drop its markers.
-    allocation.pop("auto_detected", None)
-    allocation.pop("rationale", None)
-    signal.allocation = allocation
-    db.commit()
-    if signal.case_id:
-        recompute_total_cost_exposure(signal.case_id, db)
+    set_signal_client_role(db, signal, body.role)
 
 
 @router.post(

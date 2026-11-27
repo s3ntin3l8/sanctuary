@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
@@ -12,8 +11,7 @@ from app.api.access_guards import require_case_access
 from app.api.v1.errors import ApiError
 from app.constants import CASE_STATUS_META
 from app.dependencies import get_current_user, get_db
-from app.models.database import Case, Proceeding, User
-from app.models.enums import CaseStatus, ProceedingStatus
+from app.models.database import Case, User
 from app.schemas.cases import (
     CaseCard,
     CaseCreate,
@@ -22,7 +20,7 @@ from app.schemas.cases import (
     NextAction,
 )
 from app.services import access_service
-from app.services.case_service import CaseIdTaken, CaseService
+from app.services.case_service import CaseIdTaken, CaseService, close_case
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -139,13 +137,7 @@ def confirm_close(
     case: Case = Depends(require_case_access(edit=True)),
 ):
     """Accept an AI close suggestion: close the case and all its proceedings."""
-    case.status = CaseStatus.CLOSED
-    case.closed_at = datetime.now(UTC)
-    case.pending_close = False
-    db.query(Proceeding).filter(Proceeding.case_id == case_id).update(
-        {"status": ProceedingStatus.CLOSED}
-    )
-    db.commit()
+    close_case(db, case)
 
 
 @router.post("/{case_id}/dismiss-close", status_code=204, response_class=Response)

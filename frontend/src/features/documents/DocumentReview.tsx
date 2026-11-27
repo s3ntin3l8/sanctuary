@@ -27,6 +27,8 @@ import { Modal } from '../../ui/Modal'
 import { QueryState } from '../../ui/QueryState'
 import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
+import { useDocumentFindings } from '../../api/reviewFindings'
+import { FindingList } from './SecondOpinion'
 import { ReviewChecklist } from '../triage/ReviewChecklist'
 import { EmailSources } from '../triage/EmailSources'
 import { EditDraftCaseModal } from '../triage/EditDraftCaseModal'
@@ -94,6 +96,7 @@ export function ReviewSections({
       <PacketHint review={review} />
       <ReviewChecklist review={review} bundle={routing?.bundle} />
       <Pipeline review={review} />
+      <SecondOpinion review={review} />
       <CaseAndProceeding review={review} routing={routing} />
       <Metadata review={review} singleColumn={singleColumn} />
       {!routing && review.email_provenance && (
@@ -161,6 +164,32 @@ function Section({
       </header>
       {children}
     </section>
+  )
+}
+
+/** An agent's or the verifier's second opinion on this document's AI output. */
+function SecondOpinion({ review }: { review: Review }) {
+  const query = useDocumentFindings(review.id)
+  const findings = query.data ?? []
+  if (findings.length === 0) return null
+  const pending = findings.filter((f) => f.status === 'pending').length
+  return (
+    <Section
+      id="review-second-opinion"
+      title="Second opinion"
+      icon="rate_review"
+      meta={
+        pending > 0 ? (
+          <Badge tone="warning" pill>
+            {pending} to decide
+          </Badge>
+        ) : (
+          String(findings.length)
+        )
+      }
+    >
+      <FindingList findings={findings} />
+    </Section>
   )
 }
 

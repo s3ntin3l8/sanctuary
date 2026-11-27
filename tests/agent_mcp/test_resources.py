@@ -236,6 +236,7 @@ def test_prompts_are_listed(mcp_session, make_token, alice):
     assert set(prompts) == {
         "case_brief",
         "review_document",
+        "audit_case",
         "deadline_check",
         "draft_reply",
     }
@@ -292,6 +293,7 @@ def test_deadline_check_and_draft_reply_render(
     ("prompt", "kind"),
     [
         ("case_brief", "case"),
+        ("audit_case", "case"),
         ("deadline_check", "case"),
         ("review_document", "doc"),
         ("draft_reply", "doc"),

@@ -23,6 +23,7 @@ from app.api.v1 import (
     home,
     notifications,
     oauth_consent,
+    review_findings,
     search,
     settings_account,
     settings_ai,
@@ -71,6 +72,7 @@ for _module in (
     claims,
     costs,
     contacts,
+    review_findings,
 ):
     # Route names double as OpenAPI operation ids and must stay unique app-wide;
     # the prefix keeps a v1 handler from colliding with the page route of the

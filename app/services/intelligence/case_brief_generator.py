@@ -374,6 +374,11 @@ def generate(case_id: str) -> None:
             )
             case.parties = parties
 
+            # Pending second opinions on the old brief no longer apply.
+            from app.services.ai_review_service import mark_stale
+
+            mark_stale(db, case_id=case_id)
+
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:
             logger.error(

@@ -83,6 +83,14 @@
       ]
     },
     {
+      "name": "case-brief-stale",
+      "path": "/cases/ADV-031-B?view=review",
+      "tags": [
+        "check",
+        "audit"
+      ]
+    },
+    {
       "name": "triage",
       "baseline": true,
       "path": "/triage",
@@ -129,6 +137,14 @@
         "check",
         "audit",
         "presentation"
+      ]
+    },
+    {
+      "name": "document-second-opinion",
+      "path": "/document/63",
+      "tags": [
+        "check",
+        "audit"
       ]
     },
     {

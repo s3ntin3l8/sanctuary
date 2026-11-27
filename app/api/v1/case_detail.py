@@ -28,7 +28,6 @@ from app.models.database import (
     User,
 )
 from app.models.enums import (
-    BriefState,
     CaseStatus,
     ProceedingStatus,
 )
@@ -73,6 +72,7 @@ from app.services.case_overview_service import (
     build_case_detail,
     build_financials,
     proceeding_views,
+    request_brief_refresh,
     serialize_brief,
 )
 from app.services.case_service import (
@@ -273,13 +273,7 @@ def refresh_brief(
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
-    from app.tasks.dispatch import dispatch_task
-    from app.tasks.generate_case_brief import refresh_case_brief_task
-
-    case.brief_state = BriefState.PROCESSING
-    case.brief_error = None
-    db.commit()
-    dispatch_task(refresh_case_brief_task, case.id)
+    request_brief_refresh(db, case)
     return serialize_brief(db, case)
 
 

@@ -225,6 +225,13 @@ def compute_review_reasons(doc: Document) -> list[str]:
             )
             if contested:
                 reasons.append("contests_existing_claim")
+
+            # A reviewer disagrees with this document's AI output; held until
+            # the user confirms or dismisses every such finding.
+            from app.services.ai_review_service import has_pending_disagreement
+
+            if doc.id is not None and has_pending_disagreement(db, doc.id):
+                reasons.append("ai_review_disagreement")
     except Exception:
         pass
 

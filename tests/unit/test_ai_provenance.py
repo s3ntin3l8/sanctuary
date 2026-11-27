@@ -430,3 +430,20 @@ def test_brief_goes_stale_when_a_deadline_changes(
     item.status = ActionItemStatus.COMPLETED
     db_session.commit()
     assert serialize_brief(db_session, case).stale is True
+
+
+@pytest.mark.unit
+def test_brief_hash_reads_every_summary_shape(db_session, sample_case, sample_document):
+    """A ``[{kind, text}]`` summary (and a plain string) is hashed by its legal
+    bullet, not refused."""
+    from app.services.intelligence.brief_inputs import brief_inputs_hash
+
+    sample_document.ai_summary = [{"kind": "legal", "text": "Ruling for the client."}]
+    db_session.commit()
+    first = brief_inputs_hash(db_session, sample_case)
+    sample_document.ai_summary = [{"kind": "legal", "text": "Ruling against."}]
+    db_session.commit()
+    assert brief_inputs_hash(db_session, sample_case) != first
+    sample_document.ai_summary = "Plain text summary."
+    db_session.commit()
+    assert brief_inputs_hash(db_session, sample_case)

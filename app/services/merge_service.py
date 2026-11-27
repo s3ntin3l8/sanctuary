@@ -35,7 +35,7 @@ from app.models.enums import (
     CaseAccessLevel,
     ProceedingStatus,
 )
-from app.services import audit_service
+from app.services import ai_review_service, audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +173,9 @@ def merge_cases(
         db.query(model).filter(model.case_id == source_id).update(
             {model.case_id: target_id}, synchronize_session=False
         )
+    # Second opinions follow their documents; ones on the source's own brief
+    # reviewed a brief that is gone.
+    ai_review_service.move_case(db, source_id, target_id)
     db.query(Conversation).filter(
         Conversation.scope_type == "case", Conversation.scope_id == source_id
     ).update({Conversation.scope_id: target_id}, synchronize_session=False)

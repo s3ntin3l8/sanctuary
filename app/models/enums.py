@@ -382,3 +382,44 @@ class AuditEventType(enum.StrEnum):
     MCP_WRITE = "mcp_write"
     MCP_SWITCH_CHANGED = "mcp_switch_changed"
     MCP_UPLOAD = "mcp_upload"
+
+
+class ReviewerKind(enum.StrEnum):
+    """Who wrote a second-opinion finding: an MCP agent or the cloud verifier."""
+
+    AGENT = "agent"
+    VERIFIER = "verifier"
+
+
+class ReviewTargetKind(enum.StrEnum):
+    """Which AI output a second-opinion finding is about."""
+
+    DOCUMENT_FIELD = "document_field"
+    SUMMARY = "summary"
+    CASE_ASSIGNMENT = "case_assignment"
+    RELATIONSHIP = "relationship"
+    CLAIM = "claim"
+    CLAIM_EVIDENCE_PROPOSAL = "claim_evidence_proposal"
+    CLAIM_MERGE_PROPOSAL = "claim_merge_proposal"
+    ACTION_ITEM = "action_item"
+    COST_SIGNAL = "cost_signal"
+    ENTITY = "entity"
+    OCR_TEXT = "ocr_text"
+    CASE_BRIEF = "case_brief"
+
+
+class ReviewVerdict(enum.StrEnum):
+    AGREE = "agree"
+    DISAGREE = "disagree"
+    UNCERTAIN = "uncertain"
+
+
+class ReviewFindingStatus(enum.StrEnum):
+    """``noted`` = an agreement (nothing to resolve); ``stale`` = the AI output
+    it reviewed has changed since."""
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    DISMISSED = "dismissed"
+    STALE = "stale"
+    NOTED = "noted"

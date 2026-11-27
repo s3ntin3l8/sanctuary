@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db
 from app.models.database import (
     ActionItem,
+    AiReviewFinding,
     Case,
     Claim,
     ClaimEvidenceProposal,
@@ -37,6 +38,7 @@ from app.models.database import (
     CostSignal,
     Document,
     DocumentPin,
+    DocumentRelationship,
     IngestBatch,
     LegalCost,
     Proceeding,
@@ -388,3 +390,70 @@ def check_scope_access(db: Session, user: User, scope_type: str, scope_id: str) 
     if scope_type == "case":
         return _check_case_id(db, user, scope_id, edit=False)
     return False
+
+
+def review_finding_access_allowed(
+    db: Session, user: User, finding: AiReviewFinding, *, edit: bool
+) -> bool:
+    """A finding is read where its document (or, for the brief, its case) is
+    read. Resolving it may change the target, so edit also needs what the
+    target's own route needs: both documents of a relationship, every case of
+    a claim or of both claims of a merge proposal."""
+    from app.models.enums import ReviewTargetKind as K
+
+    if finding.document_id is not None:
+        doc = db.get(Document, finding.document_id)
+        if doc is None or not check_owned_or_case_access(
+            db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=edit
+        ):
+            return False
+    elif not _check_case_id(db, user, finding.case_id, edit=edit):
+        return False
+    if not edit or finding.target_id is None:
+        return True
+    kind, tid = finding.target_kind, finding.target_id
+    if kind == K.RELATIONSHIP:
+        rel = db.get(DocumentRelationship, tid)
+        if rel is None:
+            return True  # nothing left to change; confirm reports it stale
+        for doc_id in (rel.from_document_id, rel.to_document_id):
+            doc = db.get(Document, doc_id)
+            if doc is None or not check_owned_or_case_access(
+                db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=True
+            ):
+                return False
+    elif kind == K.CLAIM:
+        return db.get(Claim, tid) is None or access_service.claim_access_allowed(
+            db, user, tid, edit=True
+        )
+    elif kind == K.CLAIM_EVIDENCE_PROPOSAL:
+        ev = db.get(ClaimEvidenceProposal, tid)
+        return ev is None or access_service.claim_access_allowed(
+            db, user, ev.target_claim_id, edit=True
+        )
+    elif kind == K.CLAIM_MERGE_PROPOSAL:
+        merge = db.get(ClaimMergeProposal, tid)
+        return merge is None or merge_proposal_access_allowed(
+            db, user, merge, edit=True
+        )
+    return True
+
+
+def require_review_finding_access(*, edit: bool = False):
+    """Resolve `finding_id` (AiReviewFinding) from the path; see
+    review_finding_access_allowed."""
+
+    async def _dep(
+        finding_id: int = Path(...),
+        db: Session = Depends(get_db),
+        user: User = Depends(get_current_user),
+    ) -> AiReviewFinding:
+        finding = db.get(AiReviewFinding, finding_id)
+        if finding is None or not review_finding_access_allowed(
+            db, user, finding, edit=edit
+        ):
+            raise HTTPException(status_code=404, detail="Not found")
+        return finding
+
+    _dep._is_access_guard = True  # type: ignore[attr-defined]
+    return _dep

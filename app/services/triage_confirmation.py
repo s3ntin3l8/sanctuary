@@ -368,6 +368,10 @@ def cleanup_orphaned_drafts(db: Session) -> int:
         .having(func.count(Document.id) == 0)
         .all()
     )
+    if orphaned:
+        from app.services.ai_review_service import follow_documents
+
+        follow_documents(db, [case.id for case in orphaned])
     for case in orphaned:
         db.delete(case)
     if orphaned:
