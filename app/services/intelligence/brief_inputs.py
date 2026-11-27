@@ -3,9 +3,12 @@
 ``case_brief_generator.generate`` stores the hash next to the brief;
 ``case_overview_service.serialize_brief`` recomputes it and reports the brief
 stale when they differ. It covers what the brief prompt reads and a user can
-change: each document's classification and summary, claim statuses,
-proceedings, reactions and the cost exposure. The case's own status is left
-out, since the brief itself sets it.
+change: each document's classification and summary, claims (text and
+status), proceedings (court, Aktenzeichen, status), action items and costs
+(the chronology the prompt reads), reactions and the cost exposure. The
+case's own status is left out, since the brief itself sets it; so are
+entities, which are only ever added by extraction alongside a document change
+that already moves the hash.
 """
 
 import hashlib
@@ -14,7 +17,14 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.database import Case, Document, Proceeding, UserReaction
+from app.models.database import (
+    ActionItem,
+    Case,
+    Document,
+    LegalCost,
+    Proceeding,
+    UserReaction,
+)
 from app.repositories.claim import ClaimRepository
 
 
@@ -39,9 +49,38 @@ def brief_inputs_hash(db: Session, case: Case) -> str:
         .order_by(Document.id)
     ).all()
     proceedings = db.execute(
-        select(Proceeding.id, Proceeding.status, Proceeding.ended_at)
+        select(
+            Proceeding.id,
+            Proceeding.court_name,
+            Proceeding.court_level,
+            Proceeding.az_court,
+            Proceeding.status,
+            Proceeding.started_at,
+            Proceeding.ended_at,
+        )
         .where(Proceeding.case_id == case.id)
         .order_by(Proceeding.id)
+    ).all()
+    actions = db.execute(
+        select(
+            ActionItem.id,
+            ActionItem.title,
+            ActionItem.action_type,
+            ActionItem.due_date,
+            ActionItem.status,
+        )
+        .where(ActionItem.case_id == case.id)
+        .order_by(ActionItem.id)
+    ).all()
+    costs = db.execute(
+        select(
+            LegalCost.id,
+            LegalCost.status,
+            LegalCost.amount_gross,
+            LegalCost.amount_paid,
+        )
+        .where(LegalCost.case_id == case.id)
+        .order_by(LegalCost.id)
     ).all()
     reactions = db.execute(
         select(UserReaction.id, UserReaction.reaction, UserReaction.notes)
@@ -50,7 +89,8 @@ def brief_inputs_hash(db: Session, case: Case) -> str:
         .order_by(UserReaction.id)
     ).all()
     claims = sorted(
-        (c.id, str(c.status)) for c in ClaimRepository(db).claims_for_case(case.id)
+        (c.id, c.claim_text, str(c.status))
+        for c in ClaimRepository(db).claims_for_case(case.id)
     )
     payload = {
         "documents": [
@@ -67,7 +107,23 @@ def brief_inputs_hash(db: Session, case: Case) -> str:
             ]
             for d in docs
         ],
-        "proceedings": [[p.id, str(p.status), _iso(p.ended_at)] for p in proceedings],
+        "proceedings": [
+            [
+                p.id,
+                p.court_name,
+                str(p.court_level),
+                p.az_court,
+                str(p.status),
+                _iso(p.started_at),
+                _iso(p.ended_at),
+            ]
+            for p in proceedings
+        ],
+        "action_items": [
+            [a.id, a.title, str(a.action_type), _iso(a.due_date), str(a.status)]
+            for a in actions
+        ],
+        "costs": [[c.id, str(c.status), c.amount_gross, c.amount_paid] for c in costs],
         "reactions": [[r.id, str(r.reaction), r.notes] for r in reactions],
         "claims": claims,
         "cost_exposure": case.total_cost_exposure or 0,

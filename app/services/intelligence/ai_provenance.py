@@ -10,6 +10,9 @@ A scope belongs to the documents started in it. A stage that starts several
 documents before one AI call (BATCH_ANALYSIS) shares that call's provenance;
 a document completed without having been started in the current scope (an
 idempotent re-dispatch, a recovery sweep) leaves its stored provenance alone.
+Completing a document takes it out of the scope, and every Celery task starts
+with an empty one (``reset``, wired to ``task_prerun`` in ``celery_app``), so a
+document is never credited with a call made for another task.
 """
 
 from contextvars import ContextVar
@@ -32,6 +35,11 @@ class _Scope:
 
 
 _scope: ContextVar[_Scope | None] = ContextVar("ai_provenance_scope", default=None)
+
+
+def reset() -> None:
+    """Drop the current scope: the next ``begin`` opens a fresh one."""
+    _scope.set(None)
 
 
 def begin(doc_id: int) -> None:
@@ -61,14 +69,24 @@ def note(
     )
 
 
+def forget(doc_id: int) -> None:
+    """Take ``doc_id`` out of the scope without recording anything (its stage
+    failed or was skipped), so a later completion cannot adopt this scope."""
+    scope = _scope.get()
+    if scope is not None:
+        scope.doc_ids.discard(doc_id)
+
+
 def for_document(doc_id: int) -> AiProvenance | None:
-    """The provenance to store for ``doc_id``'s completed stage.
+    """The provenance to store for ``doc_id``'s completed stage, consuming it.
 
     ``None`` means "leave the stored values alone" (the document was not
-    started in this scope). A started document whose stage made no AI call
-    gets an all-empty provenance, so an earlier run's model is cleared.
+    started in this scope, or was already completed in it). A started document
+    whose stage made no AI call gets an all-empty provenance, so an earlier
+    run's model is cleared.
     """
     scope = _scope.get()
     if scope is None or doc_id not in scope.doc_ids:
         return None
+    scope.doc_ids.discard(doc_id)
     return scope.provenance or AiProvenance(None, None, None)

@@ -44,6 +44,7 @@ from app.services.case_service import (
     build_case_level_costs,
     build_proceeding_exposure,
 )
+from app.services.intelligence.brief_inputs import brief_inputs_hash
 from app.services.timezone_service import local_day, local_today
 from app.services.triage_bundles import (
     actionable_review_reasons,
@@ -132,8 +133,6 @@ def serialize_brief(db: Session, case: Case) -> BriefView:
     (``brief_inputs.brief_inputs_hash``); a brief from before the hash was
     recorded is not reported stale.
     """
-    from app.services.intelligence.brief_inputs import brief_inputs_hash
-
     raw = case.ai_brief or {}
     status: BriefStatus
     if case.brief_state == BriefState.PROCESSING:

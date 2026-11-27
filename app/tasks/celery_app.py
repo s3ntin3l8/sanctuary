@@ -7,6 +7,7 @@ from celery import Celery
 from celery.signals import (
     after_setup_logger,
     after_setup_task_logger,
+    task_prerun,
     worker_init,
     worker_process_init,
 )
@@ -206,6 +207,15 @@ celery_app.conf.update(
         **{name: {"queue": MAINTENANCE_QUEUE} for name in MAINTENANCE_TASKS},
     },
 )
+
+
+@task_prerun.connect
+def _reset_ai_provenance(**_kwargs) -> None:
+    """Every task starts with an empty AI provenance scope, so a stage is never
+    credited with the model of a call an earlier task in this process made."""
+    from app.services.intelligence import ai_provenance
+
+    ai_provenance.reset()
 
 
 @worker_init.connect

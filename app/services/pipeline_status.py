@@ -426,6 +426,9 @@ def mark_failed(
     *,
     commit: bool = True,
 ) -> None:
+    from app.services.intelligence import ai_provenance
+
+    ai_provenance.forget(doc_id)
     _update_stage(
         doc_id,
         stage,
@@ -437,6 +440,9 @@ def mark_failed(
             "attempt": None,
             "max_attempts": None,
             "next_at": None,
+            "model": None,
+            "provider": None,
+            "prompt_version": None,
         },
         commit=commit,
     )
@@ -548,12 +554,20 @@ def mark_skipped(
     *,
     commit: bool = True,
 ) -> None:
+    from app.services.intelligence import ai_provenance
+
+    ai_provenance.forget(doc_id)
     _update_stage(
         doc_id,
         stage,
         db,
         status=StageStatus.SKIPPED,
-        extra_sets={"reason": reason},
+        extra_sets={
+            "reason": reason,
+            "model": None,
+            "provider": None,
+            "prompt_version": None,
+        },
         commit=commit,
     )
 
@@ -587,6 +601,10 @@ _RESET_SETS: dict = {
     "max_attempts": None,
     "next_at": None,
     "orphan_resets": 0,  # a user/pipeline retry starts the poison-doc count over
+    # The row no longer holds the output those produced.
+    "model": None,
+    "provider": None,
+    "prompt_version": None,
 }
 
 

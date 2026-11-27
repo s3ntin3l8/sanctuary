@@ -16,7 +16,12 @@ from app.models.enums import (
 from app.services.case_overview_service import serialize_brief
 from app.services.intelligence import _ai_call, ai_provenance
 from app.services.intelligence.prompts import PROMPT_VERSION
-from app.services.pipeline_status import mark_completed, mark_started
+from app.services.pipeline_status import (
+    mark_completed,
+    mark_failed,
+    mark_started,
+    reset_stage,
+)
 from app.tasks.document_processing import process_document_task
 from app.tasks.enrich_document import enrich_document_task
 from app.tasks.extract_entities import extract_entities_task
@@ -196,16 +201,74 @@ def test_completion_outside_a_started_scope_keeps_stored_provenance(
     db_session, sample_document
 ):
     """A re-dispatch that completes a stage it never started (no AI call of its
-    own) must not wipe the model an earlier run recorded."""
+    own) must not wipe the model an earlier run recorded, even in the same
+    task: completing a document takes it out of the scope."""
     mark_started(sample_document.id, PipelineStage.ENRICH, db_session)
     ai_provenance.note("qwen3.5-9b", "lmstudio")
     mark_completed(sample_document.id, PipelineStage.ENRICH, db_session)
 
-    ai_provenance.begin(-1)  # another document's stage opened a fresh scope
     mark_completed(sample_document.id, PipelineStage.ENRICH, db_session)
 
     row = _stage_row(db_session, sample_document.id, PipelineStage.ENRICH)
     assert row.model == "qwen3.5-9b"
+
+
+@pytest.mark.unit
+def test_a_document_started_without_a_call_never_adopts_a_later_tasks_model(
+    db_session, sample_case
+):
+    """The reviewer's case: a stage starts doc A and makes no AI call (text-only
+    EXTRACT, EMBEDDINGS); the next task starts doc B and calls a model. A
+    later completion of A outside a started scope must keep A's stored values."""
+    from app.models.database import Document
+    from app.tasks.celery_app import _reset_ai_provenance
+
+    a, b = (
+        Document(title="a", case_id=sample_case.id),
+        Document(title="b", case_id=sample_case.id),
+    )
+    db_session.add_all([a, b])
+    db_session.commit()
+
+    _reset_ai_provenance()  # task_prerun of task 1
+    mark_started(a.id, PipelineStage.EMBEDDINGS, db_session)
+
+    _reset_ai_provenance()  # task_prerun of task 2
+    mark_started(b.id, PipelineStage.EXTRACT, db_session)
+    ai_provenance.note("chandra-ocr-2-8b", "chandra", prompt_version=None)
+    mark_completed(b.id, PipelineStage.EXTRACT, db_session)
+
+    mark_completed(a.id, PipelineStage.EMBEDDINGS, db_session)  # recovery sweep
+    row = _stage_row(db_session, a.id, PipelineStage.EMBEDDINGS)
+    assert row.model is None
+
+    # Within one task too: a failed or skipped start leaves the scope.
+    _reset_ai_provenance()
+    mark_started(a.id, PipelineStage.ENTITIES, db_session)
+    mark_failed(a.id, PipelineStage.ENTITIES, db_session, error="boom")
+    mark_started(b.id, PipelineStage.ENTITIES, db_session)
+    ai_provenance.note("qwen3.5-9b", "lmstudio")
+    mark_completed(a.id, PipelineStage.ENTITIES, db_session)
+    assert _stage_row(db_session, a.id, PipelineStage.ENTITIES).model is None
+
+
+@pytest.mark.unit
+def test_failure_and_reset_clear_the_previous_runs_model(db_session, sample_document):
+    mark_started(sample_document.id, PipelineStage.ENRICH, db_session)
+    ai_provenance.note("qwen3.5-9b", "lmstudio")
+    mark_completed(sample_document.id, PipelineStage.ENRICH, db_session)
+    mark_failed(sample_document.id, PipelineStage.ENRICH, db_session, error="boom")
+    assert (
+        _stage_row(db_session, sample_document.id, PipelineStage.ENRICH).model is None
+    )
+
+    mark_started(sample_document.id, PipelineStage.ENRICH, db_session)
+    ai_provenance.note("qwen3.5-9b", "lmstudio")
+    mark_completed(sample_document.id, PipelineStage.ENRICH, db_session)
+    reset_stage(sample_document.id, PipelineStage.ENRICH, db_session)
+    db_session.commit()
+    row = _stage_row(db_session, sample_document.id, PipelineStage.ENRICH)
+    assert (row.status, row.model) == ("pending", None)
 
 
 @pytest.mark.unit
@@ -324,3 +387,23 @@ def test_brief_without_recorded_hash_is_not_stale(db_session, sample_case):
     sample_case.ai_brief = {"posture": "old"}
     db_session.commit()
     assert serialize_brief(db_session, sample_case).stale is False
+
+
+@pytest.mark.unit
+def test_brief_goes_stale_when_a_deadline_changes(
+    db_session, sample_case, sample_deadline
+):
+    """The chronology the brief reads carries action items: moving or ticking
+    off a deadline is an input change."""
+    _run_brief(sample_case.id)
+    db_session.expire_all()
+    case = db_session.get(Case, sample_case.id)
+    assert serialize_brief(db_session, case).stale is False
+
+    from app.models.database import ActionItem
+    from app.models.enums import ActionItemStatus
+
+    item = db_session.get(ActionItem, sample_deadline.id)
+    item.status = ActionItemStatus.COMPLETED
+    db_session.commit()
+    assert serialize_brief(db_session, case).stale is True
