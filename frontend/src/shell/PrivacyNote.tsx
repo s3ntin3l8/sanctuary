@@ -16,8 +16,10 @@ export function PrivacyNote({
   /** The settings header writes it in lower case. */
   lowercase?: boolean
 }) {
-  const external = useShell().data?.ai_external ?? false
-  if (!external) {
+  const shell = useShell().data
+  // Claim nothing until the server has said where the text goes.
+  if (shell === undefined) return null
+  if (!shell.ai_external) {
     return (
       <>
         <Icon name="lock" size={12} /> {lowercase ? 'local' : 'Local'} · nothing leaves this device

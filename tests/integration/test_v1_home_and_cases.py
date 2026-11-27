@@ -489,3 +489,38 @@ def test_shell_counts_an_external_ocr_endpoint_only_while_chandra_reads(
     set_extraction_engine(db_session, engine)
     db_session.commit()
     assert client.get("/api/v1/shell").json()["ai_external"] is expected
+
+
+def test_shell_reports_an_external_embeddings_endpoint(db_session):
+    from app.services import ai_config
+
+    _ai_instance(db_session, "inst_local", "http://127.0.0.1:11434")
+    _ai_instance(db_session, "inst_cloud", "https://api.openai.com/v1")
+    ai_config.set_active(db_session, "chat", "inst_local")
+    ai_config.set_active(db_session, "embed", "inst_cloud")
+    assert client.get("/api/v1/shell").json()["ai_external"] is True
+
+
+def test_shell_stays_up_when_the_ai_keys_cannot_be_decrypted(db_session, monkeypatch):
+    """A wrong SECRETS_ENCRYPTION_KEY must not take every page down with it: no
+    AI call can be made then, so nothing leaves and the note says so."""
+    from cryptography.fernet import Fernet
+
+    from app import config
+    from app.services import ai_config
+
+    ai_config.save_instance(
+        db_session,
+        {
+            "id": "inst_cloud",
+            "label": "Cloud",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-test-not-a-real-key",  # pragma: allowlist secret
+        },
+    )
+    monkeypatch.setattr(
+        config, "SECRETS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
+    resp = client.get("/api/v1/shell")
+    assert resp.status_code == 200
+    assert resp.json()["ai_external"] is False

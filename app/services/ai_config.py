@@ -260,12 +260,15 @@ def get_verifier_settings(db) -> VerifierSettings:
     )
 
 
-def get_verifier_config(db) -> VerifierConfig | None:
+def get_verifier_config(
+    db, settings: VerifierSettings | None = None
+) -> VerifierConfig | None:
     """The verifier's endpoint and model, or None when either is not chosen.
 
-    No fallback to another instance or to the env endpoint.
+    No fallback to another instance or to the env endpoint. ``settings`` saves
+    a second read when the caller already has them.
     """
-    vs = get_verifier_settings(db)
+    vs = settings if settings is not None else get_verifier_settings(db)
     if not vs.instance_id or not vs.model:
         return None
     inst = get_instance(db, vs.instance_id)
@@ -287,18 +290,27 @@ def external_ai_in_use(db) -> bool:
     That is the active chat or embeddings endpoint, the OCR endpoint while
     Chandra is the extraction engine (Docling reads locally), or the verifier
     while it is switched on, when ``is_external_endpoint`` says the endpoint
-    is on the public internet. Drives the shell's privacy badge.
+    is on the public internet. Drives the shell's privacy note and the Gmail
+    page's warning.
+
+    Unreadable AI settings (a wrong or missing ``SECRETS_ENCRYPTION_KEY``)
+    answer False rather than raising: no AI call can be made then, so nothing
+    leaves, and the shell must not go down with the key.
     """
     from app.services.ai_provider import is_external_endpoint
     from app.services.user_settings_service import get_extraction_engine
 
-    urls = [get_chat_config(db).base_url, get_embed_config(db).base_url]
-    if get_extraction_engine(db) == "chandra":
-        urls.append(get_ocr_config(db).base_url)
-    if get_verifier_settings(db).enabled:
-        verifier = get_verifier_config(db)
-        if verifier is not None:
-            urls.append(verifier.base_url)
+    try:
+        urls = [get_chat_config(db).base_url, get_embed_config(db).base_url]
+        if get_extraction_engine(db) == "chandra":
+            urls.append(get_ocr_config(db).base_url)
+        vs = get_verifier_settings(db)
+        if vs.enabled:
+            verifier = get_verifier_config(db, vs)
+            if verifier is not None:
+                urls.append(verifier.base_url)
+    except secrets_store.SecretsError:
+        return False
     return any(is_external_endpoint(u) for u in urls if u)
 
 

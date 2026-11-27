@@ -34,12 +34,7 @@ from app.services import (
     gmail_runs,
     user_settings_service,
 )
-from app.services.ai_config import (
-    get_chat_config,
-    get_embed_config,
-    get_ocr_config,
-)
-from app.services.ai_provider import is_external_endpoint
+from app.services.ai_config import external_ai_in_use
 from app.services.ingestion.gmail import (
     GmailReconnectRequired,
     build_query,
@@ -59,16 +54,6 @@ router = APIRouter(prefix="/settings/gmail", tags=["settings"])
 # The OAuth dance stays a server-side browser redirect (it is the URI
 # registered with Google); the SPA only needs to know where to send the user.
 OAUTH_START_URL = "/api/ingest/gmail/oauth/start"
-
-
-def _ai_external(db: Session) -> bool:
-    try:
-        return any(
-            is_external_endpoint(cfg.base_url)
-            for cfg in (get_chat_config(db), get_embed_config(db), get_ocr_config(db))
-        )
-    except SecretsError:
-        return False  # AI keys unreadable: AI calls fail anyway, nothing leaves
 
 
 def _oauth_client_view(db: Session, user: User, request: Request):
@@ -115,7 +100,7 @@ def _view(db: Session, user: User, request: Request) -> GmailView:
         last_sync_error=cfg.get("gmail_last_sync_error"),
         reconnect_required=bool(cfg.get("gmail_reconnect_required")),
         failed_count=len(cfg.get("gmail_failed_message_ids") or []),
-        ai_external=_ai_external(db),
+        ai_external=external_ai_in_use(db),
     )
 
 

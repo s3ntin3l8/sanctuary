@@ -140,6 +140,8 @@ function useAiInvalidate() {
   return () => {
     queryClient.invalidateQueries({ queryKey: ['settings', 'ai'] })
     queryClient.invalidateQueries({ queryKey: ['settings', 'ai-health'] })
+    // Which endpoint is in use decides the shell's privacy note.
+    queryClient.invalidateQueries({ queryKey: ['shell'] })
   }
 }
 
@@ -211,6 +213,8 @@ export function useSetRole() {
         prev ? { ...prev, [role]: result.health } : prev,
       )
       queryClient.invalidateQueries({ queryKey: ['settings', 'ai'] })
+      // A role moved to another endpoint can change the privacy note.
+      queryClient.invalidateQueries({ queryKey: ['shell'] })
     },
   })
 }
@@ -249,10 +253,14 @@ export function useReindexStatus(initial: S['ReindexJob'] | null | undefined) {
   })
 }
 
-export const useSetEngine = () =>
-  useMutation<S['ExtractionEngineUpdate'], ApiError, S['ExtractionEngineUpdate']>({
+/** The engine decides whether the OCR endpoint is in use, so the privacy note may change. */
+export function useSetEngine() {
+  const queryClient = useQueryClient()
+  return useMutation<S['ExtractionEngineUpdate'], ApiError, S['ExtractionEngineUpdate']>({
     mutationFn: (body) => unwrap(api.PUT('/api/v1/settings/ai/extraction-engine', { body })),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['shell'] }),
   })
+}
 /** Turning the hold off releases every held packet, so the triage views change too. */
 export function useSetHoldPackets() {
   const queryClient = useQueryClient()
@@ -279,6 +287,8 @@ export function useSetVerifier() {
       queryClient.setQueryData(['settings', 'ai-verifier'], view)
       // Where "Verify with <model>" shows follows the switch and the scope.
       queryClient.invalidateQueries({ queryKey: ['verifier'] })
+      // An external verifier switched on or off changes the privacy note.
+      queryClient.invalidateQueries({ queryKey: ['shell'] })
     },
   })
 }

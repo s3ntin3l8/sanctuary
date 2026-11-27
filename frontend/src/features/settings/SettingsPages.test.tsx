@@ -142,6 +142,42 @@ test('ai: lists endpoints and switching a role endpoint puts the role', async ()
   )
 })
 
+test('ai: moving a role to another endpoint refreshes the privacy note', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/shell': { body: shellView },
+    'GET /api/v1/settings/ai': { body: aiSettings },
+    'GET /api/v1/settings/ai/health': {
+      body: {
+        chat: { ok: true, provider: 'ollama', detail: '' },
+        embed: { ok: true, provider: 'ollama', detail: '' },
+        ocr: { ok: true, provider: 'ollama', detail: '' },
+      },
+    },
+    'GET /api/v1/settings/ai/instances/inst_a/models': {
+      body: { chat: ['qwen3.5:9b'], embed: ['nomic-embed-text'], ocr: [] },
+    },
+    'GET /api/v1/settings/ai/instances/inst_b/models': {
+      body: { chat: [], embed: [], ocr: ['chandra-ocr'] },
+    },
+    'PUT /api/v1/settings/ai/roles/ocr': {
+      body: {
+        role: { ...aiSettings.roles[2], active_id: 'inst_a', model: '' },
+        health: { ok: true, provider: 'ollama', detail: '' },
+        warning: null,
+        embed_index: aiSettings.embed_index,
+      },
+    },
+  })
+  const shellCalls = () =>
+    fetch.mock.calls.filter(([r]) => new URL(r.url).pathname === '/api/v1/shell').length
+  renderAt('/settings/ai', <AiPage />, <SettingsLayout />)
+  const ocrEndpoint = await screen.findByLabelText('Endpoint', { selector: '#endpoint-ocr' })
+  await waitFor(() => expect(shellCalls()).toBeGreaterThan(0))
+  const before = shellCalls()
+  await userEvent.selectOptions(ocrEndpoint, 'inst_a')
+  await waitFor(() => expect(shellCalls()).toBeGreaterThan(before))
+})
+
 test('data: clearing the workspace needs a confirmation and reports the result', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/data': {
