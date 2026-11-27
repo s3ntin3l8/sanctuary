@@ -423,3 +423,69 @@ def test_create_case_rejects_unsafe_ids(db_session):
         "/api/v1/cases", json={"case_id": "a/b", "title": "x", "court_name": "AG"}
     )
     assert resp.status_code == 422
+
+
+def _ai_instance(db, inst_id: str, base_url: str) -> None:
+    from app.services import ai_config
+
+    ai_config.save_instance(
+        db,
+        {"id": inst_id, "label": inst_id, "base_url": base_url, "provider": "auto"},
+    )
+
+
+def test_shell_reports_local_ai_when_every_endpoint_is_local(db_session):
+    _ai_instance(db_session, "inst_local", "http://127.0.0.1:11434")
+    assert client.get("/api/v1/shell").json()["ai_external"] is False
+
+
+def test_shell_reports_an_external_chat_endpoint(db_session):
+    from app.services import ai_config
+
+    _ai_instance(db_session, "inst_local", "http://127.0.0.1:11434")
+    _ai_instance(db_session, "inst_cloud", "https://api.openai.com/v1")
+    ai_config.set_active(db_session, "chat", "inst_cloud")
+    assert client.get("/api/v1/shell").json()["ai_external"] is True
+
+
+@pytest.mark.parametrize("enabled", [True, False], ids=["on", "off"])
+def test_shell_reports_the_verifier_only_while_it_is_on(db_session, enabled):
+    from app.services import ai_config
+    from app.services.ai_config import VerifierSettings
+
+    _ai_instance(db_session, "inst_local", "http://127.0.0.1:11434")
+    _ai_instance(db_session, "inst_cloud", "https://api.anthropic.com")
+    for role in ("chat", "embed", "ocr"):
+        ai_config.set_active(db_session, role, "inst_local")
+    ai_config.save_verifier_settings(
+        db_session,
+        VerifierSettings(
+            enabled=enabled,
+            instance_id="inst_cloud",
+            model="claude-opus-5",
+            groups=ai_config.VERIFIER_GROUPS,
+            all_cases=True,
+            case_ids=(),
+        ),
+    )
+    db_session.commit()
+    assert client.get("/api/v1/shell").json()["ai_external"] is enabled
+
+
+@pytest.mark.parametrize(
+    ("engine", "expected"), [("chandra", True), ("docling", False)]
+)
+def test_shell_counts_an_external_ocr_endpoint_only_while_chandra_reads(
+    db_session, engine, expected
+):
+    from app.services import ai_config
+    from app.services.user_settings_service import set_extraction_engine
+
+    _ai_instance(db_session, "inst_local", "http://127.0.0.1:11434")
+    _ai_instance(db_session, "inst_cloud", "https://ocr.example.com")
+    ai_config.set_active(db_session, "chat", "inst_local")
+    ai_config.set_active(db_session, "embed", "inst_local")
+    ai_config.set_active(db_session, "ocr", "inst_cloud")
+    set_extraction_engine(db_session, engine)
+    db_session.commit()
+    assert client.get("/api/v1/shell").json()["ai_external"] is expected

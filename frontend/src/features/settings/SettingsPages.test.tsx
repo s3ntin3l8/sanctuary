@@ -39,6 +39,25 @@ test('settings nav hides admin-only tabs for regular users', async () => {
   expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
 })
 
+test.each([
+  [false, /local · nothing leaves this device/, null],
+  [true, /external AI endpoint in use/, '/settings/ai'],
+])(
+  'the settings header tells where document text goes (external: %s)',
+  async (aiExternal, text, href) => {
+    stubApi({
+      'GET /api/v1/shell': { body: { ...shellView, ai_external: aiExternal } },
+      'GET /api/v1/settings/account': { body: account },
+    })
+    renderAt('/settings/account', <AccountPage />, <SettingsLayout />)
+    const banner = await screen.findByRole('banner')
+    const note = await within(banner).findByText(text)
+    expect(note).toBeVisible()
+    if (href) expect(note.closest('a')).toHaveAttribute('href', href)
+    else expect(within(banner).queryByRole('link')).not.toBeInTheDocument()
+  },
+)
+
 test('settings nav keeps Import history inside Settings, with Gmail marked only on its own page', async () => {
   stubApi({
     'GET /api/v1/shell': { body: shellView },

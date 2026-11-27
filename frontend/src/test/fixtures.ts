@@ -34,6 +34,7 @@ export const shellView: Schemas['ShellView'] = {
   triage_count: 7,
   timezone: 'UTC',
   theme: 'system',
+  ai_external: false,
 }
 
 export const emptyQueue: Schemas['QueueView'] = {

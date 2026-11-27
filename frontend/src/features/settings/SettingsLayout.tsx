@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { useAbout, useShell } from '../../api/shell'
+import { PrivacyNote } from '../../shell/PrivacyNote'
 import { Icon } from '../../ui/Icon'
 
 type Item = { to: string; icon: string; label: string; admin?: boolean; end?: boolean }
@@ -66,7 +67,7 @@ export function SettingsLayout() {
         <div>
           <h1 className="font-display text-[22px] font-extrabold tracking-tight">Settings</h1>
           <p className="flex flex-wrap items-center gap-1 font-mono text-[11px] text-muted">
-            <Icon name="lock" size={12} /> local · nothing leaves this device
+            <PrivacyNote lowercase />
             {about && (
               <span className="ml-2" title={`built ${about.build_date}`}>
                 · v{about.version} · {about.git_sha.slice(0, 7)}

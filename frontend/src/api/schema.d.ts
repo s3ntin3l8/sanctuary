@@ -6622,6 +6622,8 @@ export interface components {
          * @description Everything the persistent app shell (rail, profile menu) renders.
          */
         ShellView: {
+            /** Ai External */
+            ai_external: boolean;
             /**
              * Theme
              * @enum {string}

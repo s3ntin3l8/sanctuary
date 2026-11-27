@@ -23,3 +23,6 @@ class ShellView(BaseModel):
     triage_count: int
     timezone: str
     theme: Literal["system", "dark", "light"]
+    # An AI endpoint in use is on the public internet, so document text leaves
+    # this machine (ai_config.external_ai_in_use); the privacy badge says so.
+    ai_external: bool

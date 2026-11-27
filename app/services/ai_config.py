@@ -281,6 +281,27 @@ def get_verifier_config(db) -> VerifierConfig | None:
     )
 
 
+def external_ai_in_use(db) -> bool:
+    """True while document text can leave this machine through an AI endpoint.
+
+    That is the active chat or embeddings endpoint, the OCR endpoint while
+    Chandra is the extraction engine (Docling reads locally), or the verifier
+    while it is switched on, when ``is_external_endpoint`` says the endpoint
+    is on the public internet. Drives the shell's privacy badge.
+    """
+    from app.services.ai_provider import is_external_endpoint
+    from app.services.user_settings_service import get_extraction_engine
+
+    urls = [get_chat_config(db).base_url, get_embed_config(db).base_url]
+    if get_extraction_engine(db) == "chandra":
+        urls.append(get_ocr_config(db).base_url)
+    if get_verifier_settings(db).enabled:
+        verifier = get_verifier_config(db)
+        if verifier is not None:
+            urls.append(verifier.base_url)
+    return any(is_external_endpoint(u) for u in urls if u)
+
+
 def verifier_for_case(
     db, case_id: str | None, groups: tuple[str, ...] | None = None
 ) -> tuple[VerifierConfig, tuple[str, ...]] | None:
