@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from dataclasses import dataclass
 
@@ -16,9 +17,12 @@ from app.config import (
     AI_USER_CONTEXT,
 )
 from app.core import secrets as secrets_store
+from app.core.safe_error import describe_exception
 from app.models.enums import AuditEventType
 from app.services import audit_service
 from app.services.ai_provider import normalize_base_url
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -309,7 +313,12 @@ def external_ai_in_use(db) -> bool:
             verifier = get_verifier_config(db, vs)
             if verifier is not None:
                 urls.append(verifier.base_url)
-    except secrets_store.SecretsError:
+    except secrets_store.SecretsError as exc:
+        logger.warning(
+            "AI settings cannot be decrypted (%s); the privacy note reports "
+            "local, since no AI call can be made",
+            describe_exception(exc),
+        )
         return False
     return any(is_external_endpoint(u) for u in urls if u)
 
