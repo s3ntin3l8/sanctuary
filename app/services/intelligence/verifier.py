@@ -66,6 +66,7 @@ from app.services.ai_config import (
 from app.services.ai_provider import AIProvider, ProviderType, is_external_endpoint
 from app.services.ai_run_index import record_run
 from app.services.ai_summary import content_windows
+from app.services.document_review_service import FIELD_SOURCE_MARKS
 from app.services.intelligence import prompts
 from app.services.intelligence._ai_call import _scope_file, _write_block
 from app.services.intelligence._json import parse_json_response
@@ -179,8 +180,6 @@ def _not_ai(doc: Document, fld: str) -> bool:
     Only those setter marks count: a high/medium/low grade is the reader's own
     confidence (the AI's, or a rule-based extractor's) and is checked.
     """
-    from app.services.document_review_service import FIELD_SOURCE_MARKS
-
     return (doc.extraction_confidence or {}).get(fld) in FIELD_SOURCE_MARKS
 
 

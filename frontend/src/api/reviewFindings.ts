@@ -75,7 +75,7 @@ export function useVerifierStatus(target: { docId: number } | { caseId: string }
 }
 
 /** When to look again for the findings of a queued verifier check (it answers in the background). */
-export const VERIFY_REFRESH_MS = [10_000, 30_000, 60_000, 120_000]
+export const VERIFY_REFRESH_MS = [10_000, 30_000, 60_000, 120_000, 300_000]
 
 /** Queue the verifier's check; its findings arrive in "Second opinion" when it is done. */
 export function useVerify() {
