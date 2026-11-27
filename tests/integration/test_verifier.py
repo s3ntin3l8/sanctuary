@@ -576,6 +576,28 @@ def test_edges_into_another_case_are_not_sent(db_session, sample_case, fake_api)
     assert fake_api.requests == []
 
 
+def test_graded_fields_are_offered_and_setter_marked_ones_are_not(
+    db_session, sample_case
+):
+    """A high/medium/low grade is the AI's (or an extractor's) own confidence and
+    must be checked; only a mark naming another setter keeps a field back."""
+    doc = _doc(db_session, sample_case.id)
+    doc.extraction_confidence = {
+        "title": "high",
+        "issued_date": "medium",
+        "sender": "user_set",
+        "received_date": "bea_manifest",
+        "az_court": "email_header",
+        "internal_id": "inherited",
+    }
+    db_session.commit()
+    offer = verifier._Offer()
+    verifier._offer_document_fields(db_session, doc, offer)
+    offered = {item["field"] for item in offer.items}
+    assert {"title", "issued_date", "significance_tier", "document_type"} <= offered
+    assert not offered & {"sender", "received_date", "az_court", "internal_id"}
+
+
 # --- Debug dumps follow the opt-in capture switch ----------------------------------
 
 

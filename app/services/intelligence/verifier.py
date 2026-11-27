@@ -174,8 +174,14 @@ class VerifyResult:
 
 def _not_ai(doc: Document, fld: str) -> bool:
     """A field whose value a mark says was not the AI's: set by the user, read
-    from the mail headers or a court manifest, or inherited from its family."""
-    return isinstance((doc.extraction_confidence or {}).get(fld), str)
+    from the mail headers or a court manifest, or inherited from its family.
+
+    Only those setter marks count: a high/medium/low grade is the reader's own
+    confidence (the AI's, or a rule-based extractor's) and is checked.
+    """
+    from app.services.document_review_service import FIELD_SOURCE_MARKS
+
+    return (doc.extraction_confidence or {}).get(fld) in FIELD_SOURCE_MARKS
 
 
 def _offer_document_fields(db: Session, doc: Document, offer: _Offer) -> None:

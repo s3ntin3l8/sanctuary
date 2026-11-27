@@ -201,10 +201,9 @@ def list_documents(
 
 # --- get_document ------------------------------------------------------------
 
-# Marks in ``extraction_confidence`` that name who set a field. A grade
-# (high/medium/low) does not: the AI and the rule-based extractors both write
-# one, so it is reported as ``confidence`` with no ``source``.
-_FIELD_SOURCES = frozenset({"user_set", "email_header", "inherited", "bea_manifest"})
+# A grade (high/medium/low) names no setter, so it is reported as
+# ``confidence`` with no ``source``.
+_FIELD_SOURCES = document_review_service.FIELD_SOURCE_MARKS
 
 
 def _field_source(mark: object, value: object) -> str | None:

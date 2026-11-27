@@ -51,6 +51,14 @@ from app.services.timezone_service import local_date_str
 
 logger = logging.getLogger(__name__)
 
+# Marks in ``Document.extraction_confidence`` that name who set a field. A grade
+# (high/medium/low) does not: the AI and the rule-based extractors both write
+# one. Shared by the MCP read surface and the verifier.
+FIELD_SOURCE_MARKS = frozenset(
+    {"user_set", "email_header", "inherited", "bea_manifest"}
+)
+
+
 METADATA_FIELDS = (
     ("originator_type", "Originator"),
     ("document_type", "Type"),

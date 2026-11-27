@@ -74,9 +74,18 @@ export function useVerifierStatus(target: { docId: number } | { caseId: string }
   })
 }
 
+/** When to look again for the findings of a queued verifier check (it answers in the background). */
+export const VERIFY_REFRESH_MS = [10_000, 30_000, 60_000, 120_000]
+
 /** Queue the verifier's check; its findings arrive in "Second opinion" when it is done. */
 export function useVerify() {
+  const queryClient = useQueryClient()
   return useMutation<Schemas['VerifyQueued'], ApiError, { docId: number } | { caseId: string }>({
+    onSuccess: () => {
+      for (const delay of VERIFY_REFRESH_MS) {
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: [KEY] }), delay)
+      }
+    },
     mutationFn: (target) =>
       unwrap(
         'docId' in target
