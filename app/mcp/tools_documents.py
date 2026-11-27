@@ -201,16 +201,16 @@ def list_documents(
 
 # --- get_document ------------------------------------------------------------
 
-_AI_GRADES = ("high", "medium", "low")
+# Marks in ``extraction_confidence`` that name who set a field. A grade
+# (high/medium/low) does not: the AI and the rule-based extractors both write
+# one, so it is reported as ``confidence`` with no ``source``.
+_FIELD_SOURCES = frozenset({"user_set", "email_header", "inherited", "bea_manifest"})
 
 
 def _field_source(mark: object, value: object) -> str | None:
-    """Who decided a metadata field: the AI (it graded its own answer) or the
-    mark another path left in ``extraction_confidence``."""
-    if value is None:
+    """Who set a metadata field, when the stored mark says so; else None."""
+    if value is None or mark not in _FIELD_SOURCES:
         return None
-    if mark in _AI_GRADES or mark is None:
-        return "ai"
     return str(mark)
 
 
@@ -291,9 +291,10 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
         "received_date": iso_date(doc.received_date),
         "needs_review": bool(doc.needs_review),
         "review_reasons": [str(r) for r in fields["review_reasons"]],
-        # Each field's value with how it was decided: `confidence` is the AI's own
-        # grade (high/medium/low), `source` who set it (ai, user_set,
-        # email_header, inherited, bea_manifest).
+        # Each field's value with how it was decided: `confidence` is the grade
+        # its reader gave it (the AI or a rule-based extractor, high/medium/
+        # low), `source` who set it when that is recorded (user_set,
+        # email_header, inherited, bea_manifest), else null.
         "metadata": [
             {
                 "field": m.field,
@@ -339,7 +340,7 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
                 "claim_text": targets[ep.target_claim_id].claim_text,
                 "proposed_role": ep.proposed_role.value,
                 "excerpt": untrusted(ep.excerpt) if ep.excerpt else None,
-                "rationale": ep.rationale,
+                "rationale": untrusted(ep.rationale) if ep.rationale else None,
                 "confidence": ep.confidence.value if ep.confidence else None,
             }
             for ep in ctx["evidence_proposals_for_doc"]
@@ -402,7 +403,11 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
                 "unverified_pages": [u.page for u in pipeline.ocr_unverified],
                 "crosscheck_unavailable": pipeline.ocr_crosscheck_unavailable,
             },
+            # How much of a long document the AI stages read (full or chunked
+            # into windows); same fields as the reader view.
             "context_strategy": meta.get("ai_context_strategy"),
+            "context_windows": meta.get("ai_context_windows"),
+            "context_truncated": bool(meta.get("ai_context_truncated")),
         },
         "agent_visible_text_chars": len(doc.content or ""),
     }

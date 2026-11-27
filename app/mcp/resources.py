@@ -176,13 +176,14 @@ def render_truth_map(tm: tools_analysis.TruthMap) -> str:
     if tm.pending_merge_proposals or tm.pending_evidence_proposals:
         out += ["", "## Pending AI proposals (the user confirms or dismisses)"]
         for m in tm.pending_merge_proposals:
-            why = f" — {m.rationale}" if m.rationale else ""
+            # The rationale is fenced (it quotes the document): its own lines.
+            why = f"\n  Rationale:\n{m.rationale}" if m.rationale else ""
             out.append(
                 f"- Merge #{m.proposal_id} ({m.confidence}): claim #{m.new_claim_id} "
                 f"into #{m.existing_claim_id}{why}"
             )
         for e in tm.pending_evidence_proposals:
-            why = f" — {e.rationale}" if e.rationale else ""
+            why = f"\n  Rationale:\n{e.rationale}" if e.rationale else ""
             out.append(
                 f"- Evidence #{e.proposal_id} ({e.confidence or 'unrated'}): "
                 f"{e.proposed_role} claim #{e.claim_id}"
@@ -241,7 +242,7 @@ def render_document(doc: dict[str, Any], text: tools_documents.DocumentText) -> 
     if doc.get("action_items"):
         derived += ["", "## Deadlines this document raised"]
         derived += [
-            f"- {a['due_date']} · {a['title']} ({a['type']}, {a['status']})"
+            f"- {a['due_date'] or 'no date'} · {a['title']} ({a['type']}, {a['status']})"
             for a in doc["action_items"]
         ]
     if derived:

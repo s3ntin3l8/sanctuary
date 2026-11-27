@@ -211,7 +211,7 @@ def get_truth_map(
             MergeProposalItem(
                 proposal_id=m.proposal_id,
                 confidence=m.confidence,
-                rationale=m.rationale,
+                rationale=untrusted(m.rationale) if m.rationale else None,
                 new_claim_id=m.new_claim_id,
                 new_claim_text=m.new_claim_text,
                 existing_claim_id=m.existing_claim_id,
@@ -228,7 +228,7 @@ def get_truth_map(
                 claim_text=e.target_claim_text,
                 proposed_role=e.proposed_role.value,
                 excerpt=untrusted(e.excerpt) if e.excerpt else None,
-                rationale=e.rationale,
+                rationale=untrusted(e.rationale) if e.rationale else None,
                 confidence=e.confidence,
                 document=evidence_refs[e.source_document_id],
             )
@@ -415,11 +415,13 @@ def list_entities(
         case = p.require_case(db, str(case_id))
         q = q.filter(Entity.case_id == case.id)
     rows = q.order_by(Entity.type.asc(), Entity.name.asc(), Entity.id.asc()).all()
-    # An entity's case and its source document can differ (a merged or refiled
-    # document): show only what the token may read on both counts.
+    # An entity's case and its source document can differ (a document refiled
+    # after extraction keeps its entities in the old case): show only what the
+    # token may read on both counts.
     readable = p.readable_case_ids(db)
     rows = [e for e in rows if readable is None or e.case_id in readable]
     refs = _refs(db, p, {e.source_document_id for e in rows if e.source_document_id})
+    rows = [e for e in rows if not e.source_document_id or e.source_document_id in refs]
     return [
         EntityEntry(
             entity_id=e.id,

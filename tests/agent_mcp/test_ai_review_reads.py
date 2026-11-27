@@ -144,7 +144,10 @@ def test_get_document_exposes_how_each_ai_output_was_decided(
 
     meta = {m["field"]: m for m in out["metadata"]}
     assert meta["significance_tier"]["confidence"] == "high"
-    assert meta["significance_tier"]["source"] == "ai"
+    # A grade is written by the AI and by the rule-based extractors alike, so
+    # it names no source; only a recorded mark does.
+    assert meta["significance_tier"]["source"] is None
+    assert meta["received_date"]["source"] is None
     assert meta["sender"]["source"] == "email_header"
     assert out["sender"] == "Amtsgericht Hamburg"
     assert out["attributed_originator"] == "Kanzlei Müller"
@@ -167,7 +170,8 @@ def test_get_document_exposes_how_each_ai_output_was_decided(
     [proposal] = out["evidence_proposals"]
     assert proposal["claim_id"] == world["own"].id
     assert proposal["proposed_role"] == "supports"
-    assert proposal["rationale"] == "Eingangsstempel vor Fristende"
+    assert FENCE in proposal["rationale"]
+    assert "Eingangsstempel vor Fristende" in proposal["rationale"]
     assert proposal["confidence"] == "medium"
     assert FENCE in proposal["excerpt"]
 
@@ -195,7 +199,7 @@ def test_truth_map_lists_proposal_contents(mcp_session, make_token, alice, world
         world["own"].id,
         world["foreign"].id,
     )
-    assert merge["rationale"] == "beide zur Frist"
+    assert FENCE in merge["rationale"] and "beide zur Frist" in merge["rationale"]
     [evidence] = out["pending_evidence_proposals"]
     assert evidence["proposed_role"] == "supports"
     assert evidence["confidence"] == "medium"
@@ -272,3 +276,16 @@ def test_get_case_reports_a_stale_brief(
 
     error, text = session.read_resource("sanctuary://case/A-1")
     assert not error and "**Stale:**" in text
+
+
+def test_list_entities_drops_a_refiled_documents_entities_outside_the_token(
+    mcp_session, make_token, alice, world, db_session
+):
+    """A document refiled after extraction leaves its entities in the old case:
+    a token for that case must not read the quote of a document it cannot see."""
+    world["relay"].case_id = "A-2"
+    db_session.commit()
+    scoped = mcp_session(make_token(alice, all_cases=False, case_ids=["A-1"]))
+    error, out = scoped.call("list_entities", case_id="A-1")
+    assert not error
+    assert out["result"] == []
