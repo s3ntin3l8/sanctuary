@@ -44,6 +44,7 @@ from app.services.case_service import (
     build_case_level_costs,
     build_proceeding_exposure,
 )
+from app.services.intelligence.brief_inputs import brief_inputs_hash
 from app.services.timezone_service import local_day, local_today
 from app.services.triage_bundles import (
     actionable_review_reasons,
@@ -125,8 +126,13 @@ def action_item_view(
     )
 
 
-def serialize_brief(case: Case) -> BriefView:
-    """The last good brief plus the job state of its regeneration."""
+def serialize_brief(db: Session, case: Case) -> BriefView:
+    """The last good brief plus the job state of its regeneration.
+
+    ``stale`` is true when the brief's inputs changed since it was written
+    (``brief_inputs.brief_inputs_hash``); a brief from before the hash was
+    recorded is not reported stale.
+    """
     raw = case.ai_brief or {}
     status: BriefStatus
     if case.brief_state == BriefState.PROCESSING:
@@ -144,6 +150,13 @@ def serialize_brief(case: Case) -> BriefView:
         detected_status=raw.get("detected_status"),
         status_rationale=raw.get("status_rationale"),
         updated_at=case.ai_brief_updated_at if raw else None,
+        stale=bool(
+            raw
+            and case.ai_brief_inputs_hash
+            and case.ai_brief_inputs_hash != brief_inputs_hash(db, case)
+        ),
+        model=case.ai_brief_model if raw else None,
+        prompt_version=case.ai_brief_prompt_version if raw else None,
     )
 
 
@@ -235,7 +248,7 @@ def build_case_detail(
             )
         ],
         opposing_parties=list(case.opposing_parties or []),
-        brief=serialize_brief(case),
+        brief=serialize_brief(db, case),
         financials=case_financial_summary(case, db),
         open_claim_count=int(open_claims),
         dormancy_alert=_compute_dormancy_alert(case, db),

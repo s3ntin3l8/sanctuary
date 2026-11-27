@@ -20,6 +20,7 @@ from app.services.ai_config import get_chat_config
 from app.services.ai_inflight import track_ai_call
 from app.services.ai_provider import chat_provider
 from app.services.ai_run_index import record_run
+from app.services.intelligence import ai_provenance
 from app.services.intelligence._json import is_effectively_empty, parse_json_response
 from app.services.intelligence.prompts import (
     PASS1_USER_SUFFIX,
@@ -720,6 +721,7 @@ def call_json_ai(
 
     resolved_model = model or cfg.summary_model
     ptype = run_async(chat_provider.get_type())
+    ai_provenance.note(resolved_model, ptype)
 
     debug_dir = DATA_DIR / "ai_debug"
     scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)

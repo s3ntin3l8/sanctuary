@@ -1375,6 +1375,17 @@
             ],
             "title": "Error"
           },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
           "next_move": {
             "anyOf": [
               {
@@ -1403,6 +1414,22 @@
             },
             "title": "Pressure Points",
             "type": "array"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
           },
           "status": {
             "enum": [

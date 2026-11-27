@@ -1,5 +1,6 @@
 import logging
 import os
+from contextvars import Token
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from celery import Celery
 from celery.signals import (
     after_setup_logger,
     after_setup_task_logger,
+    task_postrun,
+    task_prerun,
     worker_init,
     worker_process_init,
 )
@@ -206,6 +209,34 @@ celery_app.conf.update(
         **{name: {"queue": MAINTENANCE_QUEUE} for name in MAINTENANCE_TASKS},
     },
 )
+
+
+# Tokens of the AI provenance scope each running task pushed, by task id.
+_provenance_tokens: dict[str, Token] = {}
+
+
+@task_prerun.connect
+def _push_ai_provenance(task_id=None, **_kwargs) -> None:
+    """Every task runs in an empty AI provenance scope, so a stage is never
+    credited with the model of a call another task made."""
+    from app.services.intelligence import ai_provenance
+
+    _provenance_tokens[str(task_id)] = ai_provenance.push()
+
+
+@task_postrun.connect
+def _pop_ai_provenance(task_id=None, **_kwargs) -> None:
+    """Give an enclosing task (an eager dispatch runs inside it) its scope back."""
+    from app.services.intelligence import ai_provenance
+
+    token = _provenance_tokens.pop(str(task_id), None)
+    if token is not None:
+        try:
+            ai_provenance.pop(token)
+        except ValueError:
+            # Created in another context (a signal fired outside the task's
+            # own); nothing to restore there.
+            pass
 
 
 @worker_init.connect

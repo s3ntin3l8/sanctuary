@@ -52,6 +52,9 @@ _ALLOWED_EXTRA_KEYS = frozenset(
         "max_attempts",
         "next_at",
         "orphan_resets",
+        "model",
+        "provider",
+        "prompt_version",
     }
 )
 
@@ -314,6 +317,9 @@ def initialize(doc, batched: bool, db: Session) -> None:
 
 
 def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
+    from app.services.intelligence import ai_provenance
+
+    ai_provenance.begin(doc_id)
     # Clear any retry bookkeeping from a prior RETRYING record so the next
     # attempt presents as a clean RUNNING state.
     _update_stage(
@@ -386,12 +392,28 @@ def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> 
 def mark_completed(
     doc_id: int, stage: PipelineStage, db: Session, *, commit: bool = True
 ) -> None:
+    """Mark ``stage`` completed and record the model and prompt version behind it.
+
+    Provenance comes from the AI calls made since this document's
+    ``mark_started`` (``ai_provenance``); a completion outside such a scope
+    (idempotent re-dispatch, recovery sweep) keeps what the row already holds.
+    """
+    from app.services.intelligence import ai_provenance
+
+    extra: dict = {"completed_at": now_utc(), "error": None, "orphan_resets": 0}
+    prov = ai_provenance.for_document(doc_id)
+    if prov is not None:
+        extra.update(
+            model=prov.model,
+            provider=prov.provider,
+            prompt_version=prov.prompt_version,
+        )
     _update_stage(
         doc_id,
         stage,
         db,
         status=StageStatus.COMPLETED,
-        extra_sets={"completed_at": now_utc(), "error": None, "orphan_resets": 0},
+        extra_sets=extra,
         commit=commit,
     )
 
@@ -404,6 +426,9 @@ def mark_failed(
     *,
     commit: bool = True,
 ) -> None:
+    from app.services.intelligence import ai_provenance
+
+    ai_provenance.forget(doc_id)
     _update_stage(
         doc_id,
         stage,
@@ -415,6 +440,9 @@ def mark_failed(
             "attempt": None,
             "max_attempts": None,
             "next_at": None,
+            "model": None,
+            "provider": None,
+            "prompt_version": None,
         },
         commit=commit,
     )
@@ -526,12 +554,20 @@ def mark_skipped(
     *,
     commit: bool = True,
 ) -> None:
+    from app.services.intelligence import ai_provenance
+
+    ai_provenance.forget(doc_id)
     _update_stage(
         doc_id,
         stage,
         db,
         status=StageStatus.SKIPPED,
-        extra_sets={"reason": reason},
+        extra_sets={
+            "reason": reason,
+            "model": None,
+            "provider": None,
+            "prompt_version": None,
+        },
         commit=commit,
     )
 
@@ -565,6 +601,10 @@ _RESET_SETS: dict = {
     "max_attempts": None,
     "next_at": None,
     "orphan_resets": 0,  # a user/pipeline retry starts the poison-doc count over
+    # The row no longer holds the output those produced.
+    "model": None,
+    "provider": None,
+    "prompt_version": None,
 }
 
 
@@ -2070,10 +2110,12 @@ def _update_stage(
             text(
                 "INSERT INTO document_pipeline_stages "
                 "(document_id, stage, status, started_at, completed_at, error, reason, "
-                "attempt, max_attempts, next_at, orphan_resets) "
+                "attempt, max_attempts, next_at, orphan_resets, model, provider, "
+                "prompt_version) "
                 "VALUES (:_doc_id, :_stage, :_status, :_k_started_at, :_k_completed_at, "
                 ":_k_error, :_k_reason, :_k_attempt, :_k_max_attempts, :_k_next_at, "
-                "COALESCE(:_k_orphan_resets, 0))"
+                "COALESCE(:_k_orphan_resets, 0), :_k_model, :_k_provider, "
+                ":_k_prompt_version)"
             ),
             ins,
         )

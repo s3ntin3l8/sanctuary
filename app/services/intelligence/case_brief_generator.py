@@ -21,12 +21,13 @@ from app.services.intelligence._court_identity import (
     is_third_party_default_name,
 )
 from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.brief_inputs import brief_inputs_hash
 from app.services.intelligence.chronology_context import format_chronology_for_case
 from app.services.intelligence.claim_context import (
     format_claims_for_case,
     format_entities_for_case,
 )
-from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
+from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM, PROMPT_VERSION
 from app.services.intelligence.reaction_context import format_reactions_for_case
 from app.services.intelligence.schemas import CaseBrief
 from app.services.timezone_service import local_date_or, local_date_str
@@ -345,6 +346,10 @@ def generate(case_id: str) -> None:
         # Load per-case opposing parties (may be empty before first brief)
         case_opposing: list[str] = case.opposing_parties or []
 
+        # Fingerprint the inputs as read now: a change while the call runs
+        # leaves the new brief stale, as it should.
+        inputs_hash = brief_inputs_hash(db, case)
+
         try:
             result = _call_brief_sync(
                 case,
@@ -357,6 +362,9 @@ def generate(case_id: str) -> None:
                 db=db,
             )
             _apply_brief(case, result, db)
+            case.ai_brief_model = cfg.summary_model or None
+            case.ai_brief_prompt_version = PROMPT_VERSION
+            case.ai_brief_inputs_hash = inputs_hash
 
             parties = _compute_parties(
                 docs,

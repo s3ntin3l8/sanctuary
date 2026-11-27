@@ -661,6 +661,9 @@ export const caseDetail: Schemas['CaseDetail'] = {
     detected_status: null,
     status_rationale: null,
     updated_at: '2026-10-01T00:00:00Z',
+    stale: false,
+    model: null,
+    prompt_version: null,
   },
   financials: {
     total_cost_exposure_cents: 1845000,
