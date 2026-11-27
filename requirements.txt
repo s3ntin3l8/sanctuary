@@ -131,7 +131,7 @@ semchunk==2.2.2
 shapely==2.2.0
 shellingham==1.5.4
 six==1.17.0
-soupsieve==3.0.4
+soupsieve==4.0.1
 SQLAlchemy==2.1.6
 starlette==1.10.0
 sympy==1.14.0
