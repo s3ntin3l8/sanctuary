@@ -9,17 +9,17 @@
 # separately only lets dependabot bump the child past the parent and break the
 # group resolve. The parent drives them deterministically.
 
-accelerate==1.15.0
+accelerate==1.16.0
 alembic==1.20.1
 aiofiles==25.1.0
-annotated-doc==0.0.5
+annotated-doc==0.0.7
 annotated-types==0.8.0
 anyio==4.16.0
 attrs==26.1.0
 beautifulsoup4==4.15.0
-certifi==2026.10.23
+certifi==2026.11.20
 charset-normalizer==3.5.2
-click==8.5.0
+click==8.5.1
 colorclass==2.2.2
 colorlog==6.12.0
 compressed-rtf==1.0.7
@@ -34,24 +34,24 @@ docling-ibm-models==4.0.4
 docling-parse==7.23.0
 # doclang: base dep of docling-core 2.104+; transitive, not imported by this app,
 # pinned to keep the resolve deterministic.
-doclang==0.9.0
+doclang==0.10.1
 easygui==0.98.3
 ebcdic==2.0.1
 et_xmlfile==2.0.0
-exceptiongroup==1.3.1
+exceptiongroup==1.3.2
 # Faker + polyfactory are transitive deps of docling[standard] (polyfactory is
 # behind docling-slim's `standard` extra; Faker is polyfactory's dep). Pinned
 # here to keep the resolve deterministic — not directly imported by this app.
-extract-msg==0.58.1
-Faker==40.44.0
-fastapi==0.162.0
-filelock==4.2.7
+extract-msg==0.58.2
+Faker==40.63.0
+fastapi==0.165.0
+filelock==4.2.12
 filetype==1.2.0
 fsspec==2026.9.0
 h11==0.16.0
 httpx==0.28.1
-httpcore2==2.16.0
-httpx2==2.16.0
+httpcore2==2.16.2
+httpx2==2.16.2
 hf-xet==1.8.0
 huggingface_hub==1.33.0
 idna==3.20
@@ -66,9 +66,9 @@ langcodes==3.5.1
 lark==1.3.1
 latex2mathml==3.81.1
 lxml==6.1.3
-mail-parser==4.10.0
-markdown-it-py==4.2.0
-markdownify==1.2.3
+mail-parser==4.11.0
+markdown-it-py==4.3.0
+markdownify==1.2.4
 marko==2.2.5
 mcp==2.3.0
 mcp-types==2.3.0
@@ -78,16 +78,16 @@ mpire==2.10.2
 msoffcrypto-tool==6.1.0
 multiprocess==0.70.19
 networkx==3.7
-numpy==2.5.4
+numpy==2.5.5
 ocrmac==1.0.1; sys_platform == 'darwin'
 olefile==0.47
 oletools==0.60.2
 omegaconf==2.4.0
-opencv-python==5.0.0.93
+opencv-python==5.1.0.95
 openpyxl==3.1.5
 opentelemetry-api==1.45.2
 packaging==26.3
-pandas==3.1.0
+pandas==3.1.1
 pcodedmp==1.2.6
 pillow==13.0.0
 pillow-heif==1.8.1
@@ -95,8 +95,8 @@ pluggy==1.7.0
 polyfactory==3.5.0
 psutil==7.2.2
 pyclipper==1.4.0
-pydantic==2.14.2
-pydantic-settings==2.16.2
+pydantic==2.14.4
+pydantic-settings==2.16.3
 pyjwt==2.15.1
 Pygments==2.21.0
 pylatexenc==2.11
@@ -105,22 +105,22 @@ pyobjc-framework-Cocoa==11.1; sys_platform == 'darwin'
 pyobjc-framework-CoreML==11.1; sys_platform == 'darwin'
 pyobjc-framework-Quartz==11.1; sys_platform == 'darwin'
 pyobjc-framework-Vision==11.1; sys_platform == 'darwin'
-pypdfium2==5.14.0
+pypdfium2==5.15.2
 python-dateutil==3.0.0
 python-docx==1.2.0
 python-dotenv==1.2.4
-python-multipart==0.0.33
+python-multipart==0.0.34
 python-pptx==1.0.2
 pytz==2026.6
-PyYAML==6.0.3
-onnxruntime==1.31.1
+PyYAML==6.0.4
+onnxruntime==1.32.0
 rapidocr==3.10.0
 red-black-tree-mod==1.22
 RTFDE==0.1.2.2
 slowapi==0.1.10
-sse-starlette==3.6.0
+sse-starlette==3.7.0
 referencing==0.37.0
-regex==2026.9.29
+regex==2026.11.19
 requests==2.34.2
 rich==15.0.0
 rpds-py==2026.9.1
@@ -132,7 +132,7 @@ shapely==2.2.0
 shellingham==1.5.4
 six==1.17.0
 soupsieve==3.0.4
-SQLAlchemy==2.1.6
+SQLAlchemy==2.1.9
 starlette==1.10.0
 sympy==1.14.0
 tabulate==0.10.0
@@ -141,29 +141,29 @@ tokenizers==0.23.3
 torch==2.15.0+cpu
 torchvision==0.29.2+cpu
 tqdm==4.70.1
-transformers==5.22.1
-tree-sitter==0.26.0
+transformers==5.24.0
+tree-sitter==0.26.1
 tree-sitter-c==0.24.2
 tree-sitter-javascript==0.25.0
 tree-sitter-python==0.25.0
 tree-sitter-typescript==0.23.2
 typer==0.19.2
 truststore==0.10.5
-typing-inspection==0.4.4
+typing-inspection==0.4.5
 typing_extensions==4.16.0
 tzdata==2026.6
 urllib3==2.8.0
 uvicorn==0.54.0
 websockets==16.1.1
-xlsxwriter==3.3.1
-psycopg[binary]==3.3.7
+xlsxwriter==3.3.3
+psycopg[binary]==3.3.9
 pgvector==0.5.1
-celery==5.6.3
+celery==5.7.0
 redis==8.1.0
 google-auth-oauthlib==1.5.0
-google-api-python-client==2.201.0
-pwdlib==0.3.1
+google-api-python-client==2.202.0
+pwdlib==0.4.2
 argon2-cffi==25.1.0
-argon2-cffi-bindings==26.1.0
-authlib==1.9.3
+argon2-cffi-bindings==26.2.0
+authlib==1.9.10
 cryptography==50.0.2
