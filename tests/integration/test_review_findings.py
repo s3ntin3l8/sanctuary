@@ -486,6 +486,54 @@ def test_repeated_review_updates_the_pending_finding(db_session, sample_case):
     assert db_session.query(AiReviewFinding).count() == 1
 
 
+def test_repeated_agree_updates_the_noted_finding(db_session, sample_case):
+    """Each audit run re-reviews everything; agreeing again must not add rows."""
+    doc = _doc(db_session)
+    for _ in range(3):
+        _record(
+            db_session,
+            ReviewTargetKind.DOCUMENT_FIELD,
+            verdict=ReviewVerdict.AGREE,
+            document_id=doc.id,
+            field="sender",
+        )
+    assert db_session.query(AiReviewFinding).count() == 1
+
+
+def test_a_disagreement_replaces_the_earlier_agree(db_session, sample_case):
+    doc = _doc(db_session)
+    agreed = _record(
+        db_session,
+        ReviewTargetKind.DOCUMENT_FIELD,
+        verdict=ReviewVerdict.AGREE,
+        document_id=doc.id,
+        field="significance_tier",
+    )
+    changed = _record(
+        db_session,
+        ReviewTargetKind.DOCUMENT_FIELD,
+        document_id=doc.id,
+        field="significance_tier",
+        proposed="critical",
+    )
+    assert changed.id == agreed.id
+    assert changed.status == ReviewFindingStatus.PENDING
+
+
+def test_claim_text_takes_no_proposed_wording(db_session, sample_case):
+    """Confirming dismisses the claim, so a rewritten wording would never apply."""
+    doc = _doc(db_session)
+    claim = _claim(db_session, doc)
+    with pytest.raises(ai_review_service.ReviewFindingError):
+        _record(
+            db_session,
+            ReviewTargetKind.CLAIM,
+            target_id=claim.id,
+            field="text",
+            proposed="The payment was on time",
+        )
+
+
 def test_stage_rerun_that_changes_the_value_marks_stale(db_session, sample_case):
     doc = _doc(db_session)
     unchanged = _record(

@@ -4617,6 +4617,11 @@ export interface components {
             bundle_next_id: number | null;
             /** Bundle Prev Id */
             bundle_prev_id: number | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
             case: components["schemas"]["CaseRef"] | null;
             /** Case Id */
             case_id: string | null;
@@ -4722,6 +4727,11 @@ export interface components {
             bundle_next_id: number | null;
             /** Bundle Prev Id */
             bundle_prev_id: number | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
             case: components["schemas"]["CaseRef"] | null;
             /** Case Id */
             case_id: string | null;

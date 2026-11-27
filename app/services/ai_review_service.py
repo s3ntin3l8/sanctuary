@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_utc
@@ -560,9 +561,14 @@ def _validate_proposed(
     if kind == ReviewTargetKind.CLAIM:
         if field == "status":
             return _enum_value(ClaimStatus, proposed, "status")
-        # No claim edit path: a misstated claim is dismissed; a corrected
-        # wording is kept on the finding for the user to read.
-        return None if proposed is None else _text(proposed, "text")
+        # Claim text has no edit path: confirming a disagreement dismisses the
+        # claim, so there is no wording to propose (as for relationships).
+        if proposed is not None:
+            raise _invalid(
+                "Claim text cannot be rewritten: a disagreement dismisses the "
+                "claim, so leave proposed_value empty and say why in rationale."
+            )
+        return None
     if kind == ReviewTargetKind.ACTION_ITEM:
         if field == "status":
             return _enum_value(ActionItemStatus, proposed, "status")
@@ -630,7 +636,22 @@ def _key_filter(db: Session, kind, token_id, target: Target):
         AiReviewFinding.field.is_(None)
         if target.field is None
         else AiReviewFinding.field == target.field,
-        AiReviewFinding.status == ReviewFindingStatus.PENDING,
+    )
+
+
+# A re-review replaces the reviewer's open finding, or the "agree" it left
+# before, so repeated audits do not pile up rows; resolved and stale findings
+# stay as the record of what was decided.
+_REPLACEABLE = (ReviewFindingStatus.PENDING, ReviewFindingStatus.NOTED)
+
+
+def _existing(db: Session, kind, token_id, target: Target) -> AiReviewFinding | None:
+    q = _key_filter(db, kind, token_id, target)
+    return (
+        q.filter(AiReviewFinding.status == ReviewFindingStatus.PENDING).first()
+        or q.filter(AiReviewFinding.status == ReviewFindingStatus.NOTED)
+        .order_by(AiReviewFinding.id.desc())
+        .first()
     )
 
 
@@ -645,6 +666,7 @@ def record_finding(
     proposed_value: Any = None,
     cited_excerpt: str | None = None,
     can_edit_case: Callable[[str], bool],
+    _retried: bool = False,
 ) -> AiReviewFinding:
     """Record (or update the reviewer's open) finding on ``target``. Caller commits.
 
@@ -671,7 +693,7 @@ def record_finding(
         else ReviewFindingStatus.PENDING
     )
 
-    finding = _key_filter(db, reviewer_kind, agent_token_id, target).first()
+    finding = _existing(db, reviewer_kind, agent_token_id, target)
     if finding is None:
         finding = AiReviewFinding(
             reviewer_kind=reviewer_kind,
@@ -693,7 +715,28 @@ def record_finding(
     finding.status = status
     finding.created_at = now_utc()
     finding.resolved_at = None
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        # Another reviewer call opened the same pending finding between the
+        # lookup above and this write: update that one instead (once; any
+        # other integrity error is a real one).
+        if _retried:
+            raise
+        db.expire_all()
+        return record_finding(
+            db,
+            target,
+            reviewer_kind=reviewer_kind,
+            agent_token_id=agent_token_id,
+            verdict=verdict,
+            rationale=rationale,
+            proposed_value=proposed_value,
+            cited_excerpt=cited_excerpt,
+            can_edit_case=can_edit_case,
+            _retried=True,
+        )
     _refresh_document_reasons(db, target.document)
     return finding
 

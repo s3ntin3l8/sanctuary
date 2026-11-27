@@ -180,6 +180,8 @@ class DocumentReview(BaseModel):
     packet_starts: list[int] = []
     # The document is held for the decision to split or keep it whole.
     held_for_split: bool = False
+    # The viewer may change this document (edit access to its case).
+    can_edit: bool = False
     case_id: str | None
     case: CaseRef | None
     proceeding: ProceedingRef | None

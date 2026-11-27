@@ -188,7 +188,7 @@ function SecondOpinion({ review }: { review: Review }) {
         )
       }
     >
-      <FindingList findings={findings} />
+      <FindingList findings={findings} canResolve={review.can_edit} />
     </Section>
   )
 }

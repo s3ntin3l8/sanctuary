@@ -383,6 +383,7 @@ export const documentReview: Schemas['DocumentReview'] = {
   page_count: 12,
   packet_starts: [],
   held_for_split: false,
+  can_edit: true,
   case_id: '_TRIAGE',
   case: null,
   proceeding: null,

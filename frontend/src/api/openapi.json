@@ -4286,6 +4286,11 @@
             ],
             "title": "Bundle Prev Id"
           },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
           "case": {
             "anyOf": [
               {
@@ -4732,6 +4737,11 @@
               }
             ],
             "title": "Bundle Prev Id"
+          },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
           },
           "case": {
             "anyOf": [

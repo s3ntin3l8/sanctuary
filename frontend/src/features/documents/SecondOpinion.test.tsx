@@ -74,6 +74,15 @@ test('confirming posts the decision', async () => {
   expect(calls).toContain('POST /api/v1/review-findings/7/confirm')
 })
 
+test('a viewer who cannot edit the case gets no decision buttons', async () => {
+  documentPage([base], {
+    'GET /api/v1/documents/2211/reader': { body: { ...documentReader, can_edit: false } },
+  })
+  const row = await screen.findByRole('listitem', { name: 'Significance tier: disagrees' })
+  expect(within(row).queryByRole('button', { name: 'Confirm' })).toBeNull()
+  expect(within(row).queryByRole('button', { name: 'Dismiss' })).toBeNull()
+})
+
 test('a stale or resolved finding offers no decision', async () => {
   documentPage([
     { ...base, status: 'stale' },
