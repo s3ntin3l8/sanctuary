@@ -78,7 +78,7 @@ def proceeding_ref(p: Proceeding) -> ProceedingRef:
     )
 
 
-def _extraction_engine(
+def extraction_engine(
     meta: dict,
 ) -> Literal["chandra", "docling", "tesseract"] | None:
     """The engine that read the document, from what extraction stamped.
@@ -127,7 +127,7 @@ def pipeline_view(doc: Document) -> PipelineView:
         stages=out,
         ocr_page_failures=sorted(int(p) for p in failures),
         ocr_crosscheck_unavailable=bool(meta.get("ocr_crosscheck_unavailable")),
-        extraction_engine=_extraction_engine(meta),
+        extraction_engine=extraction_engine(meta),
         ocr_fallback=bool(meta.get("chandra_ocr_error")),
         ocr_unverified=[
             OcrUnverifiedPage(

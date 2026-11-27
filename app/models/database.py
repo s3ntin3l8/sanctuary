@@ -367,6 +367,12 @@ class DocumentPipelineStage(Base):
     orphan_resets: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # What produced the stage's output (set by pipeline_status.mark_completed
+    # from ai_provenance): the chat model and provider for an AI stage, the OCR
+    # model and engine for EXTRACT (no prompt version). Null = no AI call.
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
     document: Mapped[Document] = relationship("Document", back_populates="stage_rows")
 
@@ -618,6 +624,12 @@ class Case(Base):
     ai_brief_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
+    # Model and prompt version of the stored brief, and the fingerprint of the
+    # inputs it was written from (case_brief_generator.brief_inputs_hash); a
+    # different hash now means the brief is stale.
+    ai_brief_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    ai_brief_prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    ai_brief_inputs_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     # Atomic CAS slot for "brief dispatch in flight". NULL = idle. Set to now()
     # by claim_case_brief_for_dispatch() when readiness is satisfied; cleared
     # to NULL by the brief task on terminal exit (success or final failure).

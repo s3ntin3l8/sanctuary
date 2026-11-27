@@ -3679,12 +3679,21 @@ export interface components {
             detected_status?: string | null;
             /** Error */
             error?: string | null;
+            /** Model */
+            model?: string | null;
             /** Next Move */
             next_move?: string | null;
             /** Posture */
             posture?: string | null;
             /** Pressure Points */
             pressure_points?: string[];
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
             /**
              * Status
              * @enum {string}

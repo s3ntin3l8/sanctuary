@@ -260,8 +260,10 @@ def set_action_item_status(
 
 
 @router.get("/cases/{case_id}/brief", response_model=BriefView)
-def get_brief(case: Case = Depends(require_case_access())):
-    return serialize_brief(case)
+def get_brief(
+    db: Session = Depends(get_db), case: Case = Depends(require_case_access())
+):
+    return serialize_brief(db, case)
 
 
 @router.post("/cases/{case_id}/brief/refresh", response_model=BriefView)
@@ -278,7 +280,7 @@ def refresh_brief(
     case.brief_error = None
     db.commit()
     dispatch_task(refresh_case_brief_task, case.id)
-    return serialize_brief(case)
+    return serialize_brief(db, case)
 
 
 # --- Graph / timeline / financials -----------------------------------------

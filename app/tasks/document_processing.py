@@ -97,6 +97,22 @@ def _trigger_metadata_phase_barrier(doc_id: int, batch_id: int | None, db) -> No
         )
 
 
+def _note_extraction_provenance(doc: Document) -> None:
+    """Record the OCR engine (and its model, for Chandra) as EXTRACT's provenance.
+
+    Text formats are read without an engine and record nothing.
+    """
+    from app.services.document_review_service import extraction_engine
+    from app.services.intelligence import ai_provenance
+
+    meta = doc.meta or {}
+    engine = extraction_engine(meta)
+    if engine is None:
+        return
+    model = meta.get("ocr_model") if engine == "chandra" else None
+    ai_provenance.note(model or engine, engine, prompt_version=None)
+
+
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -159,6 +175,7 @@ def process_document_task(self, doc_id: int):
         mark_started(doc_id, PipelineStage.EXTRACT, db)
         try:
             process_uploaded_document(doc, db)
+            _note_extraction_provenance(doc)
             mark_completed(doc_id, PipelineStage.EXTRACT, db)
             logger.info(f"Document {doc_id} extracted successfully")
         except IngestionError as e:

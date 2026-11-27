@@ -68,6 +68,10 @@ class BriefView(BaseModel):
     detected_status: str | None = None
     status_rationale: str | None = None
     updated_at: datetime | None = None
+    # The brief's inputs changed since it was written: regenerate to catch up.
+    stale: bool = False
+    model: str | None = None
+    prompt_version: str | None = None
 
 
 class CaseActionItem(BaseModel):
