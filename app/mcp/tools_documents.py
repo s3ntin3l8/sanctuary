@@ -407,7 +407,8 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
             # into windows); same fields as the reader view.
             "context_strategy": meta.get("ai_context_strategy"),
             "context_windows": meta.get("ai_context_windows"),
-            "context_truncated": bool(meta.get("ai_context_truncated")),
+            # null = not recorded (enriched before the flag existed).
+            "context_truncated": meta.get("ai_context_truncated"),
         },
         "agent_visible_text_chars": len(doc.content or ""),
     }
