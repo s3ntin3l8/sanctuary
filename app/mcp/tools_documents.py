@@ -15,7 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.mcp.db import run
 from app.mcp.principal import McpPrincipal
-from app.mcp.serializers import DocumentRef, document_ref, iso_date, untrusted
+from app.mcp.serializers import (
+    DocumentRef,
+    document_ref,
+    iso_date,
+    iso_datetime,
+    untrusted,
+)
 from app.models.database import Document
 from app.models.enums import SignificanceTier
 from app.services import (
@@ -195,6 +201,34 @@ def list_documents(
 
 # --- get_document ------------------------------------------------------------
 
+# Marks in ``extraction_confidence`` that name who set a field. A grade
+# (high/medium/low) does not: the AI and the rule-based extractors both write
+# one, so it is reported as ``confidence`` with no ``source``.
+_FIELD_SOURCES = frozenset({"user_set", "email_header", "inherited", "bea_manifest"})
+
+
+def _field_source(mark: object, value: object) -> str | None:
+    """Who set a metadata field, when the stored mark says so; else None."""
+    if value is None or mark not in _FIELD_SOURCES:
+        return None
+    return str(mark)
+
+
+def _stage_provenance(row) -> dict[str, str | None]:
+    return {
+        "model": row.model if row is not None else None,
+        "provider": row.provider if row is not None else None,
+        "prompt_version": row.prompt_version if row is not None else None,
+    }
+
+
+def _claim_readable(db: Session, p: McpPrincipal, claim_id: int) -> bool:
+    try:
+        p.require_claim(db, claim_id)
+    except ToolError:
+        return False
+    return True
+
 
 def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, Any]:
     doc = p.require_document(db, document_id)
@@ -215,6 +249,7 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
             continue
         relationships.append(
             {
+                "relationship_id": rel.id,
                 "type": rel.rel_type.value,
                 "direction": rel.direction,
                 "confidence": rel.confidence.value,
@@ -225,6 +260,12 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
     pin_names = api_token_service.token_names(
         db, (pin.agent_token_id for pin in ctx["pins"])
     )
+    meta = doc.meta or {}
+    conf = doc.extraction_confidence or {}
+    stage_rows = {row.stage: row for row in doc.stage_rows}
+    targets = ctx["proposal_targets"]
+    readable_targets = {cid for cid in targets if _claim_readable(db, p, cid)}
+    pipeline = fields["pipeline"]
     return {
         "document": document_ref(doc).model_dump(),
         "case_id": doc.case_id,
@@ -243,13 +284,32 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
         "role": doc.role.value,
         "court_relay": bool(doc.court_relay),
         "attributed_originator": doc.attributed_originator,
+        "sender": doc.sender,
         "reference": doc.internal_id,
         "az_court": doc.az_court,
         "issued_date": iso_date(doc.issued_date),
         "received_date": iso_date(doc.received_date),
         "needs_review": bool(doc.needs_review),
         "review_reasons": [str(r) for r in fields["review_reasons"]],
+        # Each field's value with how it was decided: `confidence` is the grade
+        # its reader gave it (the AI or a rule-based extractor, high/medium/
+        # low), `source` who set it when that is recorded (user_set,
+        # email_header, inherited, bea_manifest), else null.
+        "metadata": [
+            {
+                "field": m.field,
+                "value": m.value,
+                "confidence": m.confidence,
+                "source": _field_source(conf.get(m.field), m.value),
+            }
+            for m in fields["metadata"]
+        ],
+        "packet_starts": fields["packet_starts"],
+        "held_for_split": fields["held_for_split"],
+        "contradiction_notes": [untrusted(n) for n in fields["contradiction_notes"]],
         "summary": [b.model_dump() for b in fields["summary"].bullets],
+        "summary_created_at": iso_datetime(fields["summary"].created_at),
+        "summary_approved_at": iso_datetime(fields["summary"].approved_at),
         "key_passages": [
             {
                 "passage_id": kp.id,
@@ -271,6 +331,31 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
             for g in fields["grounds"]
         ],
         "relationships": relationships,
+        # The AI's pending proposals that this document bears on an existing
+        # claim; the user confirms or dismisses them.
+        "evidence_proposals": [
+            {
+                "proposal_id": ep.id,
+                "claim_id": ep.target_claim_id,
+                "claim_text": targets[ep.target_claim_id].claim_text,
+                "proposed_role": ep.proposed_role.value,
+                "excerpt": untrusted(ep.excerpt) if ep.excerpt else None,
+                "rationale": untrusted(ep.rationale) if ep.rationale else None,
+                "confidence": ep.confidence.value if ep.confidence else None,
+            }
+            for ep in ctx["evidence_proposals_for_doc"]
+            if ep.target_claim_id in readable_targets
+        ],
+        "cost_signals": [
+            {
+                "cost_signal_id": c.id,
+                "signal_type": c.signal_type.value,
+                "amount": c.amount,
+                "description": c.description,
+                "issued_at": iso_date(c.issued_at),
+            }
+            for c in fields["cost_signals"]
+        ],
         "action_items": [
             {
                 "action_item_id": a.id,
@@ -300,15 +385,30 @@ def get_document(db: Session, p: McpPrincipal, document_id: int) -> dict[str, An
             if pin.user_id == p.user.id
         ],
         "processing": {
-            "state": fields["pipeline"].state.value,
+            "state": pipeline.state.value,
+            # model/provider/prompt_version: what produced the stage's output.
             "stages": [
                 {
-                    "stage": s.key.value,
-                    "status": s.status.value if s.status else None,
-                    "error": s.error,
+                    "stage": st.key.value,
+                    "status": st.status.value if st.status else None,
+                    "error": st.error,
+                    **_stage_provenance(stage_rows.get(st.key.value)),
                 }
-                for s in fields["pipeline"].stages
+                for st in pipeline.stages
             ],
+            "ocr": {
+                "engine": pipeline.extraction_engine,
+                "fallback": pipeline.ocr_fallback,
+                "failed_pages": pipeline.ocr_page_failures,
+                "unverified_pages": [u.page for u in pipeline.ocr_unverified],
+                "crosscheck_unavailable": pipeline.ocr_crosscheck_unavailable,
+            },
+            # How much of a long document the AI stages read (full or chunked
+            # into windows); same fields as the reader view.
+            "context_strategy": meta.get("ai_context_strategy"),
+            "context_windows": meta.get("ai_context_windows"),
+            # null = not recorded (enriched before the flag existed).
+            "context_truncated": meta.get("ai_context_truncated"),
         },
         "agent_visible_text_chars": len(doc.content or ""),
     }
