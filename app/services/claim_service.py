@@ -140,6 +140,8 @@ class PendingEvidenceRow:
     source_document_title: str | None
     source_document_originator: OriginatorType | None
     source_document_case_id: str | None
+    rationale: str | None = None
+    confidence: str | None = None
 
 
 @dataclass
@@ -453,6 +455,8 @@ class ClaimService:
                     source_document_title=doc.title if doc else None,
                     source_document_originator=doc.originator_type if doc else None,
                     source_document_case_id=doc.case_id if doc else None,
+                    rationale=r.rationale,
+                    confidence=r.confidence.value if r.confidence else None,
                 )
             )
         return out

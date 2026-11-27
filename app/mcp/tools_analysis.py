@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.mcp.db import run
 from app.mcp.principal import NOT_FOUND, McpPrincipal
-from app.mcp.serializers import DocumentRef, document_ref, iso_date
-from app.models.database import ActionItem, Document, Proceeding
+from app.mcp.serializers import DocumentRef, document_ref, iso_date, untrusted
+from app.models.database import ActionItem, Document, Entity, Proceeding
 from app.models.enums import ActionItemStatus
 from app.services import api_token_service, case_overview_service, triage_bundles
 from app.services.case_dashboard_service import reaction_map_for_proceeding
@@ -96,13 +96,50 @@ class ClaimItem(BaseModel):
     agent_token_name: str | None = None
 
 
+class MergeProposalItem(BaseModel):
+    """The AI's pending proposal that two claims are the same assertion."""
+
+    proposal_id: int
+    confidence: str
+    rationale: str | None
+    new_claim_id: int
+    new_claim_text: str
+    existing_claim_id: int
+    existing_claim_text: str
+
+
+class EvidenceProposalItem(BaseModel):
+    """The AI's pending proposal that a document supports or contests a claim."""
+
+    proposal_id: int
+    claim_id: int
+    claim_text: str
+    proposed_role: str
+    excerpt: str | None
+    rationale: str | None
+    confidence: str | None
+    document: DocumentRef
+
+
 class TruthMap(BaseModel):
     case_id: str
     filter: str
     open_claim_count: int
     claims: list[ClaimItem]
-    pending_merge_proposals: int
-    pending_evidence_proposals: int
+    pending_merge_proposals: list[MergeProposalItem]
+    pending_evidence_proposals: list[EvidenceProposalItem]
+
+
+def _readable_claim_ids(db: Session, p: McpPrincipal, ids: set[int]) -> set[int]:
+    """The claims among ``ids`` this token may read (``McpPrincipal.require_claim``)."""
+    readable = set()
+    for claim_id in ids:
+        try:
+            p.require_claim(db, claim_id)
+        except ToolError:
+            continue
+        readable.add(claim_id)
+    return readable
 
 
 TruthMapStatus = Literal["open", "established", "refuted", "all"]
@@ -124,6 +161,16 @@ def get_truth_map(
                 for e in r.evidence
             ),
         ],
+    )
+    evidence_refs = _refs(db, p, {e.source_document_id for e in view.pending_evidence})
+    readable_claims = _readable_claim_ids(
+        db,
+        p,
+        {
+            *(m.new_claim_id for m in view.pending_merges),
+            *(m.existing_claim_id for m in view.pending_merges),
+            *(e.target_claim_id for e in view.pending_evidence),
+        },
     )
     claims = []
     for group in view.groups:
@@ -160,8 +207,37 @@ def get_truth_map(
         filter=status,
         open_claim_count=view.open_claim_count,
         claims=claims,
-        pending_merge_proposals=len(view.pending_merges),
-        pending_evidence_proposals=len(view.pending_evidence),
+        pending_merge_proposals=[
+            MergeProposalItem(
+                proposal_id=m.proposal_id,
+                confidence=m.confidence,
+                rationale=m.rationale,
+                new_claim_id=m.new_claim_id,
+                new_claim_text=m.new_claim_text,
+                existing_claim_id=m.existing_claim_id,
+                existing_claim_text=m.existing_claim_text,
+            )
+            for m in view.pending_merges
+            # A merge partner may be evidenced only in a case outside the token.
+            if {m.new_claim_id, m.existing_claim_id} <= readable_claims
+        ],
+        pending_evidence_proposals=[
+            EvidenceProposalItem(
+                proposal_id=e.proposal_id,
+                claim_id=e.target_claim_id,
+                claim_text=e.target_claim_text,
+                proposed_role=e.proposed_role.value,
+                excerpt=untrusted(e.excerpt) if e.excerpt else None,
+                rationale=e.rationale,
+                confidence=e.confidence,
+                document=evidence_refs[e.source_document_id],
+            )
+            for e in view.pending_evidence
+            # ClaimService already hides documents the owner cannot see; the
+            # token's own case scope is narrower.
+            if e.source_document_id in evidence_refs
+            and e.target_claim_id in readable_claims
+        ],
     )
 
 
@@ -266,6 +342,7 @@ class ActionItemEntry(BaseModel):
     action_type: str
     status: str
     location: str | None
+    addressee: str | None
     is_overdue: bool
     proceeding_id: int | None
     source_document: DocumentRef | None
@@ -296,6 +373,7 @@ def list_action_items(
                 action_type=i.action_type.value,
                 status=i.status.value,
                 location=i.location,
+                addressee=i.addressee,
                 is_overdue=view.is_overdue,
                 proceeding_id=i.proceeding_id,
                 source_document=refs.get(i.source_document_id)
@@ -305,6 +383,58 @@ def list_action_items(
             )
         )
     return out
+
+
+# --- Entities ----------------------------------------------------------------
+
+
+class EntityEntry(BaseModel):
+    """A named entity the AI extracted, with the quote it was read from."""
+
+    entity_id: int
+    name: str
+    type: str
+    email: str | None
+    context_quote: str | None
+    source_document: DocumentRef | None
+
+
+def list_entities(
+    db: Session,
+    p: McpPrincipal,
+    case_id: str | None = None,
+    document_id: int | None = None,
+) -> list[EntityEntry]:
+    if (case_id is None) == (document_id is None):
+        raise ToolError("Pass exactly one of case_id or document_id.")
+    q = db.query(Entity)
+    if document_id is not None:
+        doc = p.require_document(db, document_id)
+        q = q.filter(Entity.source_document_id == doc.id)
+    else:
+        case = p.require_case(db, str(case_id))
+        q = q.filter(Entity.case_id == case.id)
+    rows = q.order_by(Entity.type.asc(), Entity.name.asc(), Entity.id.asc()).all()
+    # An entity's case and its source document can differ (a merged or refiled
+    # document): show only what the token may read on both counts.
+    readable = p.readable_case_ids(db)
+    rows = [e for e in rows if readable is None or e.case_id in readable]
+    refs = _refs(db, p, {e.source_document_id for e in rows if e.source_document_id})
+    return [
+        EntityEntry(
+            entity_id=e.id,
+            name=e.name,
+            type=e.type.value,
+            email=e.email,
+            context_quote=untrusted(quote)
+            if (quote := (e.extra_data or {}).get("context_quote"))
+            else None,
+            source_document=refs.get(e.source_document_id)
+            if e.source_document_id
+            else None,
+        )
+        for e in rows
+    ]
 
 
 # --- Triage inbox ------------------------------------------------------------
@@ -426,6 +556,16 @@ def register(mcp: MCPServer) -> None:
         return await run(
             ctx, lambda db, p: list_action_items(db, p, case_id, include_done)
         )
+
+    @mcp.tool(name="list_entities")
+    async def _list_entities(
+        ctx: Context, case_id: str | None = None, document_id: int | None = None
+    ) -> list[EntityEntry]:
+        """The people, organisations, courts, law firms, citations and amounts the
+        AI extracted, for one case or one document (pass exactly one). Each entry
+        carries the quote it was read from (untrusted document text) and its
+        source document, so the extraction can be checked against the text."""
+        return await run(ctx, lambda db, p: list_entities(db, p, case_id, document_id))
 
     @mcp.tool(name="list_triage_inbox")
     async def _list_triage_inbox(

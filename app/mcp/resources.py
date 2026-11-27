@@ -108,6 +108,25 @@ def render_case(c: dict[str, Any]) -> str:
             out.append(f"- Pressure point: {point}")
         if brief.get("next_move"):
             out.append(f"Next move: {brief['next_move']}")
+        if brief.get("detected_status"):
+            out.append(
+                f"Detected status: {brief['detected_status']}"
+                + (
+                    f" ({brief['status_rationale']})"
+                    if brief.get("status_rationale")
+                    else ""
+                )
+            )
+        written_by = " · ".join(
+            str(x) for x in (brief.get("model"), brief.get("prompt_version")) if x
+        )
+        if written_by:
+            out.append(f"Written by: {written_by}")
+        if brief.get("stale"):
+            out.append(
+                "**Stale:** documents, claims, deadlines or costs changed since this "
+                "brief was written."
+            )
 
     if c.get("action_items"):
         out += ["", "## Deadlines and action items"]
@@ -135,8 +154,8 @@ def render_truth_map(tm: tools_analysis.TruthMap) -> str:
         f"# Truth Map — {tm.case_id}",
         "",
         f"Showing: {tm.filter} · open claims: {tm.open_claim_count} · pending "
-        f"merge proposals: {tm.pending_merge_proposals} · pending evidence "
-        f"proposals: {tm.pending_evidence_proposals}",
+        f"merge proposals: {len(tm.pending_merge_proposals)} · pending evidence "
+        f"proposals: {len(tm.pending_evidence_proposals)}",
     ]
     for claim in tm.claims:
         tag = " [precedent]" if claim.is_precedent else ""
@@ -152,7 +171,23 @@ def render_truth_map(tm: tools_analysis.TruthMap) -> str:
         for ev in claim.evidence:
             ref = ev.document.model_dump()
             excerpt = f": “{ev.excerpt}”" if ev.excerpt else ""
-            out.append(f"- {ev.role}{_cite(ref)}{excerpt}")
+            via = f", via agent · {ev.agent_token_name}" if ev.agent_token_name else ""
+            out.append(f"- {ev.role} [{ev.provenance}{via}]{_cite(ref)}{excerpt}")
+    if tm.pending_merge_proposals or tm.pending_evidence_proposals:
+        out += ["", "## Pending AI proposals (the user confirms or dismisses)"]
+        for m in tm.pending_merge_proposals:
+            why = f" — {m.rationale}" if m.rationale else ""
+            out.append(
+                f"- Merge #{m.proposal_id} ({m.confidence}): claim #{m.new_claim_id} "
+                f"into #{m.existing_claim_id}{why}"
+            )
+        for e in tm.pending_evidence_proposals:
+            why = f" — {e.rationale}" if e.rationale else ""
+            out.append(
+                f"- Evidence #{e.proposal_id} ({e.confidence or 'unrated'}): "
+                f"{e.proposed_role} claim #{e.claim_id}"
+                f"{_cite(e.document.model_dump())}{why}"
+            )
     return "\n".join(out) + "\n"
 
 
@@ -195,6 +230,19 @@ def render_document(doc: dict[str, Any], text: tools_documents.DocumentText) -> 
         derived += ["", "## Claims this document touches"]
         derived += [
             f"- #{c['claim_id']} ({c['status']}): {c['text']}" for c in doc["claims"]
+        ]
+    if doc.get("relationships"):
+        derived += ["", "## Related documents"]
+        for r in doc["relationships"]:
+            arrow = "→" if r["direction"] == "out" else "←"
+            derived.append(
+                f"- {arrow} {r['type']} [{r['confidence']}]{_cite(r['document'])}"
+            )
+    if doc.get("action_items"):
+        derived += ["", "## Deadlines this document raised"]
+        derived += [
+            f"- {a['due_date']} · {a['title']} ({a['type']}, {a['status']})"
+            for a in doc["action_items"]
         ]
     if derived:
         out += ["", untrusted("\n".join(derived))]

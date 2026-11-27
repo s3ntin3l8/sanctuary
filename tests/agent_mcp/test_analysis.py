@@ -221,7 +221,7 @@ def test_truth_map_lists_claims_with_evidence(mcp_session, make_token, alice, wo
     asserts = [e for e in claim["evidence"] if e["role"] == "asserts"]
     assert asserts[0]["excerpt"] == "keine Zahlung"
     assert asserts[0]["document"]["document_id"] == world["d1"].id
-    assert out["pending_merge_proposals"] == 0
+    assert out["pending_merge_proposals"] == []
 
 
 def test_truth_map_hides_evidence_from_unreadable_cases(
